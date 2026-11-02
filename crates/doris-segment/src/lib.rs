@@ -11,6 +11,7 @@ pub mod footer;
 pub mod ordinal;
 pub mod page;
 pub mod rle;
+pub mod values;
 pub mod varint;
 
 /// Protobuf types generated from the pinned Doris `.proto` files (see `proto/README.md`).
