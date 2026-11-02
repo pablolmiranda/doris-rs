@@ -34,6 +34,12 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(entry["status"], "failed")
         self.assertEqual(entry["message"], "expected [1] but got [2]\nline two")
         self.assertEqual(entry["duration_ms"], 77)
+        self.assertEqual(entry["details"], "stack'trace")
+
+    def test_details_are_truncated(self):
+        long = "##teamcity[testFailed name='t' message='m' details='" + "x" * 5000 + "' flowId='9']"
+        res = pt.parse_lines([long])
+        self.assertEqual(len(res["suites"]["t"]["details"]), pt.DETAILS_LIMIT)
 
     def test_started_without_finish_is_incomplete(self):
         self.assertEqual(self.suites["test_crashes_server"]["status"], "incomplete")
@@ -48,6 +54,15 @@ class ParseTests(unittest.TestCase):
 
     def test_non_teamcity_lines_ignored(self):
         self.assertNotIn("Using", self.suites)
+
+    def test_main_exits_3_when_no_suites(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "empty.log")
+            out = os.path.join(d, "r.json")
+            with open(log, "w") as fh:
+                fh.write("no tests here\n")
+            self.assertEqual(pt.main(["parse", out, log]), 3)
 
 
 if __name__ == "__main__":

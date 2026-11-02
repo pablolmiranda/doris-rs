@@ -79,18 +79,21 @@ HOST_ALIAS=(--add-host host.docker.internal:host-gateway)
 set +e
 docker run --rm \
   --network "$NETWORK" \
-  "${HOST_ALIAS[@]}" \
+  ${HOST_ALIAS[@]+"${HOST_ALIAS[@]}"} \
   -v "$SRC:/doris" \
   -v "$OUT:/out" \
   -v doris-oracle-m2:/root/.m2 \
   -e DORIS_HOME=/doris \
   "$RUNNER_IMAGE" \
-  "cd /doris && ./run-regression-test.sh --teamcity --conf /out/conf --run -d '$DIRS' -parallel $PARALLEL -suiteParallel $SUITE_PARALLEL ${EXTRA_ARGS[*]}" \
+  "cd /doris && ./run-regression-test.sh --teamcity --conf /out/conf --run -d '$DIRS' -parallel $PARALLEL -suiteParallel $SUITE_PARALLEL ${EXTRA_ARGS[@]+"${EXTRA_ARGS[*]}"}" \
   2>&1 | tee "$OUT/teamcity.log"
 FRAMEWORK_EXIT=${PIPESTATUS[0]}
 set -e
 
-python3 "$HERE/parse_teamcity.py" "$OUT/results.json" "$OUT/teamcity.log"
+if ! python3 "$HERE/parse_teamcity.py" "$OUT/results.json" "$OUT/teamcity.log"; then
+  echo "error: no suite results parsed; see $OUT/teamcity.log (framework exit $FRAMEWORK_EXIT)" >&2
+  exit 2
+fi
 python3 - "$OUT/meta.json" "$FRAMEWORK_EXIT" <<'PY'
 import json, sys, datetime
 path, code = sys.argv[1], int(sys.argv[2])

@@ -9,6 +9,7 @@
 #   make baseline SUITES=...         run suites against the reference (PROFILE), store baselines/<id>.json
 #   make check TARGET=rust SUITES=.. run suites against a target and gate against the baseline
 #   make compare BASE=.. CAND=..     compare two results files
+#   make triage RESULTS=..           failures by directory and top error phrases
 #   make test                        unit tests for the harness scripts
 
 SHELL := /bin/bash
@@ -28,7 +29,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,13p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,14p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -70,6 +71,7 @@ baseline: src
 	bin/run_suites.sh reference-$(PROFILE) "$(SUITES)"
 	cp results/reference-$(PROFILE)/latest/results.json "$(BASELINE)"
 	@echo "baseline written: $(BASELINE)"
+	@python3 bin/triage.py "$(BASELINE)" --top 6
 
 check: src
 	@test -f "$(BASELINE)" || { echo "no baseline $(BASELINE); run: make baseline SUITES=$(SUITES)"; exit 1; }
@@ -81,7 +83,10 @@ compare:
 	@test -n "$(BASE)" -a -n "$(CAND)" || { echo "usage: make compare BASE=a.json CAND=b.json"; exit 1; }
 	python3 bin/compare.py "$(BASE)" "$(CAND)" --ignore suites/ignore.txt
 
+triage:
+	python3 bin/triage.py "$(or $(RESULTS),results/reference-$(PROFILE)/latest/results.json)"
+
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare test
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test

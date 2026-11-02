@@ -1,14 +1,1112 @@
 {
   "meta": {
     "counts": {
-      "failed": 0,
+      "failed": 2,
       "incomplete": 0,
-      "passed": 0
+      "passed": 180
     },
     "sources": [
-      "/Users/pablolacerdademiranda/projects/honeycomb.io-alternative/doris-rs/oracle/results/reference-single/20261101-213716/teamcity.log"
+      "/Users/pablolacerdademiranda/projects/honeycomb.io-alternative/doris-rs/oracle/results/reference-single/20261101-215715/teamcity.log"
     ],
-    "summary": null
+    "summary": {
+      "failed": 2,
+      "fatal_scripts": 0,
+      "skipped": 0,
+      "total": 182
+    }
   },
-  "suites": {}
+  "suites": {
+    "correctness_p0.test_agg_materialize.test_agg_materialize": {
+      "details": null,
+      "duration_ms": 106,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_always_nullable_window_function.test_always_nullable_window_function": {
+      "details": null,
+      "duration_ms": 163,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_and_or.test_and_or": {
+      "details": null,
+      "duration_ms": 252,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_array_order_by.test_array_order_by": {
+      "details": null,
+      "duration_ms": 490,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_array_string_order_by.test_array_string_order_by": {
+      "details": null,
+      "duration_ms": 160,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_assert_row_num.test_assert_num_rows": {
+      "details": null,
+      "duration_ms": 91,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_avg.test_avg": {
+      "details": null,
+      "duration_ms": 2428,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bit_function.test_bit_functions": {
+      "details": null,
+      "duration_ms": 106,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bit_shift_lagency.test_bit_shift": {
+      "details": null,
+      "duration_ms": 95,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bit_shift_nereids.test_bit_shift_nereids": {
+      "details": null,
+      "duration_ms": 104,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bit_test_function.test_bit_test_function": {
+      "details": null,
+      "duration_ms": 258,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bitmap_count.test_bitmap_count": {
+      "details": null,
+      "duration_ms": 311,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bitmap_intersect.test_bitmap_intersect": {
+      "details": null,
+      "duration_ms": 145,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bitmap_serialize.test_bitmap_serialize": {
+      "details": null,
+      "duration_ms": 132,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bucket_join_with_colocate_table.test_bucket_join_with_colocate_table": {
+      "details": null,
+      "duration_ms": 90,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_bugfix_block_reuse.test_bugfix_block_reuse": {
+      "details": null,
+      "duration_ms": 64,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_case_when.test_case_when": {
+      "details": null,
+      "duration_ms": 232,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_case_when_date.test_case_when_date": {
+      "details": null,
+      "duration_ms": 70,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_case_when_decimal.test_case_when_decimal": {
+      "details": null,
+      "duration_ms": 106,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_cast_date_decimal.test_cast_date_decimal": {
+      "details": null,
+      "duration_ms": 15,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_cast_decimal.test_cast_decimal": {
+      "details": null,
+      "duration_ms": 32,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_cast_in.test_cast_in": {
+      "details": null,
+      "duration_ms": 20,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_cast_null.test_cast_null": {
+      "details": null,
+      "duration_ms": 61,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_char_default_value.test_char_default_value": {
+      "details": null,
+      "duration_ms": 213,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_char_implicit_cast.test_char_implicit_cast": {
+      "details": null,
+      "duration_ms": 26,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_colocate_join_of_column_order.test_colocate_join_of_column_order": {
+      "details": null,
+      "duration_ms": 2243,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_colocate_join_with_different_tablets.test_colocate_join_with_different_tablets": {
+      "details": null,
+      "duration_ms": 965,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_column_prune_in_hash_join.test_column_prune_in_hash_join": {
+      "details": null,
+      "duration_ms": 224,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_constant_having.test_constant_having": {
+      "details": null,
+      "duration_ms": 38,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_ctas_mv.test_ctas_mv.test_ctas_mv": {
+      "details": null,
+      "duration_ms": 3562,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_current_date.test_current_date": {
+      "details": null,
+      "duration_ms": 196,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_current_timestamp.test_current_timestamp": {
+      "details": null,
+      "duration_ms": 513,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_date_diff.test_date_diff": {
+      "details": null,
+      "duration_ms": 61,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_date_trunc_error.test_datelike_false_alarm": {
+      "details": "java.lang.IllegalStateException: Check tag 'sql' failed:\nCheck tag 'sql' failed, line 1, DECIMAL result mismatch.\nExpect cell is: 1705285425.000000\nBut real is   : 1705314225.000000\nrelative error is: 1.688838313654482E-5, bigger than 1.0E-8\nline 1 mismatch\nExpectRow: [1, match, 2024-01-15T10:23:45, 2024-01-15T00:00, 2024-01-31, 2024-01-15, 2024-01-15T10:23:45, 1705285425.000000]\nRealRow  : [1, match, 2024-01-15T10:23:45, 2024-01-15T00:00, 2024-01-31, 2024-01-15, 2024-01-15T10:23:45, 1705314225.000000]\n\nsql:\n\n        SELECT\n            t.id,\n            t.name,\n            t.event_time,\n            date_trunc('day', t.event_time) AS trunc_day,\n            last_day(t.event_time) AS last_day,\n            to_monday(t.event_time) AS to_monday,\n            from_microsecond( unix_timestamp(t.eve",
+      "duration_ms": 294,
+      "message": "Exception in correctness_p0/test_date_trunc_error.groovy(line 62):\n\n    sql \"\"\"\n        CREATE TABLE dt_one_row (\n            k INT\n        )\n        DISTRIBUTED BY HASH(k) BUCKETS 1\n        PROPERTIES (\"replication_num\" = \"1\");\n    \"\"\"\n    sql \"INSERT INTO dt_one_row VALUES (1);\"\n\n    qt_sql \"\"\"\n^^^^^^^^^^^^^^^^^^^^^^^^^^ERROR LINE^^^^^^^^^^^^^^^^^^^^^^^^^^\n        SELECT\n            t.id,\n            t.name,\n            t.event_time,\n            date_trunc('day', t.event_time) AS trunc_day,\n            last_day(t.event_time) AS last_day,\n            to_monday(t.event_time) AS to_monday,\n            from_microsecond( unix_timestamp(t.event_time) * 1000000 ) AS microsecond,\n            unix_timestamp( CAST(t.event_time AS VARCHAR), \"%Y-%m-%d %H:%i:%s\" ) AS unix_timestamp\n        FROM (\n\nException:",
+      "status": "failed"
+    },
+    "correctness_p0.test_default_bitmap_empty.test_default_bitmap_empty": {
+      "details": null,
+      "duration_ms": 435,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_default_double.test_default_double": {
+      "details": null,
+      "duration_ms": 142,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_default_e.test_default_e": {
+      "details": null,
+      "duration_ms": 128,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_default_hll.test_default_hll": {
+      "details": null,
+      "duration_ms": 361,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_default_pi.test_default_pi": {
+      "details": null,
+      "duration_ms": 334,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_dict_range_predicate.test_dict_range_predicate": {
+      "details": null,
+      "duration_ms": 51,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_distinct_agg.test_distinct_agg": {
+      "details": null,
+      "duration_ms": 117,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_distinct_streaming_agg_local_shuffle.test_distinct_streaming_agg_local_shuffle": {
+      "details": null,
+      "duration_ms": 153,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_div_decimal_overflow.test_div_decimal_overflow": {
+      "details": null,
+      "duration_ms": 46,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_equal_for_null.test_equal_for_null": {
+      "details": null,
+      "duration_ms": 64,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_first_value_window.test_first_value_window": {
+      "details": null,
+      "duration_ms": 356,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_function_conjunct.test_function_conjunct": {
+      "details": null,
+      "duration_ms": 45,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_function_signature_all_types.test_function_signature_all_types": {
+      "details": null,
+      "duration_ms": 1464,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_group_by_constant.test_group_by_constant": {
+      "details": null,
+      "duration_ms": 60,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_group_having_alias.test_group_having_alias": {
+      "details": null,
+      "duration_ms": 157,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_grouping_sets_empty.test_grouping_sets_empty": {
+      "details": null,
+      "duration_ms": 80,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_grouping_with_alias.test_grouping_with_alias": {
+      "details": null,
+      "duration_ms": 70,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_hash_join_local_shuffle.test_hash_join_local_shuffle": {
+      "details": null,
+      "duration_ms": 387,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_having_subquery_with_nullliteral.test_having_subquery_with_nullliteral": {
+      "details": null,
+      "duration_ms": 95,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_implict_cast.test_implicit_cast": {
+      "details": null,
+      "duration_ms": 71,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_in_predicate_push_down.test_in_predicate_push_down": {
+      "details": null,
+      "duration_ms": 246,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_inlineview_error_msg.test_inlineview_error_msg": {
+      "details": null,
+      "duration_ms": 20,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview": {
+      "details": null,
+      "duration_ms": 42,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_inlineview_with_project.test_inlineview_with_project": {
+      "details": null,
+      "duration_ms": 478,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_inlineview_with_window_function.test_inlineview_with_window_function": {
+      "details": null,
+      "duration_ms": 237,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_join_should_not_reorder.test_join_should_not_reorder": {
+      "details": null,
+      "duration_ms": 17,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_join_with_projection.test_join_with_projection": {
+      "details": null,
+      "duration_ms": 87,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_join_without_condition.test_join_without_condition": {
+      "details": null,
+      "duration_ms": 66,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_keywords.test_keywords": {
+      "details": null,
+      "duration_ms": 49,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_lag_lead_window.test_lag_lead_window": {
+      "details": null,
+      "duration_ms": 199,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_last_value_window.test_last_value_window": {
+      "details": null,
+      "duration_ms": 137,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_like_predicate_with_concat.test_like_predicate_with_concat": {
+      "details": null,
+      "duration_ms": 127,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_like_predicate_with_nullable.test_like_predicate_with_nullable": {
+      "details": null,
+      "duration_ms": 53,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_many_inlineview.test_many_inlineview": {
+      "details": null,
+      "duration_ms": 24,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_map_order_by.test_map_order_by": {
+      "details": null,
+      "duration_ms": 147,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_mask_function.test_mask_function": {
+      "details": null,
+      "duration_ms": 203,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_merge_topn_offset.test_merge_topn_offset": {
+      "details": null,
+      "duration_ms": 50,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_min_max_window.test_min_max_window": {
+      "details": null,
+      "duration_ms": 55,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_multi_distinct.test_multi_distinct": {
+      "details": null,
+      "duration_ms": 147,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_mv_case.test_mv_case.test_mv_case": {
+      "details": null,
+      "duration_ms": 13036,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_nested_lateral_view.test_nested_lateral_view": {
+      "details": null,
+      "duration_ms": 84,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_no_grouping_window.test_no_grouping_window": {
+      "details": null,
+      "duration_ms": 54,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_null_aware_left_anti_join.test_null_aware_left_anti_join": {
+      "details": null,
+      "duration_ms": 185,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_null_equal.test_null_equal": {
+      "details": null,
+      "duration_ms": 220,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_null_predicate.test_null_predicate": {
+      "details": null,
+      "duration_ms": 231,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_order_by.test_order_by": {
+      "details": null,
+      "duration_ms": 187,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_orderby_mod.test_order_by_mod": {
+      "details": null,
+      "duration_ms": 60,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_sort.test_outer_join_sort": {
+      "details": null,
+      "duration_ms": 106,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_cross_join.test_outer_join_with_cross_join": {
+      "details": null,
+      "duration_ms": 197,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_empty_node.test_outer_join_with_empty_node": {
+      "details": null,
+      "duration_ms": 79,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_grouping.test_outer_join_with_grouping": {
+      "details": null,
+      "duration_ms": 130,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_inline_view.test_outer_join_with_inline_view": {
+      "details": null,
+      "duration_ms": 562,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_null_value.test_outer_join_with_null_value": {
+      "details": null,
+      "duration_ms": 272,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_order_by.test_outer_join_with_order_by": {
+      "details": null,
+      "duration_ms": 96,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_subquery.test_outer_join_with_subquery": {
+      "details": null,
+      "duration_ms": 168,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function": {
+      "details": null,
+      "duration_ms": 349,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2": {
+      "details": null,
+      "duration_ms": 218,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_outerjoin_jsonb.test_outerjoin_jsonb": {
+      "details": null,
+      "duration_ms": 21,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_partial_const_args_for_function.test_partial_const_args_for_function": {
+      "details": null,
+      "duration_ms": 67,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_probe_clean.test_probe_clean": {
+      "details": null,
+      "duration_ms": 79,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_pushdown_constant.test_pushdown_constant": {
+      "details": null,
+      "duration_ms": 72,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_rand_filter.test_rand_filter": {
+      "details": null,
+      "duration_ms": 57,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_rf_in_list_not_erased_by_scope_range.test_rf_in_list_not_erased_by_scope_range": {
+      "details": null,
+      "duration_ms": 69,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_runtime_filter.test_runtime_filter": {
+      "details": null,
+      "duration_ms": 143,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_runtime_filter_outer_join_nullable_side.test_runtime_filter_outer_join_nullable_side": {
+      "details": null,
+      "duration_ms": 102,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_runtimefilter_with_window.test_runtimefilter_with_window": {
+      "details": null,
+      "duration_ms": 44,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_scan_topn_limit.test_scan_topn_limit": {
+      "details": null,
+      "duration_ms": 727,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_constant.test_select_constant": {
+      "details": null,
+      "duration_ms": 15,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_decimal.test_select_decimal": {
+      "details": null,
+      "duration_ms": 20,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_stddev_variance_window.test_select_stddev_variance_window": {
+      "details": null,
+      "duration_ms": 351,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_variance_agg.test_select_variance_agg": {
+      "details": null,
+      "duration_ms": 105,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_with_predicate_like.test_select_with_predicate_like": {
+      "details": null,
+      "duration_ms": 101,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_select_with_prefix.test_select_with_prefix": {
+      "details": null,
+      "duration_ms": 189,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_sequence_col_datetimev2.test_sequence_col_datetimev2": {
+      "details": null,
+      "duration_ms": 37,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_sequence_col_default_value.test_sequence_col_default_value": {
+      "details": null,
+      "duration_ms": 91,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_set_operation.test_set_operation": {
+      "details": null,
+      "duration_ms": 279,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_show_dummy_variables.test_show_dummy_variables": {
+      "details": null,
+      "duration_ms": 6,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_similar_query_with_different_results.test_similar_query_with_different_results": {
+      "details": null,
+      "duration_ms": 56,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_sort.test_sort": {
+      "details": "java.sql.SQLException: errCode = 2, detailMessage = Database [test_query_db] does not exist.(line 2, pos 43)\n\tat com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:129)\n\tat com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:122)\n\tat com.mysql.cj.jdbc.ClientPreparedStatement.executeInternal(ClientPreparedStatement.java:953)\n\tat com.mysql.cj.jdbc.ClientPreparedStatement.execute(ClientPreparedStatement.java:371)\n\tat org.codehaus.groovy.vmplugin.v8.IndyInterface.fromCache(IndyInterface.java:321)\n\tat org.apache.doris.regression.util.JdbcUtils$_executeToStringList_closure3.doCall(JdbcUtils.groovy:112)\n\tat jdk.internal.reflect.GeneratedMethodAccessor30.invoke(Unknown Source)\n\tat java.base/jdk.internal.reflect.DelegatingMethodAccessor",
+      "duration_ms": 134,
+      "message": "Exception in correctness_p0/test_sort.groovy(line 57):\n\n        INSERT INTO test_sort_table VALUES (1, '1', '1', '1', '1', '1', '1', 1, '1');\n    \"\"\"\n\n    qt_sql \"\"\"\n        select count(1) from (select* from test_sort_table where p_partkey = 1 order by p_partkey desc limit 1) a;\n    \"\"\"\n\n    sql \"DROP TABLE test_sort_table\"\n\n    qt_sql \"\"\"\n^^^^^^^^^^^^^^^^^^^^^^^^^^ERROR LINE^^^^^^^^^^^^^^^^^^^^^^^^^^\n        select b.k1, a.k1, b.k4, a.k4 from test_query_db.baseall a left join test_query_db.test b on a.k2 = b.k4  order by 1, 2, 3, 4;\n    \"\"\"\n}\n\nException:",
+      "status": "failed"
+    },
+    "correctness_p0.test_string_pad_function.test_string_pad_function": {
+      "details": null,
+      "duration_ms": 1724,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_string_to_decimal.test_string_to_decimal": {
+      "details": null,
+      "duration_ms": 39,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_struct_order_by.test_struct_order_by": {
+      "details": null,
+      "duration_ms": 143,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_subquery_grouping.test_subquery_grouping": {
+      "details": null,
+      "duration_ms": 66,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_subquery_with_agg.test_subquery_with_agg": {
+      "details": null,
+      "duration_ms": 105,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_subquery_with_limit.test_limit_subquery": {
+      "details": null,
+      "duration_ms": 58,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_table_function.test_table_function": {
+      "details": null,
+      "duration_ms": 117,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_table_function_with_subquery.test_table_function_with_subquery": {
+      "details": null,
+      "duration_ms": 52,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_temp_partition.test_temp_partition": {
+      "details": null,
+      "duration_ms": 38,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_time_round.test_time_round": {
+      "details": null,
+      "duration_ms": 2531,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_topn_with_cast_to_date.test_topn_with_cast_to_date": {
+      "details": null,
+      "duration_ms": 47,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_union_has_in_predicate.test_union_has_in_predicate": {
+      "details": null,
+      "duration_ms": 65,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_union_subquery_groupby.test_union_subquery_groupby": {
+      "details": null,
+      "duration_ms": 76,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_window_function_error.test_window_function_error": {
+      "details": null,
+      "duration_ms": 42,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_window_function_with_project.test_window_function_with_project": {
+      "details": null,
+      "duration_ms": 21,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_with_false_predicate.test_with_false_predicate": {
+      "details": null,
+      "duration_ms": 87,
+      "message": null,
+      "status": "passed"
+    },
+    "correctness_p0.test_xor_pred.test_xor_pred": {
+      "details": null,
+      "duration_ms": 57,
+      "message": null,
+      "status": "passed"
+    },
+    "index_p0.test_index.test_index": {
+      "details": null,
+      "duration_ms": 33,
+      "message": null,
+      "status": "passed"
+    },
+    "index_p0.test_index_meta.index_meta": {
+      "details": null,
+      "duration_ms": 9121,
+      "message": null,
+      "status": "passed"
+    },
+    "index_p0.test_ngram_bloomfilter_index.test_ngram_bloomfilter_index": {
+      "details": null,
+      "duration_ms": 257,
+      "message": null,
+      "status": "passed"
+    },
+    "index_p0.test_ngram_bloomfilter_index_change.test_ngram_bloomfilter_index_change": {
+      "details": null,
+      "duration_ms": 276308,
+      "message": null,
+      "status": "passed"
+    },
+    "index_p0.test_ngram_bloomfilter_index_like_escape.test_ngram_bloomfilter_index_like_escape": {
+      "details": null,
+      "duration_ms": 3634,
+      "message": null,
+      "status": "passed"
+    },
+    "mysql_compatibility_p0.header.header": {
+      "details": null,
+      "duration_ms": 35,
+      "message": null,
+      "status": "passed"
+    },
+    "mysql_compatibility_p0.metadata.metadata": {
+      "details": null,
+      "duration_ms": 20,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.load.test_load_and_schema_change_row_store": {
+      "details": null,
+      "duration_ms": 24244,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.load_ck.test_load_and_schema_change_row_store_ck": {
+      "details": null,
+      "duration_ms": 205111,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_point_query.test_point_query": {
+      "details": null,
+      "duration_ms": 3228,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_point_query_ck.test_point_query_ck": {
+      "details": null,
+      "duration_ms": 1150,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_point_query_partition.test_point_query_partition": {
+      "details": null,
+      "duration_ms": 323,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_point_query_partition_ck.test_point_query_partition_ck": {
+      "details": null,
+      "duration_ms": 371,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_point_query_timezone.test_point_query_timezone": {
+      "details": null,
+      "duration_ms": 123,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_rowstore.test_rowstore": {
+      "details": null,
+      "duration_ms": 1747,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_rowstore_ck.test_rowstore_ck": {
+      "details": null,
+      "duration_ms": 1607,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_rowstore_query.test_rowstore": {
+      "details": null,
+      "duration_ms": 94,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_rowstore_query_ck.test_rowstore_ck": {
+      "details": null,
+      "duration_ms": 91,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_should_not_mv_rewrite.test_should_not_mv_rewrite": {
+      "details": null,
+      "duration_ms": 3201,
+      "message": null,
+      "status": "passed"
+    },
+    "point_query_p0.test_update.test_update": {
+      "details": null,
+      "duration_ms": 134,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_disable_root_variant_match.test_disable_root_variant_match": {
+      "details": null,
+      "duration_ms": 5123,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_boundary_cases.test_search_boundary_cases": {
+      "details": null,
+      "duration_ms": 5440,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_cache.test_search_cache": {
+      "details": null,
+      "duration_ms": 2170,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_default_field_operator.test_search_default_field_operator": {
+      "details": null,
+      "duration_ms": 3192,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_dsl_operators.test_search_dsl_operators": {
+      "details": null,
+      "duration_ms": 3243,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_dsl_syntax.test_search_dsl_syntax": {
+      "details": null,
+      "duration_ms": 6080,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_escape.test_search_escape": {
+      "details": null,
+      "duration_ms": 3153,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_exact_basic.test_search_exact_basic": {
+      "details": null,
+      "duration_ms": 3100,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_exact_lowercase.test_search_exact_lowercase": {
+      "details": null,
+      "duration_ms": 3103,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_exact_match.test_search_exact_match": {
+      "details": null,
+      "duration_ms": 7299,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_exact_multi_index.test_search_exact_multi_index": {
+      "details": null,
+      "duration_ms": 3223,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_field_group_query.test_search_field_group_query": {
+      "details": null,
+      "duration_ms": 95,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_function.test_search_function": {
+      "details": null,
+      "duration_ms": 10806,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_inverted_index.test_search_inverted_index": {
+      "details": null,
+      "duration_ms": 16806,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_inverted_index_profile.test_search_inverted_index_profile": {
+      "details": null,
+      "duration_ms": 181,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_inverted_is_null_pushdown.test_search_inverted_is_null_pushdown": {
+      "details": null,
+      "duration_ms": 90,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_lucene_mode.test_search_lucene_mode": {
+      "details": null,
+      "duration_ms": 3176,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_mow_support.test_search_mow_support": {
+      "details": null,
+      "duration_ms": 97,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_multi_analyzer_lucene.test_search_multi_analyzer_lucene": {
+      "details": null,
+      "duration_ms": 6242,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_multi_field.test_search_multi_field": {
+      "details": null,
+      "duration_ms": 5402,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_not_null_bitmap.test_search_not_null_bitmap": {
+      "details": null,
+      "duration_ms": 15313,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_null_regression.test_search_null_regression": {
+      "details": null,
+      "duration_ms": 5221,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_null_semantics.test_search_null_semantics": {
+      "details": null,
+      "duration_ms": 25465,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_regexp_lowercase.test_search_regexp_lowercase": {
+      "details": null,
+      "duration_ms": 5290,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_score_cache.test_search_score_cache": {
+      "details": null,
+      "duration_ms": 333,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_slash_in_term.test_search_slash_in_term": {
+      "details": null,
+      "duration_ms": 3211,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_usage_restrictions.test_search_usage_restrictions": {
+      "details": null,
+      "duration_ms": 5168,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_variant_dual_index_reader.test_search_variant_dual_index_reader": {
+      "details": null,
+      "duration_ms": 5182,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_variant_subcolumn_analyzer.test_search_variant_subcolumn_analyzer": {
+      "details": null,
+      "duration_ms": 10220,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_variant_wildcard.test_search_variant_wildcard": {
+      "details": null,
+      "duration_ms": 5147,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_variant_wildcard_custom_analyzer.test_search_variant_wildcard_custom_analyzer": {
+      "details": null,
+      "duration_ms": 5159,
+      "message": null,
+      "status": "passed"
+    },
+    "search.test_search_vs_match_consistency.test_search_vs_match_consistency": {
+      "details": null,
+      "duration_ms": 30762,
+      "message": null,
+      "status": "passed"
+    }
+  }
 }

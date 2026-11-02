@@ -18,6 +18,7 @@ SUMMARY = re.compile(
     r"Test (\d+) suites, failed (\d+) suites, fatal (\d+) scripts, skipped (\d+) scripts"
 )
 UNESCAPE = {"|": "|", "'": "'", "n": "\n", "r": "\r", "[": "[", "]": "]"}
+DETAILS_LIMIT = 800
 
 
 def unescape(value):
@@ -70,11 +71,15 @@ def parse_lines(lines):
         if not name:
             continue
         entry = suites.setdefault(
-            name, {"status": "incomplete", "duration_ms": None, "message": None}
+            name,
+            {"status": "incomplete", "duration_ms": None, "message": None, "details": None},
         )
         if kind == "testFailed":
             entry["status"] = "failed"
             entry["message"] = attrs.get("message") or ""
+            # Keep the head of the stack/detail text: it holds the server error, the rest is
+            # Groovy frames. DETAILS_LIMIT keeps baselines small.
+            entry["details"] = (attrs.get("details") or "")[:DETAILS_LIMIT]
         elif kind == "testFinished":
             if entry["status"] != "failed":
                 entry["status"] = "passed"
@@ -105,7 +110,8 @@ def main(argv):
         f"parsed {len(result['suites'])} suites: "
         f"{counts['passed']} passed, {counts['failed']} failed, {counts['incomplete']} incomplete"
     )
-    return 0
+    # Zero suites means the framework never ran a test (build failure, bad address, ...).
+    return 0 if result["suites"] else 3
 
 
 if __name__ == "__main__":

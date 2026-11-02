@@ -7,7 +7,61 @@ services:
     stop_grace_period: 60s
     environment:
       FE_HEAP: ${FE_HEAP:-1024m}
-      BE_CONFIG_EXTRA: "mem_limit = ${BE_MEM_LIMIT:-40%}"
+      # Upstream p0 pipeline settings (regression-test/pipeline/p0/conf/fe.conf at the pinned
+      # tag) that the suites assume. Fuzzy-mode and environment-specific lines are left out so
+      # the baseline is deterministic.
+      FE_CONFIG_EXTRA: |
+        catalog_trash_expire_second = 1
+        enable_outfile_to_local = true
+        tablet_create_timeout_second = 100
+        remote_fragment_exec_timeout_ms = 120000
+        enable_feature_binlog = true
+        enable_debug_points = true
+        enable_mtmv = true
+        dynamic_partition_check_interval_seconds = 3
+        desired_max_waiting_jobs = 200
+        edit_log_roll_num = 1000
+        history_job_keep_max_second = 300
+        streaming_label_keep_max_second = 300
+        label_keep_max_second = 300
+        enable_job_schedule_second_for_test = true
+        mtmv_task_queue_size = 4096
+        enable_workload_group = true
+        publish_topic_info_interval_ms = 1000
+        workload_sched_policy_interval_ms = 1000
+        disable_decimalv2 = false
+        disable_datev1 = false
+        master_sync_policy = WRITE_NO_SYNC
+        replica_sync_policy = WRITE_NO_SYNC
+        enable_advance_next_id = true
+        max_query_profile_num = 2000
+        max_spilled_profile_num = 2000
+        max_bucket_num_per_partition = 512
+        max_remote_file_system_cache_num = 1000
+        force_olap_table_replication_allocation = tag.location.default:1
+      # Upstream p0 pipeline settings (regression-test/pipeline/p0/conf/be.conf); fuzzy mode,
+      # Python UDF, and Trino connector lines are left out.
+      BE_CONFIG_EXTRA: |
+        mem_limit = ${BE_MEM_LIMIT:-40%}
+        path_gc_check_interval_second = 1
+        max_garbage_sweep_interval = 180
+        enable_stream_load_record = true
+        stream_load_record_batch_size = 500
+        max_depth_of_expr_tree = 200
+        enable_feature_binlog = true
+        max_sys_mem_available_low_water_mark_bytes = 69206016
+        user_files_secure_path = /
+        enable_debug_points = true
+        enable_debug_log_timeout_secs = 0
+        enable_missing_rows_correctness_check = true
+        webserver_num_workers = 128
+        enable_write_index_searcher_cache = true
+        enable_batch_download = true
+        remove_unused_remote_files_interval_sec = 60
+        cold_data_compaction_interval_sec = 60
+        enable_parquet_page_index = true
+        enable_fetch_rowsets_from_peer_replicas = true
+        enable_segment_rows_consistency_check = true
     ports:
       - "${FE_PORT:-9030}:9030"
       - "${FE_HTTP_PORT:-8030}:8030"

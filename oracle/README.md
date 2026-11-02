@@ -23,6 +23,7 @@ Any implementation that speaks those protocols can be measured by the same 9,000
 | `bin/override_conf.py` | Copies the upstream conf and overrides only the address keys |
 | `bin/parse_teamcity.py` | TeamCity service messages → `results.json` (passed/failed/incomplete) |
 | `bin/compare.py` | Baseline vs candidate → regression/missing/fixed/new/known, exit 1 on regressions |
+| `bin/triage.py` | Failures per directory and top server error phrases for a results file |
 | `baselines/` | Committed reference results, one file per version, profile, and suite list |
 | `results/` | Untracked raw runs: conf, log, results.json, meta.json; `latest` symlink per target |
 
@@ -39,7 +40,16 @@ make baseline SUITES=suites/p0-core.txt
 ```
 
 The first `baseline` also downloads the framework's Maven dependencies into the
-`doris-oracle-m2` volume, so it is slow once.
+`doris-oracle-m2` volume, so it is slow once. The runner image builds the Thrift 0.24.0 compiler
+from source because the upstream script regenerates Thrift Java sources before compiling the
+framework; that is a one-time image build cost.
+
+After every baseline the Makefile prints a triage: failures per directory and the most common
+server errors. Read it before trusting the baseline. Hundreds of failures with one error such as
+`Table ... does not exist` mean a shared fixture failed to load (usually a dataset fetched from
+S3 with credentials the harness does not have), not hundreds of behaviors. Those suites are
+recorded as known failures and never gate anything; add real S3 credentials to the rendered conf
+if you want them to count.
 
 ## Gating doris-rs
 
@@ -60,6 +70,12 @@ belong in `suites/ignore.txt` with a reason; nothing else does.
   from the sibling master checkout while suites come from the release worktree.
 - **Network.** The runner joins the `doris-oracle` Docker network so stream load redirects to BE
   addresses resolve. A Rust binary on the host is reached as `host.docker.internal`.
+- **Server config matches upstream CI.** Both compose files append the FE and BE settings that
+  upstream's p0 pipeline uses (`regression-test/pipeline/p0/conf/` at the pinned tag): legacy
+  DATE and DECIMAL types enabled, debug points, binlog, MTMV, short label retention, single
+  replica forced on the single profile. Fuzzy session-variable mode is deliberately left out so a
+  baseline is deterministic. Without these, hundreds of suites fail on the reference for reasons
+  unrelated to behavior.
 - **Baselines contain failures.** A reference run is not expected to be 100 percent green: some
   suites need external systems (Kafka, HDFS, S3) or three replicas. The gate only cares about
   suites that passed on the reference.

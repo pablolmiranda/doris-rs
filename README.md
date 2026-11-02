@@ -14,7 +14,11 @@ Java Frontend plus C++ Backend.
 2. **The existing Doris test suite is the oracle.** The regression framework in the upstream repo
    is a black-box suite that talks only through public protocols. It runs unchanged against the
    reference C++ build and against this project. See `oracle/`.
-3. **Migrate one component at a time, with rollback.** Every step must leave a mixed cluster
+3. **One native binary, easy to deploy and run.** `doris-rs` ships as a single statically linked
+   executable started with one command and one config file. It is never containerized by this
+   project; Docker appears only in `oracle/`, where it hosts the C++ reference cluster and the
+   Java test runner that we use to measure ourselves and will never ship.
+4. **Migrate one component at a time, with rollback.** Every step must leave a mixed cluster
    (old FE with new BE, or the reverse) working, and data written by the new code must stay
    readable by the old code.
 

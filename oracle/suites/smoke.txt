@@ -1,5 +1,8 @@
 # Small, fast set for checking the harness itself and a first look at a new target.
-# One suite directory per line, relative to regression-test/suites.
+# Chosen for having no external data dependencies (no S3/HDFS loads), so the reference
+# should be close to fully green. One suite directory per line.
 mysql_compatibility_p0
-datatype_p0
 point_query_p0
+correctness_p0
+search
+index_p0
