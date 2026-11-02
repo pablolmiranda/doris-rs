@@ -71,10 +71,15 @@ JSON
 echo "target=$TARGET fe=${FE_HOST}:${FE_QUERY_PORT} src=$DORIS_SRC_TAG@$SRC_COMMIT dirs=$DIRS"
 echo "output: $OUT"
 
+# host.docker.internal is only meaningful on a bridge network; a container: network shares the
+# target's namespace and forbids --add-host.
+HOST_ALIAS=(--add-host host.docker.internal:host-gateway)
+[[ "$NETWORK" == container:* ]] && HOST_ALIAS=()
+
 set +e
 docker run --rm \
   --network "$NETWORK" \
-  --add-host host.docker.internal:host-gateway \
+  "${HOST_ALIAS[@]}" \
   -v "$SRC:/doris" \
   -v "$OUT:/out" \
   -v doris-oracle-m2:/root/.m2 \

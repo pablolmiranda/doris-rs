@@ -6,7 +6,7 @@
 #   make image                       build the reference all-in-one image for DORIS_VERSION
 #   make runner                      build the JDK 17 + Maven runner image
 #   make up / make down              start / stop the reference cluster (PROFILE=single|multi)
-#   make baseline SUITES=...         run suites against the reference, store baselines/<id>.json
+#   make baseline SUITES=...         run suites against the reference (PROFILE), store baselines/<id>.json
 #   make check TARGET=rust SUITES=.. run suites against a target and gate against the baseline
 #   make compare BASE=.. CAND=..     compare two results files
 #   make test                        unit tests for the harness scripts
@@ -67,8 +67,8 @@ sql:
 
 baseline: src
 	@test -n "$(SUITES)"
-	bin/run_suites.sh reference "$(SUITES)"
-	cp results/reference/latest/results.json "$(BASELINE)"
+	bin/run_suites.sh reference-$(PROFILE) "$(SUITES)"
+	cp results/reference-$(PROFILE)/latest/results.json "$(BASELINE)"
 	@echo "baseline written: $(BASELINE)"
 
 check: src

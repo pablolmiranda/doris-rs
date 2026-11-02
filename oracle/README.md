@@ -17,7 +17,7 @@ Any implementation that speaks those protocols can be measured by the same 9,000
 | `compose/reference-single.yml` | 1 FE + 1 BE reference cluster (upstream all-in-one image) |
 | `compose/reference-multi.yml` | 3 FE + 3 BE reference cluster, for replica and failover suites |
 | `compose/runner.Dockerfile` | JDK 17 + Maven image that runs the Groovy framework |
-| `targets/*.env` | Where a target cluster listens (`reference`, `rust`, add more) |
+| `targets/*.env` | Where a target cluster listens (`reference-single`, `reference-multi`, `rust`, add more) |
 | `suites/*.txt` | Which suite directories to run; `ignore.txt` lists known-flaky suites |
 | `bin/run_suites.sh` | Renders the conf, runs the framework in the runner container, parses output |
 | `bin/override_conf.py` | Copies the upstream conf and overrides only the address keys |

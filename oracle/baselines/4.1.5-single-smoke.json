@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "counts": {
+      "failed": 0,
+      "incomplete": 0,
+      "passed": 0
+    },
+    "sources": [
+      "/Users/pablolacerdademiranda/projects/honeycomb.io-alternative/doris-rs/oracle/results/reference-single/20261101-213716/teamcity.log"
+    ],
+    "summary": null
+  },
+  "suites": {}
+}
