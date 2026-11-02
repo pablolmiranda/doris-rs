@@ -1,0 +1,14 @@
+[package]
+name = "doris-thrift"
+version = "0.1.0"
+description = "Rust types generated from the pinned Apache Doris Thrift IDL, with a per-method codec table"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+thrift = { workspace = true }
+thiserror = { workspace = true }

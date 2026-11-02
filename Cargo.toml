@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/doris-proto", "crates/doris-segment"]
+members = ["crates/doris-proto", "crates/doris-segment", "crates/doris-thrift"]
 
 [workspace.package]
 edition = "2021"
@@ -18,3 +18,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 lz4_flex = "0.14"
 zstd = "0.14"
+thrift = "0.25"
