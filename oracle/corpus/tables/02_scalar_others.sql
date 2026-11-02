@@ -11,7 +11,7 @@ CREATE TABLE scalar_others (
     c_string   STRING
 ) DUPLICATE KEY(k)
 DISTRIBUTED BY HASH(k) BUCKETS 1
-PROPERTIES ("replication_num" = "1");
+PROPERTIES ("replication_num" = "1", "disable_auto_compaction" = "true");
 
 INSERT INTO scalar_others VALUES
   (1,  0.0,        0.0,         0.0000,              '1970-01-01', '1970-01-01 00:00:00.000000', '',         '',                                                                 ''),

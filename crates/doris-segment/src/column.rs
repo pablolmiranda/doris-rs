@@ -61,6 +61,49 @@ pub fn column_meta(file: &SegmentFile, unique_id: u32) -> Result<&ColumnMetaPb, 
         .ok_or(Error::ColumnNotFound(unique_id))
 }
 
+/// Decode a BIT_SHUFFLE page body (without its null bitmap) into little-endian element bytes.
+///
+/// The 16-byte header (`num_elements`, `compressed_size`, `num_element_after_padding`,
+/// `size_of_element`, all u32 LE) is validated the way `parse_bit_shuffle_header` does in the
+/// C++ reader before anything is allocated or decompressed, so a crc-valid but corrupt header
+/// yields `Error::Corrupt` rather than a panic.
+pub fn decode_bitshuffle_values(values: &[u8], non_null: usize) -> Result<(Vec<u8>, usize), Error> {
+    if values.len() < BITSHUFFLE_HEADER {
+        return Err(Error::Corrupt(
+            "bitshuffle page shorter than its header".into(),
+        ));
+    }
+    let u32_at =
+        |i: usize| u32::from_le_bytes(values[i..i + 4].try_into().expect("4 bytes")) as usize;
+    let num_elements = u32_at(0);
+    let compressed_size = u32_at(4);
+    let padded = u32_at(8);
+    let elem_size = u32_at(12);
+    if !matches!(elem_size, 1 | 2 | 4 | 8 | 16) {
+        return Err(Error::Corrupt(format!(
+            "bitshuffle page element size {elem_size} is not 1, 2, 4, 8 or 16"
+        )));
+    }
+    if num_elements != non_null {
+        return Err(Error::Corrupt(format!(
+            "bitshuffle page holds {num_elements} values but the null bitmap implies {non_null}"
+        )));
+    }
+    if padded != num_elements.div_ceil(8) * 8 || compressed_size != values.len() {
+        return Err(Error::Corrupt(format!(
+            "bitshuffle page header is inconsistent: num={num_elements} padded={padded} compressed_size={compressed_size} body={}",
+            values.len()
+        )));
+    }
+    let mut elems = bitshuffle::decompress_lz4(
+        &values[BITSHUFFLE_HEADER..compressed_size],
+        padded,
+        elem_size,
+    )?;
+    elems.truncate(num_elements * elem_size);
+    Ok((elems, elem_size))
+}
+
 /// Raw little-endian element bytes of the non-null values of one page, plus a null flag per row.
 struct PageValues {
     nulls: Vec<bool>,
@@ -91,37 +134,7 @@ fn decode_page_values(
     let non_null = nulls.iter().filter(|n| !**n).count();
     match meta.encoding() {
         EncodingTypePb::BitShuffle => {
-            if values.len() < BITSHUFFLE_HEADER {
-                return Err(Error::Corrupt(
-                    "bitshuffle page shorter than its header".into(),
-                ));
-            }
-            let u32_at = |i: usize| {
-                u32::from_le_bytes(values[i..i + 4].try_into().expect("4 bytes")) as usize
-            };
-            let num_elements = u32_at(0);
-            let compressed_size = u32_at(4);
-            let padded = u32_at(8);
-            let elem_size = u32_at(12);
-            if num_elements != non_null {
-                return Err(Error::Corrupt(format!(
-                    "bitshuffle page holds {num_elements} values but the null bitmap implies {non_null}"
-                )));
-            }
-            if padded != num_elements.div_ceil(8) * 8
-                || compressed_size > values.len()
-                || compressed_size < BITSHUFFLE_HEADER
-            {
-                return Err(Error::Corrupt(
-                    "bitshuffle page header is inconsistent".into(),
-                ));
-            }
-            let mut elems = bitshuffle::decompress_lz4(
-                &values[BITSHUFFLE_HEADER..compressed_size],
-                padded,
-                elem_size,
-            )?;
-            elems.truncate(num_elements * elem_size);
+            let (elems, elem_size) = decode_bitshuffle_values(values, non_null)?;
             Ok(PageValues {
                 nulls,
                 elems,

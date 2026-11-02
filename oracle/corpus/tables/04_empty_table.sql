@@ -5,6 +5,6 @@ CREATE TABLE empty_table (
     v VARCHAR(10)
 ) DUPLICATE KEY(k)
 DISTRIBUTED BY HASH(k) BUCKETS 1
-PROPERTIES ("replication_num" = "1");
+PROPERTIES ("replication_num" = "1", "disable_auto_compaction" = "true");
 
 INSERT INTO empty_table SELECT * FROM empty_table;

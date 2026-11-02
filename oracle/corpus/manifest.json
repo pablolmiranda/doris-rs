@@ -9,59 +9,163 @@
     "empty_table": {
       "files": [],
       "rows": 0,
-      "schema_hash": 676900517,
-      "tablet_id": 1793599344751
+      "schema_hash": 1854103525,
+      "tablet_id": 1793599344900
+    },
+    "lz4f_big": {
+      "files": [
+        {
+          "bytes": 49735,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "883b03f78bfd0a46d3789a059d5b4a70149e38a11cfb76779f8573d3de147b86"
+        },
+        {
+          "bytes": 53291,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_1.dat",
+          "sha256": "f55cd5853bd40df7c1fad45b83b69fd25dc4cbb86c57e5cee267490028d0c24e"
+        },
+        {
+          "bytes": 8272,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_2.dat",
+          "sha256": "9ae82d7403d78e29011016e06f6d15cdc5531dcfde61237a260060643c3481eb"
+        },
+        {
+          "bytes": 8083,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_3.dat",
+          "sha256": "00c6540369e273aee82ac06f8a99a89a5a896a309272161c111cb7eac56ad427"
+        },
+        {
+          "bytes": 8245,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_4.dat",
+          "sha256": "6a8557aefa20fa71055e0b3f629d5d9c391133897c7c3ad145ed71353617d505"
+        },
+        {
+          "bytes": 8083,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_5.dat",
+          "sha256": "f838a410653e6f6be610d4870bec132307adc01032931cafa3a5d152f20fb1a8"
+        },
+        {
+          "bytes": 8102,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_6.dat",
+          "sha256": "a67b7f790b4a58536eaf65c59de4f6bcfc24eb957646df715dc55fa98985a6c0"
+        },
+        {
+          "bytes": 8111,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_7.dat",
+          "sha256": "e61fd48251ba554e06bd71c687f7bd3ac21478eda94d3a11156a1a98dff7449b"
+        },
+        {
+          "bytes": 9352,
+          "path": "data/lz4f_big/020000000003e129684b5a7d9074278bcb23d2ad610d529c_8.dat",
+          "sha256": "5123b8bb848903292b03e6fb929456967dee27719a6460feba73ac2252f586f3"
+        }
+      ],
+      "rows": 200000,
+      "schema_hash": 1048928693,
+      "tablet_id": 1793599344906
     },
     "scalar_ints": {
       "files": [
         {
           "bytes": 1792,
-          "path": "data/scalar_ints/020000000003e0ce684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/scalar_ints/020000000003e119684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "8f9a795ed723c4fdbbe4c35ec01dd2101426a88211e589d6a5d6e25165fc3a00"
         },
         {
           "bytes": 15848,
-          "path": "data/scalar_ints/020000000003e0d0684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/scalar_ints/020000000003e11b684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "cac1bb158dfa75858635b2697487c159dbc7996b1da9f1c04a65d484db077c1d"
         },
         {
           "bytes": 1473,
-          "path": "data/scalar_ints/020000000003e0d2684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/scalar_ints/020000000003e11d684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "89f12d60fe40f966100475bca8c3040ff2353a73146f31ff78e599de039faed1"
         }
       ],
       "rows": 2011,
-      "schema_hash": 132614947,
-      "tablet_id": 1793599344721
+      "schema_hash": 421430437,
+      "tablet_id": 1793599344870
     },
     "scalar_others": {
       "files": [
         {
           "bytes": 2804,
-          "path": "data/scalar_others/020000000003e0d5684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/scalar_others/020000000003e120684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "ad07e74708ad8da428621068c7859c45067be1b603d4690db3ed921534ae4416"
         },
         {
           "bytes": 8137,
-          "path": "data/scalar_others/020000000003e0d7684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/scalar_others/020000000003e122684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "217fbbdf06223231e0f2dedb695de2f2c3470c16f5f990c79902481203cbea30"
         }
       ],
       "rows": 510,
-      "schema_hash": 629119618,
-      "tablet_id": 1793599344733
+      "schema_hash": 669213885,
+      "tablet_id": 1793599344882
+    },
+    "zstd_big": {
+      "files": [
+        {
+          "bytes": 39532,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "3a1267da942e34b76c7af941abfa71a5ed119a1ab59c702c32dfda6a6ca57621"
+        },
+        {
+          "bytes": 41278,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_1.dat",
+          "sha256": "8f735e2c45b3654c340fe0c6c32d0f10fa217baa4e1364af5f5ea79c1115da84"
+        },
+        {
+          "bytes": 6417,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_2.dat",
+          "sha256": "71fa83074372242b285d56c0ae6f24644cb3a6e65b57c7831b191cdb7582038c"
+        },
+        {
+          "bytes": 6360,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_3.dat",
+          "sha256": "2fd0fec3251f3ce868b94aaa25232d05281cb278fd82397d5ea0843be8292f27"
+        },
+        {
+          "bytes": 6439,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_4.dat",
+          "sha256": "e84f7f87f3a5153bc4c5f0b67a6e157796af50b22fb0a9e705a15fd1c425166c"
+        },
+        {
+          "bytes": 6373,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_5.dat",
+          "sha256": "a1e762437096654bb84a7c2acd9334d698ee6612954602c68f9a77a9f160bdee"
+        },
+        {
+          "bytes": 6347,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_6.dat",
+          "sha256": "11c1c14e36ba19424a960422e7d01a807f218add833c9adf53c269d88048e872"
+        },
+        {
+          "bytes": 6351,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_7.dat",
+          "sha256": "3dd228dc13aa5e0e087d3cce0afe4faf0c49e51f833b2acc4ea2e7fe7c777b1f"
+        },
+        {
+          "bytes": 9352,
+          "path": "data/zstd_big/020000000003e12c684b5a7d9074278bcb23d2ad610d529c_8.dat",
+          "sha256": "5123b8bb848903292b03e6fb929456967dee27719a6460feba73ac2252f586f3"
+        }
+      ],
+      "rows": 200000,
+      "schema_hash": 1828834963,
+      "tablet_id": 1793599344914
     },
     "zstd_ints": {
       "files": [
         {
           "bytes": 9186,
-          "path": "data/zstd_ints/020000000003e0da684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "path": "data/zstd_ints/020000000003e125684b5a7d9074278bcb23d2ad610d529c_0.dat",
           "sha256": "70e1068f9df747dd1ceab9795e338411c20a156aef61d19a455be72b3523f757"
         }
       ],
       "rows": 1000,
-      "schema_hash": 1368414825,
-      "tablet_id": 1793599344743
+      "schema_hash": 760753238,
+      "tablet_id": 1793599344892
     }
   }
 }

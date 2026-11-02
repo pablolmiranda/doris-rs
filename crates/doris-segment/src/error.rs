@@ -36,6 +36,12 @@ pub enum Error {
     #[error("protobuf decode: {0}")]
     Proto(#[from] prost::DecodeError),
     #[error("{path}: {source}")]
+    InFile {
+        path: PathBuf,
+        #[source]
+        source: Box<Error>,
+    },
+    #[error("{path}: {source}")]
     Io {
         path: PathBuf,
         #[source]

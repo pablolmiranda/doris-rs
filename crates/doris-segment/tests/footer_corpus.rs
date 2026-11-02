@@ -59,3 +59,19 @@ fn corrupted_footer_fails_checksum() {
     let err = doris_segment::read_footer(&bytes).unwrap_err();
     assert!(matches!(err, Error::ChecksumMismatch { .. }), "{err}");
 }
+
+#[test]
+fn open_names_the_file_in_format_errors() {
+    let dir = std::env::temp_dir().join(format!("doris-segment-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("bogus_0.dat");
+    std::fs::write(&path, b"not a segment at all").unwrap();
+    let err = SegmentFile::open(&path).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("bogus_0.dat"),
+        "error should name the file: {text}"
+    );
+    assert!(matches!(err, Error::InFile { .. }), "{err}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

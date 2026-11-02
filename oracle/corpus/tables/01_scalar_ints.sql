@@ -11,7 +11,7 @@ CREATE TABLE scalar_ints (
     c_largeint LARGEINT
 ) DUPLICATE KEY(k)
 DISTRIBUTED BY HASH(k) BUCKETS 1
-PROPERTIES ("replication_num" = "1");
+PROPERTIES ("replication_num" = "1", "disable_auto_compaction" = "true");
 
 INSERT INTO scalar_ints VALUES
   (1,  true,  -128, -32768, -2147483648, -9223372036854775808, -170141183460469231731687303715884105728),

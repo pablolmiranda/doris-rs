@@ -9,7 +9,7 @@ CREATE TABLE zstd_ints (
     c_largeint LARGEINT
 ) DUPLICATE KEY(k)
 DISTRIBUTED BY HASH(k) BUCKETS 1
-PROPERTIES ("replication_num" = "1", "compression" = "zstd");
+PROPERTIES ("replication_num" = "1", "compression" = "zstd", "disable_auto_compaction" = "true");
 
 INSERT INTO zstd_ints
 SELECT number,

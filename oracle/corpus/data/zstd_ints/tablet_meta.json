@@ -1,10 +1,10 @@
 {
-    "table_id": 1793599344741,
-    "partition_id": 1793599344740,
-    "tablet_id": 1793599344743,
-    "schema_hash": 1368414825,
-    "shard_id": 252,
-    "creation_time": 1793631523,
+    "table_id": 1793599344890,
+    "partition_id": 1793599344889,
+    "tablet_id": 1793599344892,
+    "schema_hash": 760753238,
+    "shard_id": 268,
+    "creation_time": 1793633236,
     "cumulative_layer_point": -1,
     "tablet_state": "PB_RUNNING",
     "schema": {
@@ -204,7 +204,7 @@
         "sort_col_num": 1,
         "compression_type": "ZSTD",
         "schema_version": 0,
-        "disable_auto_compaction": false,
+        "disable_auto_compaction": true,
         "version_col_idx": -1,
         "store_row_column": false,
         "skip_write_index_on_load": false,
@@ -219,9 +219,9 @@
     "rs_metas": [
         {
             "rowset_id": 0,
-            "partition_id": 1793599344740,
-            "tablet_id": 1793599344743,
-            "tablet_schema_hash": 1368414825,
+            "partition_id": 1793599344889,
+            "tablet_id": 1793599344892,
+            "tablet_schema_hash": 760753238,
             "rowset_type": "BETA_ROWSET",
             "rowset_state": "VISIBLE",
             "start_version": 0,
@@ -231,14 +231,14 @@
             "data_disk_size": 0,
             "index_disk_size": 0,
             "empty": true,
-            "creation_time": 1793631523,
+            "creation_time": 1793633236,
             "tablet_uid": {
-                "hi": -4376129963628492367,
-                "lo": 1488014393080360583
+                "hi": -1491041722027290442,
+                "lo": -8340923530492405571
             },
             "num_segments": 0,
-            "rowset_id_v2": "020000000003e0d8684b5a7d9074278bcb23d2ad610d529c",
-            "newest_write_timestamp": 1793631523,
+            "rowset_id_v2": "020000000003e123684b5a7d9074278bcb23d2ad610d529c",
+            "newest_write_timestamp": 1793633236,
             "tablet_schema": {
                 "keys_type": "DUP_KEYS",
                 "column": [
@@ -436,7 +436,7 @@
                 "sort_col_num": 1,
                 "compression_type": "ZSTD",
                 "schema_version": 0,
-                "disable_auto_compaction": false,
+                "disable_auto_compaction": true,
                 "version_col_idx": -1,
                 "store_row_column": false,
                 "skip_write_index_on_load": false,
@@ -457,10 +457,10 @@
         },
         {
             "rowset_id": 0,
-            "partition_id": 1793599344740,
-            "tablet_id": 1793599344743,
-            "txn_id": 23983,
-            "tablet_schema_hash": 1368414825,
+            "partition_id": 1793599344889,
+            "tablet_id": 1793599344892,
+            "txn_id": 24011,
+            "tablet_schema_hash": 760753238,
             "rowset_type": "BETA_ROWSET",
             "rowset_state": "VISIBLE",
             "start_version": 2,
@@ -471,17 +471,17 @@
             "index_disk_size": 0,
             "empty": false,
             "load_id": {
-                "hi": -6076412800471775794,
-                "lo": -7705666765591882266
+                "hi": -3184083889918425264,
+                "lo": -6243472639779792288
             },
-            "creation_time": 1793631523,
+            "creation_time": 1793633236,
             "tablet_uid": {
-                "hi": -4376129963628492367,
-                "lo": 1488014393080360583
+                "hi": -1491041722027290442,
+                "lo": -8340923530492405571
             },
             "num_segments": 1,
-            "rowset_id_v2": "020000000003e0da684b5a7d9074278bcb23d2ad610d529c",
-            "newest_write_timestamp": 1793631523,
+            "rowset_id_v2": "020000000003e125684b5a7d9074278bcb23d2ad610d529c",
+            "newest_write_timestamp": 1793633236,
             "segments_key_bounds": [
                 {
                     "min_key": "\u0002€\u0000\u0000\u0000",
@@ -685,7 +685,7 @@
                 "sort_col_num": 1,
                 "compression_type": "ZSTD",
                 "schema_version": 0,
-                "disable_auto_compaction": false,
+                "disable_auto_compaction": true,
                 "version_col_idx": -1,
                 "store_row_column": false,
                 "skip_write_index_on_load": false,
@@ -710,12 +710,12 @@
     ],
     "in_restore_mode": false,
     "tablet_uid": {
-        "hi": -4376129963628492367,
-        "lo": 1488014393080360583
+        "hi": -1491041722027290442,
+        "lo": -8340923530492405571
     },
     "preferred_rowset_type": "BETA_ROWSET",
     "tablet_type": "TABLET_TYPE_DISK",
-    "replica_id": 1793599344744,
+    "replica_id": 1793599344893,
     "enable_unique_key_merge_on_write": false,
     "binlog_config": {
         "enable": false,

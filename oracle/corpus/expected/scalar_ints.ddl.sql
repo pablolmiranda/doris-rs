@@ -17,7 +17,7 @@ PROPERTIES (
 "storage_format" = "V2",
 "inverted_index_storage_format" = "V3",
 "light_schema_change" = "true",
-"disable_auto_compaction" = "false",
+"disable_auto_compaction" = "true",
 "binlog.enable" = "false",
 "binlog.ttl_seconds" = "86400",
 "binlog.max_bytes" = "9223372036854775807",

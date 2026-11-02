@@ -50,7 +50,10 @@ impl SegmentFile {
             path: path.to_path_buf(),
             source,
         })?;
-        SegmentFile::from_bytes(bytes)
+        SegmentFile::from_bytes(bytes).map_err(|source| Error::InFile {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<SegmentFile, Error> {

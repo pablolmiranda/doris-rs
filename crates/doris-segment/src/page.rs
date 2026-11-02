@@ -14,6 +14,8 @@ use crate::pb::segment_v2::{CompressionTypePb, PageFooterPb, PagePointerPb};
 pub struct Page {
     pub footer: PageFooterPb,
     pub body: Vec<u8>,
+    /// True when the stored body was compressed and had to be decompressed.
+    pub compressed: bool,
 }
 
 /// Verify, split, and (if needed) decompress one raw page.
@@ -40,7 +42,8 @@ pub fn decode_page(raw: &[u8], codec: CompressionTypePb) -> Result<Page, Error> 
     let declared = footer
         .uncompressed_size
         .map_or(stored.len(), |n| n as usize);
-    let body = if stored.len() == declared {
+    let compressed = stored.len() != declared;
+    let body = if !compressed {
         stored.to_vec()
     } else {
         let out = decompress(codec, stored)?;
@@ -52,7 +55,11 @@ pub fn decode_page(raw: &[u8], codec: CompressionTypePb) -> Result<Page, Error> 
         }
         out
     };
-    Ok(Page { footer, body })
+    Ok(Page {
+        footer,
+        body,
+        compressed,
+    })
 }
 
 /// Read and decode the page a pointer refers to.
