@@ -1,6 +1,7 @@
-//! Column decoding: every fixed-width scalar type over BIT_SHUFFLE (or RLE for BOOL and
-//! integers) pages, binary types through `crate::binary`, with the per-page null bitmap
-//! applied.
+//! Column decoding: every fixed-width scalar type over BIT_SHUFFLE pages, BOOL over RLE pages,
+//! binary types through `crate::binary`, with the per-page null bitmap applied. 4.1.5 writes
+//! RLE only for BOOL (`encoding_info.cpp`); integer RLE pages are decoded the way
+//! `RlePageDecoder` would, but no 4.1.5 writer produces them, so that path is unverified.
 //!
 //! A data page body is `encoded values | nullmap (nullmap_size bytes)`. Values are stored
 //! only for non-null rows (`ScalarColumnWriter::append_nulls` touches only the bitmap), so the
@@ -196,7 +197,8 @@ fn decode_page_values(
     match meta.encoding() {
         EncodingTypePb::BitShuffle => decode_bitshuffle_values(values, non_null, elem_size),
         EncodingTypePb::Rle => {
-            // RlePageDecoder: BOOL uses one bit per value, integers their full width.
+            // RlePageDecoder: BOOL uses one bit per value, integers their full width. Only
+            // BOOL is written as RLE by 4.1.5; the integer widths are unverified.
             let bit_width = match meta.r#type {
                 Some(field_type::BOOL) => 1u32,
                 Some(

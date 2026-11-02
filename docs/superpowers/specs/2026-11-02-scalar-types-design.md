@@ -49,7 +49,8 @@ column meta). Each is a later corpus version.
 - Rendering to the reference's text form is test code (it belongs to a future MySQL-protocol
   crate); floats are compared by parsing the expected text, which the reference prints as
   shortest round-trip, and comparing bits.
-- New corpus tables: `strings_fallback` (tiny `storage_dict_page_size` to force the plain
-  fallback in CHAR, VARCHAR and STRING, plus an interior-NUL row) and `scalar_more` (decimal and
+- New corpus tables: `strings_fallback` (small `storage_dict_page_size` to force the plain
+  fallback in CHAR, VARCHAR and STRING, plus an interior-NUL row; the FE aligns the requested
+  1024 up to 4096) and `scalar_more` (decimal and
   datetime scales, legacy types, IPs, enough rows for multi-block bit-shuffle at odd element
   sizes).

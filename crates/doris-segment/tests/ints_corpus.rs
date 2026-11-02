@@ -163,28 +163,10 @@ fn bitshuffle_header_with_zero_element_size_is_an_error_not_a_panic() {
 /// built from scratch so every checksum is valid.
 fn segment_with_claimed_rows(num_values: u64, segment_rows: u32) -> SegmentFile {
     use doris_segment::pb::segment_v2::{
-        BTreeMetaPb, ColumnIndexMetaPb, ColumnIndexTypePb, ColumnMetaPb, DataPageFooterPb,
-        EncodingTypePb, OrdinalIndexPb, PagePointerPb, SegmentFooterPb,
+        BTreeMetaPb, ColumnIndexMetaPb, ColumnIndexTypePb, ColumnMetaPb, EncodingTypePb,
+        OrdinalIndexPb, PagePointerPb, SegmentFooterPb,
     };
-    let body = vec![0u8; 16];
-    let page_footer = PageFooterPb {
-        r#type: Some(PageTypePb::DataPage as i32),
-        uncompressed_size: Some(body.len() as u32),
-        data_page_footer: Some(DataPageFooterPb {
-            first_ordinal: Some(0),
-            num_values: Some(num_values),
-            nullmap_size: Some(0),
-            next_array_item_ordinal: None,
-        }),
-        ..Default::default()
-    };
-    let fb = page_footer.encode_to_vec();
-    let mut bytes = body;
-    bytes.extend_from_slice(&fb);
-    bytes.extend_from_slice(&(fb.len() as u32).to_le_bytes());
-    let crc = crc32c::crc32c(&bytes);
-    bytes.extend_from_slice(&crc.to_le_bytes());
-    let page_len = bytes.len() as u32;
+    let page = common::data_page(vec![0u8; 16], num_values, 0);
     let column = ColumnMetaPb {
         column_id: Some(0),
         unique_id: Some(0),
@@ -199,7 +181,7 @@ fn segment_with_claimed_rows(num_values: u64, segment_rows: u32) -> SegmentFile 
                 root_page: Some(BTreeMetaPb {
                     root_page: Some(PagePointerPb {
                         offset: 0,
-                        size: page_len,
+                        size: page.len() as u32,
                     }),
                     is_root_data_page: Some(true),
                 }),
@@ -214,12 +196,7 @@ fn segment_with_claimed_rows(num_values: u64, segment_rows: u32) -> SegmentFile 
         num_rows: Some(segment_rows),
         ..Default::default()
     };
-    let fbytes = footer.encode_to_vec();
-    bytes.extend_from_slice(&fbytes);
-    bytes.extend_from_slice(&(fbytes.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&crc32c::crc32c(&fbytes).to_le_bytes());
-    bytes.extend_from_slice(b"D0R1");
-    SegmentFile::from_bytes(bytes).unwrap()
+    common::segment(page, footer)
 }
 
 #[test]

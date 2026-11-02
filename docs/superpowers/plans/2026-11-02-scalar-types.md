@@ -36,7 +36,7 @@
 
 **Interfaces:**
 - Produces tables (unique id = schema position):
-  - `strings_fallback(k INT NOT NULL, c_char CHAR(20), c_varchar VARCHAR(64), c_string STRING)` with `"storage_dict_page_size" = "1024"`; ~3000 rows of mostly distinct values plus rows with `''`, NULL, and `unhex('610062')` (a, NUL, b) in all three string columns.
+  - `strings_fallback(k INT NOT NULL, c_char CHAR(20), c_varchar VARCHAR(64), c_string STRING)` with `"storage_dict_page_size" = "1024"` (the FE aligns it to 4096, found in review); ~3000 rows of mostly distinct values plus rows with `''`, NULL, and `unhex('610062')` (a, NUL, b) in all three string columns.
   - `scalar_more(k INT NOT NULL, c_dec32 DECIMAL(9,2), c_dec128 DECIMAL(38,10), c_dt0 DATETIME, c_dt3 DATETIME(3), c_ipv4 IPV4, c_ipv6 IPV6, c_datev1 DATEV1, c_datetimev1 DATETIMEV1, c_decv2 DECIMALV2(27,9))`; handwritten edge rows (min, max, zero, negative, NULL, `::`, `::ffff:10.0.0.1`, `fe80:0:0:0:1:0:0:1`) plus ~5000 generated rows.
 
 - [ ] **Step 1: Write both SQL files; add both names to TABLES in the two Python tests**

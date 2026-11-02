@@ -8,8 +8,10 @@
 
 use doris_segment::column::read_column;
 use doris_segment::corpus::Manifest;
+use doris_segment::pb::segment_v2::{DataPageFooterPb, PageFooterPb, PageTypePb, SegmentFooterPb};
 use doris_segment::values::{ColumnValues, Date, DateTime, Decimal12};
 use doris_segment::SegmentFile;
+use prost::Message;
 
 /// Rows of `expected/<table>.tsv`: tab-separated, NULL as the word NULL, sorted by `k`.
 pub fn expected_rows(table: &str) -> Vec<Vec<String>> {
@@ -284,4 +286,39 @@ pub fn assert_table_matches(table: &str, columns: &[(u32, &str)]) {
     let m = Manifest::load();
     let rows = decode_rows(&m, table, columns);
     assert_rows_match(table, columns, &rows);
+}
+
+/// An uncompressed data page built from scratch, every checksum valid:
+/// `body | PageFooterPB | footer_size: u32 LE | crc32c: u32 LE`.
+pub fn data_page(body: Vec<u8>, num_values: u64, nullmap_size: u32) -> Vec<u8> {
+    let footer = PageFooterPb {
+        r#type: Some(PageTypePb::DataPage as i32),
+        uncompressed_size: Some(body.len() as u32),
+        data_page_footer: Some(DataPageFooterPb {
+            first_ordinal: Some(0),
+            num_values: Some(num_values),
+            nullmap_size: Some(nullmap_size),
+            next_array_item_ordinal: None,
+        }),
+        ..Default::default()
+    };
+    let fb = footer.encode_to_vec();
+    let mut page = body;
+    page.extend_from_slice(&fb);
+    page.extend_from_slice(&(fb.len() as u32).to_le_bytes());
+    let crc = crc32c::crc32c(&page);
+    page.extend_from_slice(&crc.to_le_bytes());
+    page
+}
+
+/// A segment file built from scratch around already-encoded pages:
+/// `pages | SegmentFooterPB | footer_len: u32 LE | crc32c(footer): u32 LE | "D0R1"`.
+pub fn segment(pages: Vec<u8>, footer: SegmentFooterPb) -> SegmentFile {
+    let fb = footer.encode_to_vec();
+    let mut bytes = pages;
+    bytes.extend_from_slice(&fb);
+    bytes.extend_from_slice(&(fb.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&crc32c::crc32c(&fb).to_le_bytes());
+    bytes.extend_from_slice(b"D0R1");
+    SegmentFile::from_bytes(bytes).expect("hand-built segment is well formed")
 }

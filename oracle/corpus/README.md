@@ -33,8 +33,8 @@ and a new corpus version noted in the manifest.
 | `scalar_others` | FLOAT, DOUBLE, DECIMAL64, DATEV2, DATETIMEV2(6), CHAR/VARCHAR/STRING dictionaries | decoded |
 | `zstd_ints` | integers on a zstd table whose small flush is written uncompressed | decoded |
 | `empty_table` | a zero-row load writes no segment | nothing to read |
-| `lz4f_big`, `zstd_big` | LZ4F and ZSTD page bodies, multi-page columns via ordinal index pages, compressed dictionaries | decoded |
-| `strings_fallback` | dictionary-to-plain fallback in CHAR, VARCHAR, STRING; CHAR cut at an interior NUL | decoded |
+| `lz4f_big`, `zstd_big` | LZ4F and ZSTD page bodies, multi-page columns via ordinal index pages; `zstd_big`'s dictionaries are ZSTD-compressed, `lz4f_big`'s are stored uncompressed | decoded |
+| `strings_fallback` | dictionary-to-plain fallback in CHAR, VARCHAR, STRING (4 KB dictionary pages); CHAR cut at an interior NUL | decoded |
 | `scalar_more` | DECIMAL32/128I, DATETIME(0) and (3), IPV4, IPV6, legacy DATE/DATETIME/DECIMALV2, multi-block 3- and 12-byte bit-shuffle | decoded |
 
 Not covered yet, each a later corpus version: the V3 storage format (PLAIN_V2 dictionary

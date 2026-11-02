@@ -1,5 +1,7 @@
--- Golden corpus v1: string columns with a tiny dictionary page (1 KB) so the writer falls back
--- from dictionary codewords to plain pages partway through each column. Also an interior-NUL
+-- Golden corpus v1: string columns with a small dictionary page so the writer falls back from
+-- dictionary codewords to plain pages partway through each column. The 1024 requested here is
+-- aligned up by the FE to 4096 (see expected/strings_fallback.ddl.sql), a quarter of the
+-- 256 KB default. Also an interior-NUL
 -- row: the reference reads CHAR back truncated at the first NUL, VARCHAR and STRING keep it.
 CREATE TABLE strings_fallback (
     k         INT NOT NULL,

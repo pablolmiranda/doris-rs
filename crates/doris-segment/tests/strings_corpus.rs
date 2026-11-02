@@ -71,6 +71,21 @@ fn big_tables_varchar_matches_under_compression() {
             "{table}: no c_varchar page was stored compressed"
         );
     }
+    // pins the corpus README: zstd_big's dictionary pages are ZSTD-compressed (lz4f_big's are
+    // stored uncompressed, so an LZ4F-compressed dictionary is not exercised)
+    let m = Manifest::load();
+    let compressed_dict = m.tables["zstd_big"].files.iter().any(|f| {
+        let seg = SegmentFile::open(&m.resolve(&f.path)).unwrap();
+        let meta = column_meta(&seg, 5).unwrap();
+        let ptr = meta.dict_page.expect("dictionary page");
+        read_page(&seg, &ptr, meta.compression())
+            .unwrap()
+            .compressed
+    });
+    assert!(
+        compressed_dict,
+        "zstd_big: no dictionary page was stored compressed"
+    );
 }
 
 #[test]
@@ -146,4 +161,35 @@ fn dictionary_codeword_out_of_range_is_an_error() {
     dict.truncate(2);
     let err = decode_dict_data_page(values, 8, &dict).unwrap_err();
     assert!(matches!(err, Error::Corrupt(_)), "{err}");
+}
+
+#[test]
+fn dictionary_pointer_past_the_end_of_the_file_is_an_error_not_a_panic() {
+    use doris_segment::pb::segment_v2::{
+        ColumnMetaPb, CompressionTypePb, EncodingTypePb, PagePointerPb, SegmentFooterPb,
+    };
+    // a crc-valid footer whose dictionary pointer sits at u64::MAX: offset + size overflows
+    let column = ColumnMetaPb {
+        column_id: Some(0),
+        unique_id: Some(0),
+        r#type: Some(17),
+        length: Some(66),
+        encoding: Some(EncodingTypePb::DictEncoding as i32),
+        compression: Some(CompressionTypePb::NoCompression as i32),
+        is_nullable: Some(true),
+        dict_page: Some(PagePointerPb {
+            offset: u64::MAX,
+            size: 16,
+        }),
+        ..Default::default()
+    };
+    let footer = SegmentFooterPb {
+        version: Some(1),
+        columns: vec![column],
+        num_rows: Some(1),
+        ..Default::default()
+    };
+    let seg = common::segment(Vec::new(), footer);
+    let err = doris_segment::column::read_column(&seg, 0).unwrap_err();
+    assert!(matches!(err, Error::PageOutOfBounds { .. }), "{err}");
 }
