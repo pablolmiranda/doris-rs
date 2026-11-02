@@ -1,0 +1,106 @@
+# Reference Doris cluster for the oracle: three FEs and three BEs, one process per container.
+# Adapted from docker/runtime/all-in-one/4.1/compose/multi-node.yml in the upstream repository
+# (Apache License 2.0). Use this profile for suites that need three replicas or FE failover.
+name: doris-oracle
+
+x-node: &node
+  image: ${DORIS_IMAGE:-apache/doris:all-in-one-4.1.5}
+  stop_grace_period: 60s
+
+x-fe-follower: &fe-follower
+  <<: *node
+  depends_on:
+    fe-1:
+      condition: service_healthy
+
+x-be: &be
+  <<: *node
+  depends_on:
+    fe-1:
+      condition: service_healthy
+
+services:
+  fe-1:
+    <<: *node
+    environment:
+      DORIS_ROLE: fe
+      FE_HEAP: ${FE_HEAP:-1024m}
+    ports:
+      - "${FE_PORT:-9030}:9030"
+      - "${FE_HTTP_PORT:-8030}:8030"
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.40
+        aliases: [doris]
+  fe-2:
+    <<: *fe-follower
+    environment:
+      DORIS_ROLE: fe
+      FE_MASTER: fe-1,fe-2,fe-3
+      FE_ROLE: follower
+      FE_HEAP: ${FE_HEAP:-1024m}
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.41
+  fe-3:
+    <<: *fe-follower
+    environment:
+      DORIS_ROLE: fe
+      FE_MASTER: fe-1,fe-2,fe-3
+      FE_ROLE: ${FE3_ROLE:-follower}
+      FE_HEAP: ${FE_HEAP:-1024m}
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.42
+  be-1:
+    <<: *be
+    environment:
+      DORIS_ROLE: be
+      FE_MASTER: fe-1,fe-2,fe-3
+      BE_CONFIG_EXTRA: "mem_limit = ${BE_MEM_LIMIT:-25%}"
+    ports:
+      - "${BE_HTTP_PORT:-8040}:8040"
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.50
+  be-2:
+    <<: *be
+    environment:
+      DORIS_ROLE: be
+      FE_MASTER: fe-1,fe-2,fe-3
+      BE_CONFIG_EXTRA: "mem_limit = ${BE_MEM_LIMIT:-25%}"
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.51
+  be-3:
+    <<: *be
+    environment:
+      DORIS_ROLE: be
+      FE_MASTER: fe-1,fe-2,fe-3
+      BE_CONFIG_EXTRA: "mem_limit = ${BE_MEM_LIMIT:-25%}"
+    networks:
+      oracle:
+        ipv4_address: ${SUBNET:-172.31.82}.52
+  client:
+    <<: *node
+    environment:
+      DORIS_ROLE: client
+      FE_MASTER: fe-1,fe-2,fe-3
+      EXPECT_FE: 3
+      EXPECT_BE: 3
+    depends_on:
+      fe-2: {condition: service_healthy}
+      fe-3: {condition: service_healthy}
+      be-1: {condition: service_healthy}
+      be-2: {condition: service_healthy}
+      be-3: {condition: service_healthy}
+    networks:
+      oracle:
+
+networks:
+  oracle:
+    name: ${ORACLE_NETWORK:-doris-oracle}
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${SUBNET:-172.31.82}.0/24

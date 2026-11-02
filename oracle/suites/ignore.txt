@@ -1,0 +1,2 @@
+# Suite names that never fail the gate, one per line. Keep this list short and justified:
+# a suite belongs here only when it is flaky against the C++ reference itself.

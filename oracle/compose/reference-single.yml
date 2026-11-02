@@ -1,0 +1,21 @@
+# Reference Doris cluster for the oracle: one FE and one BE in a single container, from the
+# upstream all-in-one image. Healthy when the FE is up and the BE is registered.
+name: doris-oracle
+services:
+  doris:
+    image: ${DORIS_IMAGE:-apache/doris:all-in-one-4.1.5}
+    stop_grace_period: 60s
+    environment:
+      FE_HEAP: ${FE_HEAP:-1024m}
+      BE_CONFIG_EXTRA: "mem_limit = ${BE_MEM_LIMIT:-40%}"
+    ports:
+      - "${FE_PORT:-9030}:9030"
+      - "${FE_HTTP_PORT:-8030}:8030"
+      - "${BE_HTTP_PORT:-8040}:8040"
+    networks:
+      oracle:
+        aliases: [doris, fe-1, be-1]
+networks:
+  oracle:
+    name: ${ORACLE_NETWORK:-doris-oracle}
+    driver: bridge

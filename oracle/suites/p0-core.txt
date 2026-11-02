@@ -1,0 +1,19 @@
+# Core p0 directories relevant to an observability workload. All exist at the pinned tag.
+# Run with: make baseline SUITES=suites/p0-core.txt
+query_p0
+correctness_p0
+datatype_p0
+json_p0
+variant_p0
+inverted_index_p0
+index_p0
+search
+load_p0
+insert_p0
+nereids_p0
+compaction
+mysql_compatibility_p0
+unique_with_mow_p0
+schema_change_p0
+point_query_p0
+arrow_flight_sql_p0

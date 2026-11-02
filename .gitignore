@@ -1,0 +1,15 @@
+# upstream worktree, runner build output, downloaded images
+.cache/
+# harness run output (baselines are tracked, raw results are not)
+oracle/results/*
+!oracle/results/.gitkeep
+# python
+__pycache__/
+*.pyc
+# rust (future)
+target/
+# editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

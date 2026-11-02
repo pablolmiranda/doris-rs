@@ -1,0 +1,5 @@
+# Small, fast set for checking the harness itself and a first look at a new target.
+# One suite directory per line, relative to regression-test/suites.
+mysql_compatibility_p0
+datatype_p0
+point_query_p0

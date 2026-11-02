@@ -1,0 +1,54 @@
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bin"))
+import parse_teamcity as pt  # noqa: E402
+
+LOG = """
+Using JDK 17: /opt/java
+##teamcity[flowStarted flowId='1' timestamp='2026-11-02T10:00:00.000+0000']
+##teamcity[testStarted name='test_select' flowId='1' timestamp='2026-11-02T10:00:00.000+0000']
+##teamcity[testStdOut name='test_select' out='running|n' flowId='1' timestamp='x']
+##teamcity[testFinished name='test_select' flowId='1' duration='1234' timestamp='x']
+##teamcity[flowFinished flowId='1' timestamp='x']
+##teamcity[testStarted name='test_variant_basic' flowId='2' timestamp='x']
+##teamcity[testFailed name='test_variant_basic' message='expected |[1|] but got |[2|]|nline two' flowId='2' details='stack|'trace' timestamp='x']
+##teamcity[testFinished name='test_variant_basic' flowId='2' duration='77' timestamp='x']
+##teamcity[testStarted name='test_crashes_server' flowId='3' timestamp='x']
+Test 3 suites, failed 1 suites, fatal 0 scripts, skipped 0 scripts
+"""
+
+
+class ParseTests(unittest.TestCase):
+    def setUp(self):
+        self.result = pt.parse_lines(LOG.splitlines())
+        self.suites = self.result["suites"]
+
+    def test_passed_suite_has_duration(self):
+        self.assertEqual(self.suites["test_select"]["status"], "passed")
+        self.assertEqual(self.suites["test_select"]["duration_ms"], 1234)
+
+    def test_failed_suite_keeps_unescaped_message(self):
+        entry = self.suites["test_variant_basic"]
+        self.assertEqual(entry["status"], "failed")
+        self.assertEqual(entry["message"], "expected [1] but got [2]\nline two")
+        self.assertEqual(entry["duration_ms"], 77)
+
+    def test_started_without_finish_is_incomplete(self):
+        self.assertEqual(self.suites["test_crashes_server"]["status"], "incomplete")
+
+    def test_counts_and_summary(self):
+        self.assertEqual(self.result["meta"]["counts"], {"passed": 1, "failed": 1, "incomplete": 1})
+        self.assertEqual(self.result["meta"]["summary"]["failed"], 1)
+        self.assertEqual(self.result["meta"]["summary"]["total"], 3)
+
+    def test_unescape_pipe_and_quote(self):
+        self.assertEqual(pt.unescape("a||b|'c|[d|]"), "a|b'c[d]")
+
+    def test_non_teamcity_lines_ignored(self):
+        self.assertNotIn("Using", self.suites)
+
+
+if __name__ == "__main__":
+    unittest.main()
