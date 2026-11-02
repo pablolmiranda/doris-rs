@@ -86,6 +86,23 @@
       "schema_hash": 421430437,
       "tablet_id": 1793599344870
     },
+    "scalar_more": {
+      "files": [
+        {
+          "bytes": 2970,
+          "path": "data/scalar_more/020000000003e154684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "58e0cbe97c9c133f390ecfa636ab6de99c5b36c7507b1618411ccd41ac191c24"
+        },
+        {
+          "bytes": 27708,
+          "path": "data/scalar_more/020000000003e156684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "9daf89a8913e4fa900e997f83f30838823c4eba432ff7a1a987ac1954e722eca"
+        }
+      ],
+      "rows": 6008,
+      "schema_hash": 1847119902,
+      "tablet_id": 1793599344996
+    },
     "scalar_others": {
       "files": [
         {
@@ -102,6 +119,23 @@
       "rows": 510,
       "schema_hash": 669213885,
       "tablet_id": 1793599344882
+    },
+    "strings_fallback": {
+      "files": [
+        {
+          "bytes": 1497,
+          "path": "data/strings_fallback/020000000003e14f684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "22875e61534586a1e7e9b40c4a904a30fcea4536bcd8df9a53701d1690cd9a68"
+        },
+        {
+          "bytes": 189284,
+          "path": "data/strings_fallback/020000000003e151684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "19625a3d31db7cc6db3a064598128d73aee258c0829addccee06dc8be7de123b"
+        }
+      ],
+      "rows": 3006,
+      "schema_hash": 2138256534,
+      "tablet_id": 1793599344986
     },
     "zstd_big": {
       "files": [

@@ -11,7 +11,7 @@
 #   make compare BASE=.. CAND=..     compare two results files
 #   make triage RESULTS=..           failures by directory and top error phrases
 #   make test                        unit tests for the harness scripts
-#   make corpus                      rebuild the golden on-disk corpus (load, expect, extract)
+#   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -85,13 +85,13 @@ compare:
 	python3 bin/compare.py "$(BASE)" "$(CAND)" --ignore suites/ignore.txt
 
 corpus-load:
-	corpus/bin/load.sh
+	corpus/bin/load.sh $(TABLES)
 
 corpus-expect:
-	corpus/bin/expect.sh
+	corpus/bin/expect.sh $(TABLES)
 
 corpus-extract:
-	python3 corpus/bin/extract.py
+	python3 corpus/bin/extract.py $(TABLES)
 
 corpus: corpus-load corpus-expect corpus-extract
 
