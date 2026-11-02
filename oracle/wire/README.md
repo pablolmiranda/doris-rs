@@ -53,3 +53,22 @@ Corpus `20261102-085436` (280 messages, 33 connections):
 | PBackendService | `exec_plan_fragment_prepare` | 4 request, 4 response |
 | PBackendService | `exec_plan_fragment_start` | 4 request, 4 response |
 | PBackendService | `fetch_data` | 12 request, 12 response |
+
+## Conformance
+
+`cargo test -p doris-wire` decodes every corpus message with the Rust types and encodes it again:
+Thrift messages through `doris_thrift::dispatch::roundtrip_message` (header and the method's
+`*Args`/`*Result` struct), gRPC payloads with the `doris-proto` type of each method, and the
+`TPipelineFragmentParamsList` plan that `exec_plan_fragment` and `exec_plan_fragment_prepare`
+requests carry in `TCompactProtocol`.
+
+On corpus `20261102-085436`: all 58 gRPC payloads and all 9 plans re-encode byte for byte; 220 of
+222 Thrift messages do, and the other 2 (`submit_tasks` calls) differ only in the order of a
+`set<i64>`. The Java FE writes sets and maps in `HashSet`/`HashMap` iteration order, while the
+Rust types are `BTreeSet`/`BTreeMap` and write them sorted, as the C++ BE's `std::set` does. The
+test accepts such a message only when its canonical form (`doris_wire::canonical`: set elements
+and map entries sorted by their encoded bytes) equals the re-encoding's, and lists it on stderr.
+
+The plans needed one fix: the `thrift` crate writes a compact field header whose id is exactly 15
+above the previous field's in the long form, where Java and C++ use the one-byte delta form.
+`doris_thrift::compact::CompactOutputProtocol` writes headers by the reference's rule.

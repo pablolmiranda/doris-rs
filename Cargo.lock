@@ -103,6 +103,19 @@ version = "0.1.0"
 dependencies = [
  "thiserror",
  "thrift",
+ "uuid",
+]
+
+[[package]]
+name = "doris-wire"
+version = "0.1.0"
+dependencies = [
+ "doris-proto",
+ "doris-thrift",
+ "prost",
+ "serde",
+ "serde_json",
+ "thrift",
 ]
 
 [[package]]

@@ -2,5 +2,6 @@
 //! made to the compiler output are listed in `patches.md`), and a codec check that decodes and
 //! re-encodes whole RPC messages with them.
 
+pub mod compact;
 pub mod dispatch;
 pub mod gen;

@@ -12,3 +12,5 @@ unsafe_code = "forbid"
 [dependencies]
 thrift = { workspace = true }
 thiserror = { workspace = true }
+# the type in TOutputProtocol::write_uuid; same major version the thrift crate uses
+uuid = "1"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/doris-proto", "crates/doris-segment", "crates/doris-thrift"]
+members = ["crates/doris-proto", "crates/doris-segment", "crates/doris-thrift", "crates/doris-wire"]
 
 [workspace.package]
 edition = "2021"
@@ -9,6 +9,7 @@ rust-version = "1.93"
 
 [workspace.dependencies]
 doris-proto = { path = "crates/doris-proto" }
+doris-thrift = { path = "crates/doris-thrift" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"

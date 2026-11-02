@@ -1,0 +1,20 @@
+[package]
+name = "doris-wire"
+version = "0.1.0"
+description = "The wire golden corpus (captured FE<->BE RPC messages) and the codec conformance tests over it"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+doris-proto = { workspace = true }
+doris-thrift = { workspace = true }
+prost = { workspace = true }
+thrift = { workspace = true }

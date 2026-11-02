@@ -4,10 +4,11 @@
 //! Messages are strict `TBinaryProtocol` (versioned header, no framing), as the reference
 //! exchanges them on its Thrift ports.
 use thrift::protocol::{
-    TBinaryInputProtocol, TBinaryOutputProtocol, TCompactInputProtocol, TCompactOutputProtocol,
-    TInputProtocol, TMessageType, TOutputProtocol, TSerializable,
+    TBinaryInputProtocol, TBinaryOutputProtocol, TCompactInputProtocol, TInputProtocol,
+    TMessageType, TOutputProtocol, TSerializable,
 };
 
+use crate::compact::CompactOutputProtocol;
 use crate::gen::methods::{Failure, METHODS};
 use crate::gen::palo_internal_service::TPipelineFragmentParamsList;
 
@@ -110,14 +111,15 @@ pub fn roundtrip_message(service: &str, message: &[u8]) -> Result<RoundTrip, Rou
 }
 
 /// Decode a `TPipelineFragmentParamsList` serialized with `TCompactProtocol` (the plan the FE
-/// sends in `PExecPlanFragmentRequest.request`) and encode it again.
+/// sends in `PExecPlanFragmentRequest.request`) and encode it again, with the reference's field
+/// header rule (see [`crate::compact`]).
 pub fn roundtrip_plan_compact(bytes: &[u8]) -> Result<Vec<u8>, RoundTripError> {
     let mut rest = bytes;
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = TCompactInputProtocol::new(&mut rest);
     let plan = TPipelineFragmentParamsList::read_from_in_protocol(&mut i)
         .map_err(RoundTripError::Decode)?;
-    let mut o = TCompactOutputProtocol::new(&mut out);
+    let mut o = CompactOutputProtocol::new(&mut out);
     plan.write_to_out_protocol(&mut o)
         .map_err(RoundTripError::Encode)?;
     o.flush().map_err(RoundTripError::Encode)?;
