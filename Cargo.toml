@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/doris-segment"]
+members = ["crates/doris-proto", "crates/doris-segment"]
 
 [workspace.package]
 edition = "2021"
@@ -8,6 +8,7 @@ license = "Apache-2.0"
 rust-version = "1.93"
 
 [workspace.dependencies]
+doris-proto = { path = "crates/doris-proto" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"

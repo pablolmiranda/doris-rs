@@ -57,14 +57,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "doris-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+]
+
+[[package]]
 name = "doris-segment"
 version = "0.1.0"
 dependencies = [
  "crc32c",
+ "doris-proto",
  "lz4_flex",
  "prost",
- "prost-build",
- "protoc-bin-vendored",
  "serde",
  "serde_json",
  "thiserror",

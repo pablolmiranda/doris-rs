@@ -1,7 +1,16 @@
 fn main() {
     let protoc = protoc_bin_vendored::protoc_bin_path().expect("vendored protoc");
     std::env::set_var("PROTOC", protoc);
-    let protos = ["segment_v2", "olap_common", "types", "olap_file"];
+    let protos = [
+        "segment_v2",
+        "olap_common",
+        "types",
+        "olap_file",
+        "internal_service",
+        "data",
+        "descriptors",
+        "runtime_profile",
+    ];
     for p in protos {
         println!("cargo:rerun-if-changed=proto/{p}.proto");
     }
