@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections import defaultdict
 import os
 import sys
 import unittest
@@ -62,6 +63,35 @@ class WireManifestTests(unittest.TestCase):
         for e in load()["messages"]:
             if e["protocol"] == "grpc":
                 self.assertIn("compressed", e, e["file"])
+
+
+    def test_every_stream_was_captured_from_its_handshake(self):
+        # a stream that started before the capture cannot be split into messages
+        self.assertEqual(load()["capture"]["streams_without_handshake"], [])
+
+    def test_no_thrift_bytes_were_dropped(self):
+        # every Thrift direction splits into whole messages
+        self.assertEqual(load()["capture"]["trailing_bytes_dropped"], [])
+
+    def test_only_brpc_streams_produced_no_messages(self):
+        # the BE calling its own PBackendService over brpc baidu_std on 8060: not in the v1 corpus
+        left = load()["capture"]["streams_without_messages"]
+        for s in left:
+            self.assertEqual((s["protocol"], s["server_port"]), ("baidu_std", 8060), s)
+            self.assertGreater(s["bytes"], 0, s)
+
+    def test_calls_and_replies_pair_up(self):
+        # C++ clients send every call with seqid 0, so Thrift pairs by order on a connection
+        thrift, grpc = defaultdict(list), defaultdict(list)
+        for e in load()["messages"]:
+            if e["protocol"] == "thrift":
+                thrift[e["tcp_stream"]].append(e["kind"])
+            else:
+                grpc[(e["tcp_stream"], e["h2_stream"])].append(e["kind"])
+        for s, kinds in thrift.items():
+            self.assertEqual(kinds, ["call", "reply"] * (len(kinds) // 2), f"tcp stream {s}")
+        for key, kinds in grpc.items():
+            self.assertEqual(sorted(kinds), ["request", "response"], f"tcp/h2 stream {key}")
 
 
 if __name__ == "__main__":

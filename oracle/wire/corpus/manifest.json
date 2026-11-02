@@ -8,7 +8,25 @@
   "capture": {
     "pcap": "20261102-085436.pcap",
     "sha256": "7afc70797f4ad290de71d98e3f3d496ae5bafdb91bdbac80f2549bbe606393ef",
-    "streams": 33
+    "streams": 33,
+    "streams_without_handshake": [],
+    "streams_without_messages": [
+      {
+        "tcp_stream": 9,
+        "server_port": 8060,
+        "bytes": 4246,
+        "first_bytes": "50525043000002ed0000003e0a290a15",
+        "protocol": "baidu_std"
+      },
+      {
+        "tcp_stream": 28,
+        "server_port": 8060,
+        "bytes": 1279,
+        "first_bytes": "505250430000031e000000370a2b0a15",
+        "protocol": "baidu_std"
+      }
+    ],
+    "trailing_bytes_dropped": []
   },
   "messages": [
     {

@@ -31,6 +31,9 @@ CORPUS = os.path.join(WIRE, "corpus")
 TSHARK_IMAGE = os.environ.get("CAPTURE_IMAGE", "nicolaka/netshoot:v0.16")
 THRIFT_PORTS = {9020: "FrontendService", 9050: "HeartbeatService", 9060: "BackendService"}
 GRPC_PORT = 8060
+CAPTURED_PORTS = sorted({*THRIFT_PORTS, GRPC_PORT})
+# A stream's protocol, recognised from the first bytes its client sent.
+PREFIXES = [(b"PRI * HTTP/2.0", "http2"), (b"PRPC", "baidu_std"), (b"\x80\x01", "thrift")]
 
 
 class Gap(Exception):
@@ -87,22 +90,40 @@ def syn_streams(pcap):
     return {s: v for s, v in streams.items() if "server_isn" in v}
 
 
-def thrift_messages(pcap, streams):
-    ports = ", ".join(str(p) for p in THRIFT_PORTS)
-    segs = {}
-    for frame, stream, sport, seq, payload in fields(pcap, f"tcp.len > 0 && tcp.port in {{{ports}}}", ["frame.number", "tcp.stream", "tcp.srcport", "tcp.seq_raw", "tcp.payload"]):
-        s = int(stream)
-        if s not in streams:
+def segments(pcap):
+    """Every TCP segment carrying payload on a captured port, in capture order:
+    (frame, tcp_stream, src_port, dst_port, seq_raw, payload)."""
+    ports = ", ".join(str(p) for p in CAPTURED_PORTS)
+    rows = fields(pcap, f"tcp.len > 0 && tcp.port in {{{ports}}}",
+                  ["frame.number", "tcp.stream", "tcp.srcport", "tcp.dstport", "tcp.seq_raw", "tcp.payload"])
+    return [(int(f), int(s), int(sp), int(dp), int(seq), bytes.fromhex(p)) for f, s, sp, dp, seq, p in rows]
+
+
+def classify(first_bytes):
+    """Protocol of a stream from the first bytes its client sent."""
+    return next((name for prefix, name in PREFIXES if first_bytes.startswith(prefix)), "unknown")
+
+
+def thrift_messages(segs, streams):
+    """(messages, dropped): the Thrift messages of every handshaken stream on a Thrift port, and
+    each direction whose reassembled bytes end inside a message (those bytes are not stored)."""
+    by_direction = {}
+    for frame, s, sport, _, seq, payload in segs:
+        if s not in streams or streams[s]["server_port"] not in THRIFT_PORTS:
             continue
-        to_server = int(sport) == streams[s]["client_port"]
-        segs.setdefault((s, to_server), []).append((int(seq), bytes.fromhex(payload), int(frame)))
-    out = []
-    for (s, to_server), items in sorted(segs.items()):
+        to_server = sport == streams[s]["client_port"]
+        by_direction.setdefault((s, to_server), []).append((seq, payload, frame))
+    out, dropped = [], []
+    for (s, to_server), items in sorted(by_direction.items()):
         info = streams[s]
         start = (info["client_isn"] if to_server else info["server_isn"]) + 1
         data = reassemble([(seq, p) for seq, p, _ in items], start)
         frames = sorted(((seq - start) % 2**32, frame) for seq, _, frame in items)
-        for m in thrift_split.split_messages(data):
+        msgs = thrift_split.split_messages(data)
+        left = len(data) - (msgs[-1].end if msgs else 0)
+        if left:
+            dropped.append({"tcp_stream": s, "from": "client" if to_server else "server", "bytes": left})
+        for m in msgs:
             first_frame = max(f for off, f in frames if off <= m.start) if frames else 0
             out.append({
                 "protocol": "thrift",
@@ -115,7 +136,30 @@ def thrift_messages(pcap, streams):
                 "frame": first_frame,
                 "data": data[m.start:m.end],
             })
-    return out
+    return out, dropped
+
+
+def unextracted_streams(segs, streams, messages):
+    """(without_handshake, without_messages): streams on a captured port whose SYN and SYN-ACK
+    were not captured, and handshaken streams that produced no message, with their payload size
+    and the first bytes their client sent."""
+    seen = {}
+    for _, s, sport, dport, _, payload in segs:
+        server = streams[s]["server_port"] if s in streams else (dport if dport in CAPTURED_PORTS else sport)
+        e = seen.setdefault(s, {"server_port": server, "bytes": 0, "first": b""})
+        e["bytes"] += len(payload)
+        if not e["first"] and sport != server:
+            e["first"] = payload[:16]
+    extracted = {m["tcp_stream"] for m in messages}
+    without_handshake, without_messages = [], []
+    for s, e in sorted(seen.items()):
+        entry = {"tcp_stream": s, "server_port": e["server_port"], "bytes": e["bytes"],
+                 "first_bytes": e["first"].hex(), "protocol": classify(e["first"])}
+        if s not in streams:
+            without_handshake.append(entry)
+        elif s not in extracted:
+            without_messages.append(entry)
+    return without_handshake, without_messages
 
 
 def _pairs(obj, key):
@@ -184,7 +228,10 @@ def main(argv):
             raise SystemExit("no capture; run `make wire-capture`")
         pcap = os.path.join(WIRE, "captures", caps[-1])
     streams = syn_streams(pcap)
-    messages = thrift_messages(pcap, streams) + grpc_messages(pcap, streams)
+    segs = segments(pcap)
+    thrift, dropped = thrift_messages(segs, streams)
+    messages = thrift + grpc_messages(pcap, streams)
+    without_handshake, without_messages = unextracted_streams(segs, streams, messages)
     messages.sort(key=lambda m: (m["frame"], m["protocol"], m["tcp_stream"]))
     shutil.rmtree(os.path.join(CORPUS, "messages"), ignore_errors=True)
     entries = []
@@ -201,7 +248,15 @@ def main(argv):
     manifest = {
         "corpus_version": 1,
         "reference": reference_identity(),
-        "capture": {"pcap": os.path.basename(pcap), "sha256": pcap_sha, "streams": len(streams)},
+        "capture": {
+            "pcap": os.path.basename(pcap),
+            "sha256": pcap_sha,
+            "streams": len(streams),
+            # nothing below is in the corpus; the manifest tests decide what is acceptable
+            "streams_without_handshake": without_handshake,
+            "streams_without_messages": without_messages,
+            "trailing_bytes_dropped": dropped,
+        },
         "messages": entries,
     }
     with open(os.path.join(CORPUS, "manifest.json"), "w", encoding="utf-8") as fh:
@@ -210,7 +265,14 @@ def main(argv):
     counts = {}
     for e in entries:
         counts[(e["protocol"], e["kind"])] = counts.get((e["protocol"], e["kind"]), 0) + 1
-    print(f"{len(entries)} messages from {len(streams)} streams: " + ", ".join(f"{p} {k} {n}" for (p, k), n in sorted(counts.items())))
+    used = len({e["tcp_stream"] for e in entries})
+    print(f"{len(entries)} messages from {used} of {len(streams)} streams: " + ", ".join(f"{p} {k} {n}" for (p, k), n in sorted(counts.items())))
+    for label, items in (("without handshake (not split)", without_handshake),
+                         ("without messages", without_messages)):
+        for e in items:
+            print(f"  stream {e['tcp_stream']} port {e['server_port']} {label}: {e['bytes']} bytes, {e['protocol']}")
+    for d in dropped:
+        print(f"  stream {d['tcp_stream']} {d['from']} side: {d['bytes']} trailing bytes dropped (partial message)")
     return 0
 
 

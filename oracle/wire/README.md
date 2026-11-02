@@ -24,11 +24,23 @@ first byte; that is why the capture starts before the FE boots.
 ## Extraction
 
 `make wire-extract [PCAP=captures/<name>.pcap]` (default: the newest capture) rebuilds `corpus/`.
-Only connections whose SYN is in the capture are used. Each direction is reassembled by TCP
-sequence number from the initial sequence number, so a missing segment is an error rather than a
-silently shorter stream, and every Thrift direction must split into whole messages with no bytes
-left over. gRPC messages are taken from tshark's HTTP/2 dissection of port 8060, with the method
-read from the `:path` header of the same HTTP/2 stream.
+Only connections whose handshake (SYN and SYN-ACK) is in the capture are split. Each direction is
+reassembled by TCP sequence number from the initial sequence number, so a missing segment is an
+error rather than a silently shorter stream. gRPC messages are taken from tshark's HTTP/2
+dissection of port 8060, with the method read from the `:path` header of the same HTTP/2 stream.
+
+Nothing is dropped silently. The manifest's `capture` section lists the connections whose
+handshake was not captured (`streams_without_handshake`), the handshaken connections that
+produced no message, with their size, first bytes and protocol (`streams_without_messages`), and
+every direction whose bytes end inside a Thrift message (`trailing_bytes_dropped`); `extract.py`
+prints them too. `tests/test_wire_manifest.py` requires the first and last lists to be empty,
+allows only brpc connections in the middle one, and checks that calls and replies pair up. Thrift
+calls and replies pair by order on a connection, not by sequence id: the C++ BE's Thrift clients
+send every call with seqid 0.
+
+In capture `20261102-085436` the connections without messages are two brpc `baidu_std`
+connections on port 8060 (4,246 and 1,279 bytes): the BE calling its own `PBackendService`,
+which happens on a single node too. They are not in this version of the corpus.
 
 tshark's own Thrift dissector labels every TCP segment of a multi-segment message as a separate
 call, so its per-method counts run higher than the corpus (for example 20 `report` frames for 11
