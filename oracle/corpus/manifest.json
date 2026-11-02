@@ -1,0 +1,67 @@
+{
+  "corpus_version": 1,
+  "reference": {
+    "commit": "917b20be838",
+    "image": "apache/doris:all-in-one-4.1.5",
+    "version": "doris-4.1.5-release-917b20be838"
+  },
+  "tables": {
+    "empty_table": {
+      "files": [],
+      "rows": 0,
+      "schema_hash": 676900517,
+      "tablet_id": 1793599344751
+    },
+    "scalar_ints": {
+      "files": [
+        {
+          "bytes": 1792,
+          "path": "data/scalar_ints/020000000003e0ce684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "8f9a795ed723c4fdbbe4c35ec01dd2101426a88211e589d6a5d6e25165fc3a00"
+        },
+        {
+          "bytes": 15848,
+          "path": "data/scalar_ints/020000000003e0d0684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "cac1bb158dfa75858635b2697487c159dbc7996b1da9f1c04a65d484db077c1d"
+        },
+        {
+          "bytes": 1473,
+          "path": "data/scalar_ints/020000000003e0d2684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "89f12d60fe40f966100475bca8c3040ff2353a73146f31ff78e599de039faed1"
+        }
+      ],
+      "rows": 2011,
+      "schema_hash": 132614947,
+      "tablet_id": 1793599344721
+    },
+    "scalar_others": {
+      "files": [
+        {
+          "bytes": 2804,
+          "path": "data/scalar_others/020000000003e0d5684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "ad07e74708ad8da428621068c7859c45067be1b603d4690db3ed921534ae4416"
+        },
+        {
+          "bytes": 8137,
+          "path": "data/scalar_others/020000000003e0d7684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "217fbbdf06223231e0f2dedb695de2f2c3470c16f5f990c79902481203cbea30"
+        }
+      ],
+      "rows": 510,
+      "schema_hash": 629119618,
+      "tablet_id": 1793599344733
+    },
+    "zstd_ints": {
+      "files": [
+        {
+          "bytes": 9186,
+          "path": "data/zstd_ints/020000000003e0da684b5a7d9074278bcb23d2ad610d529c_0.dat",
+          "sha256": "70e1068f9df747dd1ceab9795e338411c20a156aef61d19a455be72b3523f757"
+        }
+      ],
+      "rows": 1000,
+      "schema_hash": 1368414825,
+      "tablet_id": 1793599344743
+    }
+  }
+}
