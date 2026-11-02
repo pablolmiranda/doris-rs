@@ -3,6 +3,7 @@
 //! The on-disk format is defined by the Doris C++ Backend; this crate reads it and is verified
 //! against the golden corpus in `oracle/corpus` (tablets written by the reference release).
 
+pub mod binary;
 pub mod bitshuffle;
 pub mod column;
 pub mod corpus;

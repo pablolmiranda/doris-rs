@@ -158,3 +158,74 @@ fn bitshuffle_header_with_zero_element_size_is_an_error_not_a_panic() {
     let err = doris_segment::column::decode_bitshuffle_values(&values, 1, 4).unwrap_err();
     assert!(matches!(err, Error::Corrupt(_)), "{err}");
 }
+
+/// A one-column INT segment with a single data page whose footer claims `num_values` rows,
+/// built from scratch so every checksum is valid.
+fn segment_with_claimed_rows(num_values: u64, segment_rows: u32) -> SegmentFile {
+    use doris_segment::pb::segment_v2::{
+        BTreeMetaPb, ColumnIndexMetaPb, ColumnIndexTypePb, ColumnMetaPb, DataPageFooterPb,
+        EncodingTypePb, OrdinalIndexPb, PagePointerPb, SegmentFooterPb,
+    };
+    let body = vec![0u8; 16];
+    let page_footer = PageFooterPb {
+        r#type: Some(PageTypePb::DataPage as i32),
+        uncompressed_size: Some(body.len() as u32),
+        data_page_footer: Some(DataPageFooterPb {
+            first_ordinal: Some(0),
+            num_values: Some(num_values),
+            nullmap_size: Some(0),
+            next_array_item_ordinal: None,
+        }),
+        ..Default::default()
+    };
+    let fb = page_footer.encode_to_vec();
+    let mut bytes = body;
+    bytes.extend_from_slice(&fb);
+    bytes.extend_from_slice(&(fb.len() as u32).to_le_bytes());
+    let crc = crc32c::crc32c(&bytes);
+    bytes.extend_from_slice(&crc.to_le_bytes());
+    let page_len = bytes.len() as u32;
+    let column = ColumnMetaPb {
+        column_id: Some(0),
+        unique_id: Some(0),
+        r#type: Some(5),
+        length: Some(4),
+        encoding: Some(EncodingTypePb::BitShuffle as i32),
+        compression: Some(CompressionTypePb::NoCompression as i32),
+        is_nullable: Some(false),
+        indexes: vec![ColumnIndexMetaPb {
+            r#type: Some(ColumnIndexTypePb::OrdinalIndex as i32),
+            ordinal_index: Some(OrdinalIndexPb {
+                root_page: Some(BTreeMetaPb {
+                    root_page: Some(PagePointerPb {
+                        offset: 0,
+                        size: page_len,
+                    }),
+                    is_root_data_page: Some(true),
+                }),
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let footer = SegmentFooterPb {
+        version: Some(1),
+        columns: vec![column],
+        num_rows: Some(segment_rows),
+        ..Default::default()
+    };
+    let fbytes = footer.encode_to_vec();
+    bytes.extend_from_slice(&fbytes);
+    bytes.extend_from_slice(&(fbytes.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&crc32c::crc32c(&fbytes).to_le_bytes());
+    bytes.extend_from_slice(b"D0R1");
+    SegmentFile::from_bytes(bytes).unwrap()
+}
+
+#[test]
+fn page_claiming_more_rows_than_the_segment_is_an_error() {
+    // a crc-valid page footer claiming 2^62 rows must not drive a 2^62-entry allocation
+    let seg = segment_with_claimed_rows(1 << 62, 3);
+    let err = doris_segment::column::read_column(&seg, 0).unwrap_err();
+    assert!(matches!(err, Error::Corrupt(_)), "{err}");
+}

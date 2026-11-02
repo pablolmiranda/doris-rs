@@ -76,6 +76,11 @@ pub fn cells(values: &ColumnValues) -> Vec<Cell> {
         ColumnValues::DateTime { values, scale } => text(values, |d| render_datetime(d, *scale)),
         ColumnValues::Ipv4(v) => text(v, |x| render_ipv4(*x)),
         ColumnValues::Ipv6(v) => text(v, |x| render_ipv6(*x)),
+        // The reference sends string bytes as-is (interior NULs included); the corpus is UTF-8.
+        ColumnValues::Bytes(v) => text(v, |b| {
+            String::from_utf8(b.clone())
+                .unwrap_or_else(|e| format!("<non-utf8 {:?}>", e.into_bytes()))
+        }),
     }
 }
 

@@ -113,6 +113,8 @@ pub enum ColumnValues {
     Ipv4(Vec<Option<u32>>),
     /// The address is the big-endian bytes of the u128.
     Ipv6(Vec<Option<u128>>),
+    /// CHAR (already cut at its first NUL, as the reference reads it), VARCHAR, STRING.
+    Bytes(Vec<Option<Vec<u8>>>),
 }
 
 impl ColumnValues {
@@ -132,6 +134,7 @@ impl ColumnValues {
             ColumnValues::DateTime { values, .. } => values.len(),
             ColumnValues::Ipv4(v) => v.len(),
             ColumnValues::Ipv6(v) => v.len(),
+            ColumnValues::Bytes(v) => v.len(),
         }
     }
 

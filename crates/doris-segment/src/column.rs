@@ -1,5 +1,6 @@
 //! Column decoding: every fixed-width scalar type over BIT_SHUFFLE (or RLE for BOOL and
-//! integers) pages, with the per-page null bitmap applied.
+//! integers) pages, binary types through `crate::binary`, with the per-page null bitmap
+//! applied.
 //!
 //! A data page body is `encoded values | nullmap (nullmap_size bytes)`. Values are stored
 //! only for non-null rows (`ScalarColumnWriter::append_nulls` touches only the bitmap), so the
@@ -24,10 +25,13 @@ pub mod field_type {
     pub const LARGEINT: i32 = 9;
     pub const FLOAT: i32 = 10;
     pub const DOUBLE: i32 = 11;
+    pub const CHAR: i32 = 13;
     pub const DATE: i32 = 14;
     pub const DATETIME: i32 = 15;
     pub const DECIMAL: i32 = 16;
+    pub const VARCHAR: i32 = 17;
     pub const BOOL: i32 = 24;
+    pub const STRING: i32 = 26;
     pub const DATEV2: i32 = 28;
     pub const DATETIMEV2: i32 = 29;
     pub const DECIMAL32: i32 = 31;
@@ -111,46 +115,86 @@ pub fn decode_bitshuffle_values(
     Ok(elems)
 }
 
-/// Raw little-endian element bytes of the non-null values of one page, plus a null flag per row.
-struct PageValues {
-    nulls: Vec<bool>,
-    elems: Vec<u8>,
+/// One data page split into a null flag per row and its encoded values.
+pub(crate) struct DataPageParts {
+    pub nulls: Vec<bool>,
+    pub values: Vec<u8>,
 }
 
-/// Split a data page body into its null flags (one per row) and the encoded values.
-fn split_nulls(
-    body: &[u8],
-    num_values: usize,
-    nullmap_size: usize,
-) -> Result<(Vec<bool>, &[u8]), Error> {
-    if nullmap_size > body.len() {
-        return Err(Error::Corrupt("nullmap larger than page body".into()));
+impl DataPageParts {
+    pub fn non_null(&self) -> usize {
+        self.nulls.iter().filter(|n| !**n).count()
     }
-    let (values, nullmap) = body.split_at(body.len() - nullmap_size);
-    let nulls = if nullmap_size == 0 {
-        vec![false; num_values]
-    } else {
-        RleDecoder::new(nullmap, 1)
-            .take(num_values)?
-            .into_iter()
-            .map(|b| b != 0)
-            .collect()
-    };
-    Ok((nulls, values))
 }
 
+/// Read every data page of a column and split off its null bitmap.
+///
+/// Page footers declare their row counts; the running total must stay within the segment's
+/// `num_rows` and reach it exactly, which also bounds every allocation by the segment's
+/// declared size.
+pub(crate) fn read_data_pages(
+    file: &SegmentFile,
+    meta: &ColumnMetaPb,
+) -> Result<Vec<DataPageParts>, Error> {
+    let unique_id = meta.unique_id.unwrap_or(0);
+    let segment_rows = u64::from(file.footer.num_rows.unwrap_or(0));
+    let mut rows = 0u64;
+    let mut out = Vec::new();
+    for ptr in data_pages(file, meta)? {
+        let page = read_page(file, &ptr, meta.compression())?;
+        let dpf = page
+            .footer
+            .data_page_footer
+            .as_ref()
+            .ok_or_else(|| Error::Corrupt("data page without data_page_footer".into()))?;
+        let num_values = dpf.num_values.unwrap_or(0);
+        rows = rows
+            .checked_add(num_values)
+            .filter(|r| *r <= segment_rows)
+            .ok_or_else(|| {
+                Error::Corrupt(format!(
+                    "column {unique_id}: pages hold more rows than the segment's {segment_rows}"
+                ))
+            })?;
+        let nullmap_size = dpf.nullmap_size.unwrap_or(0) as usize;
+        let body = &page.body;
+        if nullmap_size > body.len() {
+            return Err(Error::Corrupt("nullmap larger than page body".into()));
+        }
+        let (values, nullmap) = body.split_at(body.len() - nullmap_size);
+        let nulls = if nullmap_size == 0 {
+            vec![false; num_values as usize]
+        } else {
+            RleDecoder::new(nullmap, 1)
+                .take(num_values as usize)?
+                .into_iter()
+                .map(|b| b != 0)
+                .collect()
+        };
+        out.push(DataPageParts {
+            nulls,
+            values: values.to_vec(),
+        });
+    }
+    if rows != segment_rows {
+        return Err(Error::Corrupt(format!(
+            "column {unique_id}: pages hold {rows} rows, the segment has {segment_rows}"
+        )));
+    }
+    Ok(out)
+}
+
+/// Little-endian element bytes of one page's non-null values.
 fn decode_page_values(
     meta: &ColumnMetaPb,
-    body: &[u8],
-    num_values: usize,
-    nullmap_size: usize,
+    page: &DataPageParts,
     elem_size: usize,
-) -> Result<PageValues, Error> {
+) -> Result<Vec<u8>, Error> {
     let unique_id = meta.unique_id.unwrap_or(0);
-    let (nulls, values) = split_nulls(body, num_values, nullmap_size)?;
-    let non_null = nulls.iter().filter(|n| !**n).count();
-    let elems = match meta.encoding() {
-        EncodingTypePb::BitShuffle => decode_bitshuffle_values(values, non_null, elem_size)?,
+    let non_null = page.non_null();
+    let values = &page.values;
+    match meta.encoding() {
+        EncodingTypePb::BitShuffle => decode_bitshuffle_values(values, non_null, elem_size),
         EncodingTypePb::Rle => {
             // RlePageDecoder: BOOL uses one bit per value, integers their full width.
             let bit_width = match meta.r#type {
@@ -183,28 +227,29 @@ fn decode_page_values(
             for v in decoded {
                 elems.extend_from_slice(&v.to_le_bytes()[..elem_size]);
             }
-            elems
+            Ok(elems)
         }
-        other => {
-            return Err(Error::UnsupportedEncoding {
-                column: unique_id,
-                encoding: other as i32,
-            })
-        }
-    };
-    Ok(PageValues { nulls, elems })
+        other => Err(Error::UnsupportedEncoding {
+            column: unique_id,
+            encoding: other as i32,
+        }),
+    }
 }
 
 /// Map each row of every page to `None` (null) or the next element parsed by `parse`.
-fn gather<T>(pages: &[PageValues], elem_size: usize, parse: impl Fn(&[u8]) -> T) -> Vec<Option<T>> {
+fn gather<T>(
+    pages: &[(Vec<bool>, Vec<u8>)],
+    elem_size: usize,
+    parse: impl Fn(&[u8]) -> T,
+) -> Vec<Option<T>> {
     let mut out = Vec::new();
-    for p in pages {
+    for (nulls, elems) in pages {
         let mut next = 0usize;
-        for &is_null in &p.nulls {
+        for &is_null in nulls {
             if is_null {
                 out.push(None);
             } else {
-                out.push(Some(parse(&p.elems[next..next + elem_size])));
+                out.push(Some(parse(&elems[next..next + elem_size])));
                 next += elem_size;
             }
         }
@@ -229,27 +274,17 @@ pub fn read_column(file: &SegmentFile, unique_id: u32) -> Result<ColumnValues, E
     use field_type::*;
     let meta = column_meta(file, unique_id)?;
     let ft = meta.r#type.unwrap_or(-1);
+    if matches!(ft, CHAR | VARCHAR | STRING) {
+        return crate::binary::read_binary_column(file, meta);
+    }
     let elem_size = element_size(ft).ok_or(Error::UnsupportedType {
         column: unique_id,
         field_type: ft,
     })?;
     let mut pages = Vec::new();
-    for ptr in data_pages(file, meta)? {
-        let page = read_page(file, &ptr, meta.compression())?;
-        let dpf = page
-            .footer
-            .data_page_footer
-            .as_ref()
-            .ok_or_else(|| Error::Corrupt("data page without data_page_footer".into()))?;
-        let num_values = dpf.num_values.unwrap_or(0) as usize;
-        let nullmap_size = dpf.nullmap_size.unwrap_or(0) as usize;
-        pages.push(decode_page_values(
-            meta,
-            &page.body,
-            num_values,
-            nullmap_size,
-            elem_size,
-        )?);
+    for part in read_data_pages(file, meta)? {
+        let elems = decode_page_values(meta, &part, elem_size)?;
+        pages.push((part.nulls, elems));
     }
     let precision = || non_negative(meta.precision, "precision", unique_id);
     let scale = || non_negative(meta.frac, "scale", unique_id);

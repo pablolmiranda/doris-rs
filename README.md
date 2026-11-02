@@ -27,6 +27,7 @@ Java Frontend plus C++ Backend.
 | Path | Purpose |
 |---|---|
 | `oracle/` | The conformance harness: reference cluster, suite runner, baseline, and gate |
+| `crates/` | Rust crates; `doris-segment` reads segment files |
 | `.cache/` | Untracked: pinned upstream source worktree, build outputs |
 
 The upstream source is expected as a sibling checkout at `../doris`. The harness pins a release
@@ -34,4 +35,7 @@ tag from it; see `oracle/versions.env`.
 
 ## Status
 
-Phase 0: oracle harness. No Rust code yet.
+- `oracle/`: conformance harness over the upstream regression suites, with committed baselines
+  against the 4.1.5 reference, and the golden on-disk corpus (`oracle/corpus/`).
+- `crates/doris-segment`: reads V2-format segment files written by the reference and decodes
+  every scalar column type, verified row by row against the corpus.
