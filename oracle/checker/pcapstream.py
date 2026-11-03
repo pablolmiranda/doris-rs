@@ -9,6 +9,7 @@ A direction stops at its first hole (a byte range that was never captured): unfr
 cannot be split again after one, so `gap` and `after_gap` say what was lost instead.
 """
 import bisect
+import collections
 import os
 import struct
 import tempfile
@@ -156,12 +157,16 @@ def connections(path, ports, stats=None):
                 d.pieces.append(((seq - d.isn - 1) % 2**32, at, len(payload), t_ms))
         stats["without_handshake"] = len(orphans)
         done.extend(live.values())
-        for c in sorted(done, key=lambda c: c.first_ms):
+        live.clear()
+        # Drop each connection from this list as it is yielded, so its reassembled bytes are
+        # freed once the caller lets go of it (a run has thousands of connections).
+        queue = collections.deque(sorted(done, key=lambda c: c.first_ms))
+        done.clear()
+        while queue:
+            c = queue.popleft()
             if c.server_port not in ports or c.server.isn is None:
                 continue
             spool.flush()
             c.client.reassemble(spool)
             c.server.reassemble(spool)
             yield c
-            # The caller has taken what it needs; a run has thousands of connections.
-            c.client.data = c.server.data = b""
