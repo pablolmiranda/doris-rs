@@ -8,6 +8,7 @@ Output: JSON with one entry per suite:
 
 A suite that started but never finished is "incomplete" (the runner or server died).
 """
+import datetime
 import json
 import re
 import sys
@@ -50,6 +51,16 @@ def parse_message(line):
     return kind, attrs
 
 
+def epoch_ms(stamp):
+    """UTC epoch milliseconds of a TeamCity timestamp such as 2026-11-02T06:11:48.136+0000."""
+    if not stamp:
+        return None
+    try:
+        return round(datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000)
+    except ValueError:
+        return None
+
+
 def parse_lines(lines):
     suites = {}
     meta = {"summary": None}
@@ -74,6 +85,11 @@ def parse_lines(lines):
             name,
             {"status": "incomplete", "duration_ms": None, "message": None, "details": None},
         )
+        stamp = epoch_ms(attrs.get("timestamp"))
+        if kind == "testStarted" and stamp is not None:
+            entry["started_ms"] = stamp
+        if kind == "testFinished" and stamp is not None:
+            entry["finished_ms"] = stamp
         if kind == "testFailed":
             entry["status"] = "failed"
             entry["message"] = attrs.get("message") or ""

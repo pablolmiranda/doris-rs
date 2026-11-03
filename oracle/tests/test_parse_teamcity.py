@@ -55,6 +55,15 @@ class ParseTests(unittest.TestCase):
     def test_non_teamcity_lines_ignored(self):
         self.assertNotIn("Using", self.suites)
 
+    def test_suite_window_comes_from_teamcity_timestamps(self):
+        lines = [
+            "##teamcity[testStarted name='a.b.c' flowId='f' timestamp='2026-11-02T06:11:48.136+0000']",
+            "##teamcity[testFinished name='a.b.c' flowId='f' duration='170' timestamp='2026-11-02T06:11:48.305+0000']",
+        ]
+        entry = pt.parse_lines(lines)["suites"]["a.b.c"]
+        self.assertEqual(entry["started_ms"], 1793599908136)
+        self.assertEqual(entry["finished_ms"], 1793599908305)
+
     def test_main_exits_3_when_no_suites(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
