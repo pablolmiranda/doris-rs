@@ -51,6 +51,7 @@ wait_healthy doris-oracle-doris-1
 bin/cluster_setup.sh doris-oracle-doris-1 >> "$LOG"
 run reference-single "$STAMP-a1"
 "${CAPTURED[@]}" stop capture >> "$LOG" 2>&1
+phase "capture: $(docker logs doris-oracle-capture-1 2>&1 | grep -E 'captured|dropped|received' | tr '\n' ' ')"
 "${CAPTURED[@]}" rm -f capture >> "$LOG" 2>&1
 mv "results/captures/$CAPTURE_FILE" "results/reference-single/$STAMP-a1/traffic.pcap"
 phase "extract run a1 traffic"

@@ -34,6 +34,17 @@ class HttpTests(unittest.TestCase):
             traffic.http_exchanges(PUT1[:-2], b"")
 
 
+class HttpGapTests(unittest.TestCase):
+    def test_hole_keeps_complete_exchanges_before_it(self):
+        streams = {7: {"client_port": 40000, "server_port": 8040, "client_isn": 100, "server_isn": 500}}
+        segs = [(1, 7, 40000, 8040, 101, PUT1), (2, 7, 8040, 40000, 501, OK1),
+                # the first bytes of PUT2 were never captured
+                (3, 7, 40000, 8040, 101 + len(PUT1) + 10, PUT2[10:])]
+        items, damaged = traffic.http_messages(segs, streams, {1: 1000})
+        self.assertEqual([(h["kind"], d) for h, d in items], [("request", PUT1), ("response", OK1)])
+        self.assertEqual(damaged, [{"tcp_stream": 7, "from": "client", "gap": [len(PUT1), len(PUT1) + 10]}])
+
+
 class JsonStreamTests(unittest.TestCase):
     def test_array_items_are_yielded_as_they_complete(self):
         chunks = [b'[\n  {"a": "x}"', b', "b": [1, {"c": 2}]},\n  {"a": "y"}', b"\n]\n"]

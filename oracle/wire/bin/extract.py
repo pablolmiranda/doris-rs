@@ -54,6 +54,24 @@ def reassemble(segments, start_seq):
     return bytes(out)
 
 
+def reassemble_until_gap(segments, start_seq):
+    """(bytes up to the first hole, (hole start, hole end) or None, captured bytes after it).
+    Unframed Thrift cannot be split again after a hole, so a direction keeps its prefix only."""
+    try:
+        return reassemble(segments, start_seq), None, 0
+    except Gap:
+        pass
+    pieces = sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
+    out = bytearray()
+    for i, (off, payload) in enumerate(pieces):
+        if off > len(out):
+            return bytes(out), (len(out), off), sum(len(p) for _, p in pieces[i:])
+        end = off + len(payload)
+        if end > len(out):
+            out += payload[len(out) - off:]
+    return bytes(out), None, 0
+
+
 def split_grpc(stream):
     """Split one direction of a gRPC stream into (compressed, message) pairs; a trailing
     partial message is dropped."""
@@ -164,12 +182,15 @@ def thrift_messages(segs, streams):
     for (s, to_server), items in sorted(by_direction.items()):
         info = streams[s]
         start = (info["client_isn"] if to_server else info["server_isn"]) + 1
-        data = reassemble([(seq, p) for seq, p, _ in items], start)
+        data, gap, after = reassemble_until_gap([(seq, p) for seq, p, _ in items], start)
         frames = sorted(((seq - start) % 2**32, frame) for seq, _, frame in items)
         msgs = thrift_split.split_messages(data)
-        left = len(data) - (msgs[-1].end if msgs else 0)
-        if left:
-            dropped.append({"tcp_stream": s, "from": "client" if to_server else "server", "bytes": left})
+        left = len(data) - (msgs[-1].end if msgs else 0) + after
+        if left or gap:
+            entry = {"tcp_stream": s, "from": "client" if to_server else "server", "bytes": left}
+            if gap:
+                entry["gap"] = list(gap)
+            dropped.append(entry)
         for m in msgs:
             first_frame = max(f for off, f in frames if off <= m.start) if frames else 0
             out.append({

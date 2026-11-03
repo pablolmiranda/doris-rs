@@ -66,7 +66,12 @@ def write_traffic(run_dir, out_dir, gate):
     by_suite, background = split_traffic(records.read(path), wins)
     corpus = os.path.join(out_dir, "traffic")
     os.makedirs(corpus, exist_ok=True)
-    manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background, "suites": {}}
+    holes_path = os.path.join(run_dir, "traffic-holes.json")
+    holes = replies.load_json(holes_path) if os.path.exists(holes_path) else []
+    # Capture holes: messages after a hole on that connection direction are missing from the
+    # corpus, so the needs of the suites running then may be incomplete.
+    manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background,
+                "capture_holes": holes, "suites": {}}
     for k in gate:
         items = by_suite.get(k, [])
         if not items:

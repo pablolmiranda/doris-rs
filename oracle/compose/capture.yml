@@ -12,6 +12,9 @@ services:
       - ${CAPTURE_DIR:?set CAPTURE_DIR}:/out
     command:
       - tcpdump
+      # a large kernel buffer (KiB): suite runs send bursts on loopback that a default buffer drops
+      - -B
+      - "262144"
       - -i
       - lo
       - -s

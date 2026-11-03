@@ -66,6 +66,15 @@ class TrafficTests(DeriveTestCase):
         derive.derive([run], self.out)
         self.assertEqual(self.lines("reaches_be.txt"), [A])
 
+    def test_capture_holes_of_the_run_are_listed_in_the_manifest(self):
+        run = self.run_dir(1, {A: ("passed", 100, 200)}, traffic=[msg("heartbeat", 150)])
+        holes = [{"tcp_stream": 1, "from": "client", "gap": [10, 20]}]
+        with open(os.path.join(run, "traffic-holes.json"), "w") as fh:
+            json.dump(holes, fh)
+        derive.derive([run], self.out)
+        with open(os.path.join(self.out, "traffic", "manifest.json")) as fh:
+            self.assertEqual(json.load(fh)["capture_holes"], holes)
+
     def test_overlapping_windows_are_rejected(self):
         run = self.run_dir(1, {A: ("passed", 100, 300), B: ("passed", 200, 400)}, traffic=[])
         with self.assertRaises(ValueError):
