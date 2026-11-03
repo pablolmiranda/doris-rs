@@ -79,6 +79,8 @@ def run_exchanges(run_dir):
     for name in sorted(os.listdir(tap_dir)) if os.path.isdir(tap_dir) else []:
         c2s, s2c, times = tap.read_log(os.path.join(tap_dir, name))
         for ex in mysql_wire.decode_session(c2s, s2c, times):
+            if ex["command"] == "COM_QUIT":
+                continue  # no reply, and whether it lands inside the suite's window is timing
             ex["conn_id"] = name
             by_suite.setdefault(owner(ex["t_ms"], wins), []).append(ex)
     out = {}
@@ -88,7 +90,10 @@ def run_exchanges(run_dir):
         for ex in exchanges:
             ex["conn"] = numbering.setdefault(ex.pop("conn_id"), len(numbering))
             ex.pop("t_ms", None)
-        out[suite] = [substitute(ex, run_facts) for ex in collapse(exchanges)]
+        # Each connection's own sequence is deterministic; how connections interleave in time
+        # is not, so a suite's exchanges are ordered connection by connection.
+        ordered = sorted(collapse(exchanges), key=lambda x: x["conn"])
+        out[suite] = [substitute(ex, run_facts) for ex in ordered]
     return out
 
 

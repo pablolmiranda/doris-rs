@@ -8,6 +8,8 @@ import struct
 
 CLIENT_SSL = 0x00000800
 CLIENT_DEPRECATE_EOF = 0x01000000
+CLIENT_SESSION_TRACK = 0x00800000
+SERVER_SESSION_STATE_CHANGED = 0x4000
 SERVER_MORE_RESULTS_EXISTS = 0x0008
 
 COMMANDS = {
@@ -120,12 +122,19 @@ def is_eof(p):
     return p[:1] == b"\xfe" and len(p) < 9
 
 
-def parse_ok(p):
+def parse_ok(p, caps=0):
+    """OK packet (or the OK-style end of a result set). Under CLIENT_SESSION_TRACK the info is
+    length-encoded and may be followed by session-state changes."""
     r = Reader(p)
     r.take(1)
     out = {"type": "ok", "affected_rows": r.lenenc(), "last_insert_id": r.lenenc(),
            "status": r.int(2), "warnings": r.int(2)}
-    out["info"] = text(r.rest())
+    if caps & CLIENT_SESSION_TRACK:
+        out["info"] = text(r.lenenc_bytes()) if not r.done() else ""
+        if out["status"] & SERVER_SESSION_STATE_CHANGED and not r.done():
+            out["session_state"] = r.lenenc_bytes().hex()
+    else:
+        out["info"] = text(r.rest())
     return out
 
 
@@ -225,7 +234,7 @@ class Session:
     def reply_simple(self):
         p = self.server.next()
         if p[:1] == b"\x00":
-            return parse_ok(p)
+            return parse_ok(p, self.caps)
         if p[:1] == b"\xff":
             return parse_err(p)
         if p[:1] == b"\xfe":
@@ -270,7 +279,7 @@ class Session:
             if p[:1] == b"\xff":
                 return {"type": "err_after_rows", "columns": columns, "rows": rows, "error": parse_err(p)}
             if (self.deprecate_eof and p[:1] == b"\xfe" and len(p) < 0xFFFFFF) or (not self.deprecate_eof and is_eof(p)):
-                end = parse_ok(p) if self.deprecate_eof else parse_eof(p)
+                end = parse_ok(p, self.caps) if self.deprecate_eof else parse_eof(p)
                 out = {"type": "resultset", "columns": columns, "rows": rows,
                        "status": end["status"], "warnings": end["warnings"]}
                 if binary:

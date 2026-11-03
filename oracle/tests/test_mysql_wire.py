@@ -33,6 +33,12 @@ class TextProtocolTests(unittest.TestCase):
         reply = mysql_wire.decode_session(c2s, s2c)[1]["reply"]
         self.assertEqual((reply["type"], reply["affected_rows"], reply["info"]), ("ok", 1, "{'label':'x'}"))
 
+    def test_ok_info_is_length_encoded_under_session_track(self):
+        caps = f.BASE_CAPS | 0x00800000
+        info = b"{'label':'x', 'txnId':'42'}"
+        c2s, s2c = f.session([([f.query("insert into t values (1)")], [f.ok(affected=1, info=f.lenenc_str(info))])], caps=caps)
+        self.assertEqual(mysql_wire.decode_session(c2s, s2c)[1]["reply"]["info"], info.decode())
+
     def test_deprecate_eof_gives_the_same_reply_as_classic_eof(self):
         cols, rows = [f.coldef("a")], [["x"], [None]]
         classic = f.session([([f.query("q")], f.resultset(cols, rows))])

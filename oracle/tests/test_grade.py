@@ -36,6 +36,10 @@ class GradeTestCase(unittest.TestCase):
         derive.derive(dirs, out)
         return out
 
+    def reference_status(self, ref):
+        with open(os.path.join(ref, "marks.json")) as fh:
+            return json.load(fh)["suites"][S]["status"]
+
     def grade(self, ref, suites, connections, facts=None):
         return grade.grade(write_run(self.dir("cand"), suites, connections, facts), ref, self.scores)
 
@@ -85,6 +89,19 @@ class StrictGateTests(GradeTestCase):
         ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q(poll, [["RUNNING"]])), (151, q(poll, [["FINISHED"]]))]]))
         verdict = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q(poll, [["RUNNING"]])), (151, q(poll, [["CANCELLED"]]))]])
         self.assertIn(S, verdict["strict"]["differences"])
+
+    def test_interleaving_between_connections_does_not_matter(self):
+        def run(t_b):
+            return [[(150, q("select 1", [["1"]])), (170, q("select 3", [["3"]]))], [(t_b, q("select 2", [["2"]]))]]
+        ref = self.reference(({S: ("passed", 100, 200)}, run(160)), ({S: ("passed", 100, 200)}, run(180)))
+        self.assertEqual(self.reference_status(ref), "stable")
+        self.assertEqual(self.grade(ref, {S: ("passed", 100, 200)}, run(155))["strict"]["passing"], [S])
+
+    def test_connection_close_timing_does_not_matter(self):
+        quit_ = ([b"\x01"], [])
+        ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (160, quit_)]]),
+                             ({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (260, quit_)]]))
+        self.assertEqual(self.reference_status(ref), "stable")
 
     def test_strict_gate_needs_the_suite_to_pass_first(self):
         conns = [[(150, q("select 1", [["1"]]))]]
