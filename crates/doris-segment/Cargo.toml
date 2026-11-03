@@ -1,0 +1,23 @@
+[package]
+name = "doris-segment"
+version = "0.1.0"
+description = "Reader for Apache Doris segment (.dat) files, verified against the golden corpus"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+prost = { workspace = true }
+crc32c = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+lz4_flex = { workspace = true }
+zstd = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }

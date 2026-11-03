@@ -14,8 +14,11 @@ Rust code in `doris-rs`, so the storage read path is where the migration starts.
 - A reproducible corpus: SQL that creates and fills tables on the reference, expected rows
   captured from the reference itself, and the raw tablet files plus metadata copied out of the BE.
 - Coverage of the format axes a reader must handle, growing version by version. v1 covers:
-  DUPLICATE tables with all scalar types (nullable and not), the default LZ4F codec plus ZSTD,
-  multiple rowsets per tablet (several INSERTs), and multi-row pages.
+  DUPLICATE tables with all scalar types (nullable and not), LZ4F and ZSTD page compression
+  (ZSTD is the FE default in 4.1.5, so both are set explicitly), multiple rowsets per tablet
+  (several INSERTs), multi-row pages, and tables large enough that page bodies are actually
+  stored compressed (flush blocks above the 256 KB `segment_compression_threshold_kb`) and
+  columns span several pages (ordinal index pages).
 - A Rust crate that parses the segment footer and decodes the first page encodings, with tests
   that iterate the corpus manifest and compare to the expected rows.
 
@@ -50,8 +53,13 @@ the Rust write path. Each is a later corpus version with its own plan.
 - Corpus lives in `oracle/corpus/` (builder scripts, SQL, expected rows, manifest) and the
   binary tablet files under `oracle/corpus/data/` committed to git while small.
 - Rust code lives in a Cargo workspace at the repo root, first crate `crates/doris-segment`.
-- Expected rows are TSV produced by `mysql -N --batch` with `ORDER BY` on every column, so they
-  are deterministic regardless of tablet layout. NULL is the literal `\N` as mysql prints it.
+- Expected rows are TSV produced by `mysql -N --batch --raw` with `ORDER BY` on every column, so
+  they are deterministic regardless of tablet layout. NULL is the bare word `NULL`, which is what
+  the reference's client prints in batch mode; no corpus string value may equal it.
+- Every corpus table sets `disable_auto_compaction` so the rowset layout cannot change between
+  load and extract.
+- A zero-row load produces no segment file in 4.1.5, so the corpus cannot contain a
+  `num_rows = 0` footer; that case is out of v1's reach rather than covered.
 - The manifest is JSON: reference version and commit, each table's DDL, tablet id, schema hash,
   row count, and each file's relative path and sha256.
 
