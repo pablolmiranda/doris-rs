@@ -1,0 +1,17 @@
+[package]
+name = "doris-proto"
+version = "0.1.0"
+description = "Protobuf types generated from the pinned Apache Doris .proto files"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+prost = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }

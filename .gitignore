@@ -1,5 +1,7 @@
 # upstream worktree, runner build output, downloaded images
 .cache/
+# wire capture pcaps (extracted messages are tracked, raw captures are not)
+oracle/wire/captures/
 # harness run output (baselines are tracked, raw results are not)
 oracle/results/*
 !oracle/results/.gitkeep
