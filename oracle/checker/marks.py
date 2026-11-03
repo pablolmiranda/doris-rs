@@ -58,6 +58,8 @@ def mask_rows(rows, columns):
 
 def reply_mark(anchor, others):
     """Mark for one exchange's reply, or {"skip": True} when it cannot be relaxed precisely."""
+    if all(o == anchor for o in others):
+        return {}
     if any(not isinstance(o, dict) or o.get("type") != (anchor or {}).get("type") for o in others):
         return {"skip": True} if anchor != others[0] or len(set(map(json.dumps, others))) > 1 else {}
     mark = {}

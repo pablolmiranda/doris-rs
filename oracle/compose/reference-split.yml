@@ -1,0 +1,108 @@
+# Reference cluster B for the Epic 1 checker: the same image and settings as reference-single.yml,
+# but FE and BE in separate containers, so the BE can be deployed differently on purpose: another
+# address, other ports, another memory limit, data path and visible cores. Replies that still
+# differ from cluster A after deployment-fact substitution reveal an undeclared fact.
+# The settings blocks are copies of reference-single.yml's (oracle/tests/test_compose_settings.py
+# keeps them in step) with the additions marked below.
+name: doris-oracle-split
+services:
+  fe:
+    image: ${DORIS_IMAGE:-apache/doris:all-in-one-4.1.5}
+    stop_grace_period: 60s
+    environment:
+      DORIS_ROLE: fe
+      FE_HEAP: ${FE_HEAP:-1024m}
+      FE_CONFIG_EXTRA: |
+        catalog_trash_expire_second = 1
+        enable_outfile_to_local = true
+        tablet_create_timeout_second = 100
+        remote_fragment_exec_timeout_ms = 120000
+        enable_feature_binlog = true
+        enable_debug_points = true
+        enable_mtmv = true
+        dynamic_partition_check_interval_seconds = 3
+        desired_max_waiting_jobs = 200
+        edit_log_roll_num = 1000
+        history_job_keep_max_second = 300
+        streaming_label_keep_max_second = 300
+        label_keep_max_second = 300
+        enable_job_schedule_second_for_test = true
+        mtmv_task_queue_size = 4096
+        enable_workload_group = true
+        publish_topic_info_interval_ms = 1000
+        workload_sched_policy_interval_ms = 1000
+        disable_decimalv2 = false
+        disable_datev1 = false
+        master_sync_policy = WRITE_NO_SYNC
+        replica_sync_policy = WRITE_NO_SYNC
+        enable_advance_next_id = true
+        max_query_profile_num = 2000
+        max_spilled_profile_num = 2000
+        max_bucket_num_per_partition = 512
+        max_remote_file_system_cache_num = 1000
+        force_olap_table_replication_allocation = tag.location.default:1
+        # role "all" gets these from the entrypoint; a separate FE must be told
+        force_olap_table_replication_num = 1
+        disable_balance = true
+    networks:
+      split:
+        ipv4_address: 172.30.42.10
+        aliases: [fe]
+  be:
+    image: ${DORIS_IMAGE:-apache/doris:all-in-one-4.1.5}
+    stop_grace_period: 60s
+    cpuset: "0-1"
+    # A container memory limit, so the memory the BE reports differs from cluster A's.
+    mem_limit: 8g
+    depends_on:
+      fe:
+        condition: service_healthy
+    environment:
+      DORIS_ROLE: be
+      FE_MASTER: fe
+      BE_HEARTBEAT_PORT: "9150"
+      BE_HTTP_PORT: "8140"
+      BE_CONFIG_EXTRA: |
+        mem_limit = ${BE_MEM_LIMIT:-30%}
+        path_gc_check_interval_second = 1
+        max_garbage_sweep_interval = 180
+        enable_stream_load_record = true
+        stream_load_record_batch_size = 500
+        max_depth_of_expr_tree = 200
+        enable_feature_binlog = true
+        max_sys_mem_available_low_water_mark_bytes = 69206016
+        user_files_secure_path = /
+        enable_debug_points = true
+        enable_debug_log_timeout_secs = 0
+        enable_missing_rows_correctness_check = true
+        webserver_num_workers = 128
+        enable_write_index_searcher_cache = true
+        enable_batch_download = true
+        remove_unused_remote_files_interval_sec = 60
+        cold_data_compaction_interval_sec = 60
+        enable_parquet_page_index = true
+        enable_fetch_rowsets_from_peer_replicas = true
+        enable_segment_rows_consistency_check = true
+        # deployment facts deliberately different from reference-single (clusters/split.facts.json)
+        be_port = 9160
+        webserver_port = 8140
+        heartbeat_service_port = 9150
+        brpc_port = 8160
+        arrow_flight_sql_port = 8150
+        storage_root_path = /opt/apache-doris/be/storage-alt
+    volumes:
+      # The BE does not create its storage path; a fresh volume per cluster (make down -v drops it).
+      - be-storage:/opt/apache-doris/be/storage-alt
+    networks:
+      split:
+        ipv4_address: 172.30.42.20
+        aliases: [be]
+volumes:
+  be-storage:
+networks:
+  split:
+    name: doris-oracle-split
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.42.0/24

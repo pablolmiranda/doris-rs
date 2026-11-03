@@ -5,7 +5,7 @@
 #   make src                         pin the upstream source worktree (.cache/doris-src)
 #   make image                       build the reference all-in-one image for DORIS_VERSION
 #   make runner                      build the JDK 17 + Maven runner image
-#   make up / make down              start / stop the reference cluster (PROFILE=single|multi)
+#   make up / make down              start / stop the reference cluster (PROFILE=single|split|multi)
 #   make baseline SUITES=...         run suites against the reference (PROFILE), store baselines/<id>.json
 #   make check TARGET=rust SUITES=.. run suites against a target and gate against the baseline
 #   make compare BASE=.. CAND=..     compare two results files
@@ -28,6 +28,7 @@ SUITE_PARALLEL ?= 1
 UPSTREAM  ?= $(abspath ../../doris)
 SRC       := $(abspath ../.cache/doris-src)
 COMPOSE   := docker compose -f compose/reference-$(PROFILE).yml
+FE_CONTAINER := $(if $(filter split,$(PROFILE)),doris-oracle-split-fe-1,$(if $(filter multi,$(PROFILE)),doris-oracle-fe-1-1,doris-oracle-doris-1))
 BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
@@ -55,6 +56,7 @@ runner:
 
 up:
 	$(COMPOSE) up --wait
+	bin/cluster_setup.sh $(FE_CONTAINER)
 	@echo "FE mysql: 127.0.0.1:$${FE_PORT:-9030}  FE http: 127.0.0.1:$${FE_HTTP_PORT:-8030}  (inside network: doris)"
 
 down:

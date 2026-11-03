@@ -9,6 +9,13 @@
 # Output goes to results/TARGET/<run-id>/: the rendered conf, the raw TeamCity log, results.json
 # (parsed), and meta.json (what ran against what). The framework's exit code is recorded, not
 # propagated: a baseline is allowed to contain failures.
+#
+# Switches (environment):
+#   PROXY=1   put the MySQL tap (checker/tap.py) in front of the target's FE ($FE_CONTAINER) and
+#             record every session into tap/; the suites connect through it
+#   SERIAL=1  one suite at a time, so each suite's time window is its own (the checker links
+#             replies and FE<->BE traffic to suites by time)
+# The target's deployment facts ($FACTS in its targets/ file) are copied to facts.json.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORACLE="$(cd "$HERE/.." && pwd)"
@@ -35,11 +42,32 @@ SRC_COMMIT="$(git -C "$SRC" rev-parse --short HEAD)"
 DIRS="$(grep -vE '^\s*(#|$)' "$SUITE_LIST" | tr -d ' ' | paste -sd, -)"
 [[ -n "$DIRS" ]] || { echo "error: suite list is empty" >&2; exit 1; }
 
-RUN_ID="$(date +%Y%m%d-%H%M%S)"
+RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 OUT="$ORACLE/results/$TARGET/$RUN_ID"
 mkdir -p "$OUT/conf"
+[[ -n "${FACTS:-}" ]] && cp "$ORACLE/$FACTS" "$OUT/facts.json"
 
-JDBC="jdbc:mysql://${FE_HOST}:${FE_QUERY_PORT}/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
+QUERY_PORT="$FE_QUERY_PORT"
+TAP_NAME=doris-oracle-tap
+stop_tap() { docker stop -t 10 "$TAP_NAME" >/dev/null 2>&1 || true; docker rm -f "$TAP_NAME" >/dev/null 2>&1 || true; }
+if [[ "${PROXY:-0}" == 1 ]]; then
+  : "${FE_CONTAINER:?target $TARGET has no FE_CONTAINER for the tap}"
+  mkdir -p "$OUT/tap"
+  stop_tap
+  docker run -d --name "$TAP_NAME" --network "container:$FE_CONTAINER" \
+    -v "$ORACLE/checker:/checker:ro" -v "$OUT/tap:/out" "${TAP_IMAGE:-python:3.11-slim}" \
+    python -u /checker/tap.py --listen 0.0.0.0:9031 --upstream "127.0.0.1:$FE_QUERY_PORT" --out /out >/dev/null
+  trap stop_tap EXIT
+  for _ in $(seq 1 30); do docker logs "$TAP_NAME" 2>&1 | grep -q "tap listening" && break; sleep 1; done
+  docker logs "$TAP_NAME" 2>&1 | grep -q "tap listening" || { echo "error: tap did not start" >&2; exit 1; }
+  QUERY_PORT=9031
+fi
+if [[ "${SERIAL:-0}" == 1 ]]; then
+  PARALLEL=1 SUITE_PARALLEL=1
+  EXTRA_ARGS+=(-actionParallel 1)
+fi
+
+JDBC="jdbc:mysql://${FE_HOST}:${QUERY_PORT}/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
 cp "$SRC/regression-test/conf/logback.xml" "$OUT/conf/logback.xml"
 python3 "$HERE/override_conf.py" \
   "$SRC/regression-test/conf/regression-conf.groovy" "$OUT/conf/regression-conf.groovy" \
@@ -64,6 +92,8 @@ cat > "$OUT/meta.json" <<JSON
   "doris_src_commit": "$SRC_COMMIT",
   "reference_image": "$DORIS_IMAGE",
   "runner_image": "$RUNNER_IMAGE",
+  "proxy": "${PROXY:-0}",
+  "serial": "${SERIAL:-0}",
   "started": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON
@@ -85,10 +115,11 @@ docker run --rm \
   -v doris-oracle-m2:/root/.m2 \
   -e DORIS_HOME=/doris \
   "$RUNNER_IMAGE" \
-  "cd /doris && ./run-regression-test.sh --teamcity --conf /out/conf --run -d '$DIRS' -parallel $PARALLEL -suiteParallel $SUITE_PARALLEL ${EXTRA_ARGS[@]+"${EXTRA_ARGS[*]}"}" \
+  "cd /doris && ./run-regression-test.sh --teamcity --conf /out/conf/regression-conf.groovy --run -d '$DIRS' -parallel $PARALLEL -suiteParallel $SUITE_PARALLEL ${EXTRA_ARGS[@]+"${EXTRA_ARGS[*]}"}" \
   2>&1 | tee "$OUT/teamcity.log"
 FRAMEWORK_EXIT=${PIPESTATUS[0]}
 set -e
+[[ "${PROXY:-0}" == 1 ]] && stop_tap
 
 if ! python3 "$HERE/parse_teamcity.py" "$OUT/results.json" "$OUT/teamcity.log"; then
   echo "error: no suite results parsed; see $OUT/teamcity.log (framework exit $FRAMEWORK_EXIT)" >&2

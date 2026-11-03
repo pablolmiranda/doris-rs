@@ -50,6 +50,18 @@ class StrictGateTests(GradeTestCase):
         self.assertEqual(verdict["strict"]["differences"], {})
         self.assertTrue(verdict["ok"])
 
+    def test_prepared_statements_including_reply_less_close_grade(self):
+        import struct
+        col = f.coldef("r", f.MYSQL_TYPE_LONGLONG, 20)
+        def conn(value):
+            return [[(150, ([f.prepare("select ?")], f.prepare_ok(1, [col], [col]))),
+                     (151, ([f.execute(1, [(f.MYSQL_TYPE_LONGLONG, struct.pack("<q", 5))])],
+                            f.binary_resultset([col], [[struct.pack("<q", value)]]))),
+                     (152, ([b"\x19" + struct.pack("<I", 1)], []))]]
+        ref = self.reference(({S: ("passed", 100, 200)}, conn(5)))
+        self.assertEqual(self.grade(ref, {S: ("passed", 100, 200)}, conn(5))["strict"]["passing"], [S])
+        self.assertEqual(self.grade(ref, {S: ("passed", 100, 200)}, conn(6))["strict"]["differences"][S]["field"], "rows")
+
     def test_first_difference_names_statement_and_field(self):
         ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (160, q("select 2", [["2"]]))]]))
         verdict = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (160, q("select 2", [["3"]]))]])
@@ -107,6 +119,16 @@ class DeploymentFactTests(GradeTestCase):
         ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("q", [["9050", "19050"]]))]], facts("127.0.0.1", "9050")))
         verdict = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("q", [["9150", "19150"]]))]], facts("10.1.2.3", "9150"))
         self.assertEqual(verdict["strict"]["differences"][S]["field"], "rows")
+
+    def test_cell_fact_scoped_to_columns_leaves_other_columns_alone(self):
+        def cores(n):
+            return {"facts": [{"name": "be-cores", "values": [n], "match": "cell", "columns": ["CpuCores"]}]}
+        cols = [f.coldef("CpuCores"), f.coldef("total")]
+        ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("q", [["10", "10"]], cols))]], cores("10")))
+        same = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("q", [["4", "10"]], cols))]], cores("4"))
+        self.assertEqual(same["strict"]["passing"], [S])
+        wrong = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("q", [["4", "4"]], cols))]], cores("4"))
+        self.assertEqual(wrong["strict"]["differences"][S]["field"], "rows")
 
     def test_impersonating_the_reference_address_is_a_difference(self):
         ref = self.reference(({S: ("passed", 100, 200)}, self.backends("127.0.0.1", "9050"), facts("127.0.0.1", "9050")))

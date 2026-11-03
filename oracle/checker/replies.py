@@ -96,18 +96,19 @@ COLUMN_TEXT_FIELDS = ("catalog", "schema", "table", "org_table", "name", "org_na
 
 
 def fact_rules(run_facts):
-    """[(match, value bytes, placeholder bytes)], longest values first so that a value never
-    replaces part of a longer one."""
-    rules = [(f["match"], v.encode(), f"<{f['name']}>".encode())
+    """[(match, value bytes, placeholder bytes, columns or None)], longest values first so that a
+    value never replaces part of a longer one. A cell fact with "columns" applies only to row
+    values in columns of those names."""
+    rules = [(f["match"], v.encode(), f"<{f['name']}>".encode(), f.get("columns"))
              for f in run_facts.get("facts", []) for v in f["values"] if v]
     return sorted(rules, key=lambda r: -len(r[1]))
 
 
-def sub_bytes(value, rules):
-    for match, v, placeholder in rules:
-        if match == "cell" and value == v:
+def sub_bytes(value, rules, column=None):
+    for match, v, placeholder, columns in rules:
+        if match == "cell" and value == v and (columns is None or column in columns):
             return placeholder
-    for match, v, placeholder in rules:
+    for match, v, placeholder, _ in rules:
         if match == "substring":
             value = value.replace(v, placeholder)
     return value
@@ -124,7 +125,9 @@ def sub_reply(reply, rules):
         return reply
     out = dict(reply)
     if "rows" in out and out.get("protocol") != "binary":
-        out["rows"] = [[None if v is None else sub_bytes(bytes.fromhex(v), rules).hex() for v in row] for row in out["rows"]]
+        names = [c.get("name") for c in out.get("columns", [])]
+        out["rows"] = [[None if v is None else sub_bytes(bytes.fromhex(v), rules, names[j] if j < len(names) else None).hex()
+                        for j, v in enumerate(row)] for row in out["rows"]]
     for key in ("message", "info"):
         if isinstance(out.get(key), str):
             out[key] = sub_text(out[key], rules)

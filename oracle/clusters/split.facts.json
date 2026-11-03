@@ -1,0 +1,130 @@
+{
+ "cluster": "split",
+ "facts": [
+  {
+   "name": "be-host",
+   "values": [
+    "172.30.42.20"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-data-path",
+   "values": [
+    "/opt/apache-doris/be/storage-alt"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-heartbeat-port",
+   "values": [
+    "9150"
+   ],
+   "match": "cell",
+   "columns": [
+    "HeartbeatPort"
+   ]
+  },
+  {
+   "name": "be-heartbeat-port-endpoint",
+   "values": [
+    "172.30.42.20:9150"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-port",
+   "values": [
+    "9160"
+   ],
+   "match": "cell",
+   "columns": [
+    "BePort"
+   ]
+  },
+  {
+   "name": "be-port-endpoint",
+   "values": [
+    "172.30.42.20:9160"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-http-port",
+   "values": [
+    "8140"
+   ],
+   "match": "cell",
+   "columns": [
+    "HttpPort"
+   ]
+  },
+  {
+   "name": "be-http-port-endpoint",
+   "values": [
+    "172.30.42.20:8140"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-brpc-port",
+   "values": [
+    "8160"
+   ],
+   "match": "cell",
+   "columns": [
+    "BrpcPort"
+   ]
+  },
+  {
+   "name": "be-brpc-port-endpoint",
+   "values": [
+    "172.30.42.20:8160"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-arrow-flight-port",
+   "values": [
+    "8150"
+   ],
+   "match": "cell",
+   "columns": [
+    "ArrowFlightSqlPort"
+   ]
+  },
+  {
+   "name": "be-arrow-flight-port-endpoint",
+   "values": [
+    "172.30.42.20:8150"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-cores",
+   "values": [
+    "10"
+   ],
+   "match": "cell",
+   "columns": [
+    "CpuCores"
+   ]
+  },
+  {
+   "name": "be-memory",
+   "values": [
+    "8.00 GB"
+   ],
+   "match": "cell",
+   "columns": [
+    "Memory"
+   ]
+  }
+ ],
+ "not_varied": [
+  {
+   "fact": "be-cores",
+   "reason": "the BE reports the host's CPU count whatever the container's cpuset or CPU quota; both clusters report 10"
+  }
+ ]
+}
