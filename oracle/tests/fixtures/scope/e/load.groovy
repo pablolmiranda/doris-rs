@@ -1,0 +1,3 @@
+suite("load") {
+    sql "CREATE TABLE e1 (k INT) DUPLICATE KEY(k) DISTRIBUTED BY HASH(k) BUCKETS 1"
+}

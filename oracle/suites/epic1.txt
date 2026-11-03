@@ -1,0 +1,14 @@
+# p0-core directories with at least one Epic 1 suite (computed by checker/scope.py)
+query_p0
+correctness_p0
+datatype_p0
+variant_p0
+inverted_index_p0
+load_p0
+insert_p0
+nereids_p0
+compaction
+mysql_compatibility_p0
+unique_with_mow_p0
+schema_change_p0
+point_query_p0

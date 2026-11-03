@@ -1,0 +1,1 @@
+CREATE TABLE unrelated (k INT) AGGREGATE KEY(k);

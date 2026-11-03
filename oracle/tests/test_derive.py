@@ -1,0 +1,96 @@
+"""Derive seam: recorded reference runs in, the reference products out."""
+import json
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "checker"))
+sys.path.insert(0, os.path.dirname(__file__))
+import derive  # noqa: E402
+import records  # noqa: E402
+from runfake import q, write_run  # noqa: E402
+
+A, B, C = "d.a.a", "d.b.b", "d.c.c"
+CONN = [[(150, q("select 1", [["1"]]))]]
+
+
+def msg(method, t_ms, data=b"\x00", protocol="thrift", kind="call"):
+    return ({"protocol": protocol, "method": method, "kind": kind, "time_ms": t_ms}, data)
+
+
+class DeriveTestCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = os.path.join(self.tmp.name, "reference")
+
+    def run_dir(self, i, suites, traffic=None):
+        return write_run(os.path.join(self.tmp.name, f"run{i}"), suites, CONN, traffic=traffic)
+
+    def lines(self, name):
+        with open(os.path.join(self.out, name)) as fh:
+            return [line.rstrip("\n") for line in fh]
+
+
+class GateListTests(DeriveTestCase):
+    def test_gate_is_in_scope_and_passed_in_every_run(self):
+        runs = [self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400), C: ("passed", 500, 600)}),
+                self.run_dir(2, {A: ("passed", 100, 200), B: ("failed", 300, 400), C: ("passed", 500, 600)}),
+                self.run_dir(3, {A: ("passed", 100, 200), B: ("passed", 300, 400), C: ("passed", 500, 600)})]
+        scope = {A: {"reasons": []}, B: {"reasons": []}, C: {"reasons": ["variant"]}}
+        derive.derive(runs, self.out, scope=scope)
+        self.assertEqual(self.lines("suites.txt"), [A])
+        self.assertEqual(self.lines("flaky.txt"), [f"{B}  # flaky on reference: failed in runs 2"])
+        with open(os.path.join(self.out, "baseline.json")) as fh:
+            self.assertEqual(list(json.load(fh)["suites"]), [A])
+
+
+class TrafficTests(DeriveTestCase):
+    def test_suite_corpus_holds_only_what_the_suite_caused(self):
+        traffic = [msg("exec_plan_fragment", 150, protocol="grpc", kind="request"), msg("heartbeat", 160),
+                   msg("submit_tasks", 250), msg("fetch_data", 350, protocol="grpc", kind="request"),
+                   msg("report", 360)]
+        run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
+        derive.derive([run], self.out)
+        corpus = os.path.join(self.out, "traffic")
+        self.assertEqual([h["method"] for h, _ in records.read(os.path.join(corpus, f"{A}.bin.gz"))], ["exec_plan_fragment"])
+        self.assertEqual([h["method"] for h, _ in records.read(os.path.join(corpus, f"{B}.bin.gz"))], ["fetch_data"])
+        with open(os.path.join(corpus, "manifest.json")) as fh:
+            manifest = json.load(fh)
+        self.assertEqual(manifest["background"], {"heartbeat": 1, "report": 1, "submit_tasks": 1})
+
+    def test_reaches_be_counts_work_sent_to_the_be(self):
+        traffic = [msg("exec_plan_fragment", 150, protocol="grpc", kind="request"), msg("heartbeat", 350)]
+        run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
+        derive.derive([run], self.out)
+        self.assertEqual(self.lines("reaches_be.txt"), [A])
+
+    def test_overlapping_windows_are_rejected(self):
+        run = self.run_dir(1, {A: ("passed", 100, 300), B: ("passed", 200, 400)}, traffic=[])
+        with self.assertRaises(ValueError):
+            derive.derive([run], self.out)
+
+
+class NeedsRankingTests(DeriveTestCase):
+    def rank(self, suites, index, supported=()):
+        run = self.run_dir(1, {k: ("passed", 100 + 200 * i, 200 + 200 * i) for i, k in enumerate(suites)})
+        derive.derive([run], self.out, needs_index=index, supported=set(supported))
+        with open(os.path.join(self.out, "ranking.json")) as fh:
+            return json.load(fh)
+
+    def test_alone_counts_suites_blocked_by_that_feature_only(self):
+        r = self.rank([A, B, C], {A: {"plan_node": ["X"]}, B: {"plan_node": ["X", "Y"]}, C: {"plan_node": ["Y"]}})
+        self.assertEqual(r[0], {"feature": "plan_node:X", "alone": 1, "total": 2})
+
+    def test_supported_features_do_not_block(self):
+        self.assertEqual(self.rank([A], {A: {"plan_node": ["X"]}}, supported={"plan_node:X"}), [])
+
+    def test_suite_needs_include_directory_load_suites(self):
+        load, query = "d.load.load", "d.q.q"
+        r = self.rank([load, query], {load: {"task": ["CREATE"]}, query: {"plan_node": ["X"]}}, supported={"plan_node:X"})
+        self.assertIn({"feature": "task:CREATE", "alone": 2, "total": 2}, r)
+
+
+if __name__ == "__main__":
+    unittest.main()
