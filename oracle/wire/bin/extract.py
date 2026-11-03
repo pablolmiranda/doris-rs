@@ -68,6 +68,46 @@ def split_grpc(stream):
     return out
 
 
+def json_array_items(chunks, object_pairs_hook=None):
+    """Yield the items of a JSON array read as byte chunks, each as soon as it is complete, so a
+    capture's dissection never has to fit in memory at once."""
+    decoder = json.JSONDecoder(object_pairs_hook=object_pairs_hook)
+    buf, started = "", False
+    for chunk in chunks:
+        buf += chunk.decode("utf-8", "replace")
+        pos = 0
+        while True:
+            while pos < len(buf) and buf[pos] in " \t\r\n,":
+                pos += 1
+            if not started and pos < len(buf):
+                if buf[pos] != "[":
+                    raise ValueError("expected a JSON array")
+                started, pos = True, pos + 1
+                continue
+            if pos >= len(buf) or buf[pos] == "]":
+                break
+            try:
+                item, end = decoder.raw_decode(buf, pos)
+            except json.JSONDecodeError:
+                break
+            yield item
+            pos = end
+        buf = buf[pos:]
+
+
+def tshark_packets(pcap, args):
+    """tshark -T json output, one packet at a time."""
+    d, f = os.path.dirname(os.path.abspath(pcap)), os.path.basename(pcap)
+    cmd = ["docker", "run", "--rm", "-v", f"{d}:/c:ro", TSHARK_IMAGE, "tshark", "-r", f"/c/{f}", *args, "-T", "json"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    try:
+        yield from json_array_items(iter(lambda: proc.stdout.read(1 << 20), b""), object_pairs_hook=lambda p: p)
+    finally:
+        proc.stdout.close()
+        if proc.wait() != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
+
+
 def tshark(pcap, args):
     d, f = os.path.dirname(os.path.abspath(pcap)), os.path.basename(pcap)
     cmd = ["docker", "run", "--rm", "-v", f"{d}:/c:ro", TSHARK_IMAGE, "tshark", "-r", f"/c/{f}", *args]
@@ -90,10 +130,17 @@ def syn_streams(pcap):
     return {s: v for s, v in streams.items() if "server_isn" in v}
 
 
-def segments(pcap):
-    """Every TCP segment carrying payload on a captured port, in capture order:
+def frame_times(pcap, ports=CAPTURED_PORTS):
+    """{frame number: epoch milliseconds} for every payload-carrying segment on the ports."""
+    plist = ", ".join(str(p) for p in ports)
+    return {int(f): round(float(t) * 1000) for f, t in
+            fields(pcap, f"tcp.len > 0 && tcp.port in {{{plist}}}", ["frame.number", "frame.time_epoch"])}
+
+
+def segments(pcap, ports=CAPTURED_PORTS):
+    """Every TCP segment carrying payload on the given ports, in capture order:
     (frame, tcp_stream, src_port, dst_port, seq_raw, payload)."""
-    ports = ", ".join(str(p) for p in CAPTURED_PORTS)
+    ports = ", ".join(str(p) for p in ports)
     rows = fields(pcap, f"tcp.len > 0 && tcp.port in {{{ports}}}",
                   ["frame.number", "tcp.stream", "tcp.srcport", "tcp.dstport", "tcp.seq_raw", "tcp.payload"])
     return [(int(f), int(s), int(sp), int(dp), int(seq), bytes.fromhex(p)) for f, s, sp, dp, seq, p in rows]
@@ -167,8 +214,7 @@ def _pairs(obj, key):
 
 
 def grpc_messages(pcap, streams):
-    text = tshark(pcap, ["-d", f"tcp.port=={GRPC_PORT},http2", "-Y", "http2.type == 0", "-T", "json"])
-    packets = json.loads(text, object_pairs_hook=lambda p: p) if text.strip() else []
+    packets = tshark_packets(pcap, ["-d", f"tcp.port=={GRPC_PORT},http2", "-Y", "http2.type == 0"])
     flows, uris, first_frame = {}, {}, {}
     for pkt in packets:
         layers = dict(dict(pkt)["_source"])["layers"]
