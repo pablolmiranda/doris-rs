@@ -102,29 +102,25 @@
   },
   {
    "name": "be-cores",
-   "values": [
-    "10"
-   ],
    "match": "cell",
    "columns": [
     "CpuCores"
-   ]
+   ],
+   "from_backends": "CpuCores"
   },
   {
    "name": "be-memory",
-   "values": [
-    "10.00 GB"
-   ],
    "match": "cell",
    "columns": [
     "Memory"
-   ]
+   ],
+   "from_backends": "Memory"
   }
  ],
  "not_varied": [
   {
    "fact": "be-cores",
-   "reason": "the BE reports the host's CPU count whatever the container's cpuset or CPU quota; both clusters report 10"
+   "reason": "the BE reports the host's CPU count whatever the container's cpuset or CPU quota, so both clusters report the same number"
   }
  ]
 }

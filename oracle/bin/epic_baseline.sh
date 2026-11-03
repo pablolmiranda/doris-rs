@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The Epic 1 reference: four serial runs of the epic's suites through the MySQL tap, two on a
-# fresh cluster A (run 1 also captures FE<->BE traffic from boot) and two on a fresh cluster B,
-# then everything derived from them into OUT (default epic1/).
+# The Epic 1 reference: five serial runs of the epic's suites through the MySQL tap, three on
+# cluster A (run 1 also captures FE<->BE traffic from boot; run 3 on a fresh cluster) and two
+# on fresh clusters B, then everything derived from them into OUT (default epic1/).
 #
 #   epic_baseline.sh [SUITES]        SUITES defaults to suites/epic1.txt
 #
@@ -59,6 +59,14 @@ python3 checker/traffic.py "results/reference-single/$STAMP-a1/traffic.pcap" "re
 run reference-single "$STAMP-a2"
 "${SINGLE[@]}" down -v >> "$LOG" 2>&1
 
+# A third cluster A run, on a fresh cluster: rare variations (row order without ORDER BY, which
+# value overflows first, random bucket choice) that four runs did not show turned up in it.
+phase "fresh cluster A for a3"
+"${SINGLE[@]}" up --wait >> "$LOG" 2>&1
+bin/cluster_setup.sh doris-oracle-doris-1 >> "$LOG"
+run reference-single "$STAMP-a3"
+"${SINGLE[@]}" down -v >> "$LOG" 2>&1
+
 # A fresh cluster B for each run: its BE has less memory than cluster A's, and its caches grow
 # over a run until allocations fail.
 for r in b1 b2; do
@@ -72,8 +80,8 @@ done
 phase "derive into $OUT"
 rm -rf "$OUT"
 python3 checker/derive.py "$OUT" "results/reference-single/$STAMP-a1" "results/reference-single/$STAMP-a2" \
-  "results/reference-split/$STAMP-b1" "results/reference-split/$STAMP-b2" --scope suites/epic1.scope.json | tee -a "$LOG"
+  "results/reference-single/$STAMP-a3" "results/reference-split/$STAMP-b1" "results/reference-split/$STAMP-b2" --scope suites/epic1.scope.json | tee -a "$LOG"
 phase "needs index and ranking"
 cargo run -q --release -p doris-wire --bin doris-needs -- "$ORACLE/$OUT/traffic" > "$OUT/needs.json" 2>> "$LOG"
 python3 checker/rank.py "$OUT" | tee -a "$LOG"
-phase "done: runs $STAMP-{a1,a2,b1,b2}"
+phase "done: runs $STAMP-{a1,a2,a3,b1,b2}"

@@ -15,7 +15,8 @@
 #             record every session into tap/; the suites connect through it
 #   SERIAL=1  one suite at a time, so each suite's time window is its own (the checker links
 #             replies and FE<->BE traffic to suites by time)
-# The target's deployment facts ($FACTS in its targets/ file) are copied to facts.json.
+# The target's deployment facts ($FACTS in its targets/ file) go to facts.json, with the ones that
+# depend on the host (cores, memory) read from the running cluster (checker/facts.py).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORACLE="$(cd "$HERE/.." && pwd)"
@@ -45,7 +46,7 @@ DIRS="$(grep -vE '^\s*(#|$)' "$SUITE_LIST" | tr -d ' ' | paste -sd, -)"
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 OUT="$ORACLE/results/$TARGET/$RUN_ID"
 mkdir -p "$OUT/conf"
-[[ -n "${FACTS:-}" ]] && cp "$ORACLE/$FACTS" "$OUT/facts.json"
+[[ -n "${FACTS:-}" ]] && python3 "$ORACLE/checker/facts.py" "$ORACLE/$FACTS" "$FE_CONTAINER" "$OUT/facts.json"
 
 QUERY_PORT="$FE_QUERY_PORT"
 TAP_NAME=doris-oracle-tap

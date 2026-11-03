@@ -97,6 +97,36 @@ class StrictGateTests(GradeTestCase):
         self.assertEqual(self.reference_status(ref), "stable")
         self.assertEqual(self.grade(ref, {S: ("passed", 100, 200)}, run(155))["strict"]["passing"], [S])
 
+    def test_a_thread_an_earlier_suite_left_running_belongs_to_neither(self):
+        p = "d.p.p"
+        def run(own_time, thread_times):
+            thread = [(150, q("select 0", [["0"]]))] + [
+                (t, q("select a" if i % 2 else "select b", [["x"]])) for i, t in enumerate(thread_times)]
+            return [thread, [(own_time, q("select 1", [["1"]]))]]
+        suites = {p: ("passed", 100, 200), S: ("passed", 300, 400)}
+        ref = self.reference((suites, run(350, [160, 310, 320])), (suites, run(350, [160, 310, 320, 330])))
+        self.assertEqual(self.reference_status(ref), "stable")
+        verdict = self.grade(ref, suites, run(350, [160, 305, 315, 325, 335, 345]))
+        self.assertEqual(sorted(verdict["strict"]["passing"]), [p, S])
+
+    def test_connections_opened_at_once_compare_in_either_order(self):
+        def run(t_a, t_b):
+            return [[(t_a, q("select 1", [["1"]]))], [(t_b, q("select 2", [["2"]]))]]
+        ref = self.reference(({S: ("passed", 100, 200)}, run(150, 151)))
+        self.assertEqual(self.grade(ref, {S: ("passed", 100, 200)}, run(151, 150))["strict"]["passing"], [S])
+
+    def test_statement_close_timing_does_not_matter(self):
+        close = ([b"\x19\x01\x00\x00\x00"], [])
+        ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (160, close)]]))
+        verdict = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (260, close)]])
+        self.assertEqual(verdict["strict"]["passing"], [S])
+
+    def test_the_framework_plugins_backend_lookup_is_not_the_suites(self):
+        lookup = [(170, q("SET autocommit=1", [])), (171, q("show backends", [["x"]]))]
+        ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]]))]]))
+        verdict = self.grade(ref, {S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]]))], lookup])
+        self.assertEqual(verdict["strict"]["passing"], [S])
+
     def test_connection_close_timing_does_not_matter(self):
         quit_ = ([b"\x01"], [])
         ref = self.reference(({S: ("passed", 100, 200)}, [[(150, q("select 1", [["1"]])), (160, quit_)]]),
@@ -233,7 +263,8 @@ class RatchetTests(GradeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.ref = self.reference((self.W, [[(150, q("q", [["1"]])), (350, q("r", [["2"]]))]]))
+        # each suite opens its own connection, as the regression framework does
+        self.ref = self.reference((self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]]))
 
     def scores_file(self, gate, *suites):
         with open(os.path.join(self.scores, f"epic1-{gate}.txt"), "w") as fh:
@@ -248,14 +279,14 @@ class RatchetTests(GradeTestCase):
 
     def test_new_passes_are_reported_without_failing(self):
         self.scores_file("strict", S)
-        verdict = self.grade(self.ref, self.W, [[(150, q("q", [["1"]])), (350, q("r", [["2"]]))]])
+        verdict = self.grade(self.ref, self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]])
         self.assertEqual(verdict["ratchet"]["new"]["strict"], [self.T])
         self.assertEqual(verdict["ratchet"]["new"]["out"], [S, self.T])
         self.assertTrue(verdict["ok"])
 
     def test_strict_listed_suite_with_a_reply_difference_fails_the_check(self):
         self.scores_file("strict", S)
-        verdict = self.grade(self.ref, self.W, [[(150, q("q", [["9"]])), (350, q("r", [["2"]]))]])
+        verdict = self.grade(self.ref, self.W, [[(150, q("q", [["9"]]))], [(350, q("r", [["2"]]))]])
         self.assertEqual(verdict["ratchet"]["lost"]["strict"], [S])
         self.assertFalse(verdict["ok"])
 

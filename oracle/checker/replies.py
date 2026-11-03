@@ -70,30 +70,53 @@ def collapse(exchanges):
     return out
 
 
+def plugin_lookup(exchanges):
+    """The regression framework's query-timeout plugin opens a connection on a timer, whichever
+    suite is running, to look up the backends: nothing but the driver's setup and
+    `show backends`."""
+    statements = [ex["statement"] for ex in exchanges if ex["command"] == "COM_QUERY"]
+    setup = [st for st in statements[:-1] if st.startswith(("/* mysql-connector-java", "SET "))]
+    return bool(statements) and statements[-1] == "show backends" and len(setup) == len(statements) - 1
+
+
 def run_exchanges(run_dir):
-    """{suite: [exchange]} for one run, facts substituted, with UNATTRIBUTED for the rest."""
+    """{suite: [exchange]} for one run, facts substituted, with UNATTRIBUTED for the rest.
+
+    A connection belongs to the suite whose window it was opened in. What it sends outside that
+    window belongs to no suite: a thread a suite leaves running keeps polling into the windows
+    of the suites after it, a different number of times in every run."""
     wins = windows(results(run_dir))
     run_facts = facts(run_dir)
     by_suite = {}
     tap_dir = os.path.join(run_dir, "tap")
     for name in sorted(os.listdir(tap_dir)) if os.path.isdir(tap_dir) else []:
         c2s, s2c, times = tap.read_log(os.path.join(tap_dir, name))
-        for ex in mysql_wire.decode_session(c2s, s2c, times):
-            if ex["command"] == "COM_QUIT":
-                continue  # no reply, and whether it lands inside the suite's window is timing
-            ex["conn_id"] = name
-            by_suite.setdefault(owner(ex["t_ms"], wins), []).append(ex)
-    out = {}
-    for suite, exchanges in by_suite.items():
-        exchanges.sort(key=lambda x: (x["t_ms"] or 0))
-        numbering = {}
+        # Commands without a reply say nothing about the server, and whether they land inside
+        # the suite's window is timing.
+        exchanges = [ex for ex in mysql_wire.decode_session(c2s, s2c, times) if ex["command"] not in mysql_wire.NO_REPLY]
+        if not exchanges or plugin_lookup(exchanges):
+            continue
+        opener = owner(exchanges[0]["t_ms"], wins)
         for ex in exchanges:
-            ex["conn"] = numbering.setdefault(ex.pop("conn_id"), len(numbering))
-            ex.pop("t_ms", None)
-        # Each connection's own sequence is deterministic; how connections interleave in time
-        # is not, so a suite's exchanges are ordered connection by connection.
-        ordered = sorted(collapse(exchanges), key=lambda x: x["conn"])
-        out[suite] = [substitute(ex, run_facts) for ex in ordered]
+            ex["conn"] = name
+        inside = [ex for ex in exchanges if owner(ex["t_ms"], wins) == opener]
+        outside = [ex for ex in exchanges if owner(ex["t_ms"], wins) != opener]
+        by_suite.setdefault(opener, []).append(inside)
+        if outside:
+            by_suite.setdefault(UNATTRIBUTED, []).append(outside)
+    out = {}
+    for suite, connections in by_suite.items():
+        # Each connection's own sequence is deterministic; when connections open and how they
+        # interleave is not, so a suite's connections are ordered by what they sent.
+        connections = sorted((collapse(c) for c in connections),
+                             key=lambda c: json.dumps([identity(ex) for ex in c]))
+        exchanges = []
+        for n, conn in enumerate(connections):
+            for ex in conn:
+                ex["conn"] = n
+                ex.pop("t_ms", None)
+                exchanges.append(substitute(ex, run_facts))
+        out[suite] = exchanges
     return out
 
 

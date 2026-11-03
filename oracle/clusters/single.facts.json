@@ -102,23 +102,19 @@
   },
   {
    "name": "be-cores",
-   "values": [
-    "10"
-   ],
    "match": "cell",
    "columns": [
     "CpuCores"
-   ]
+   ],
+   "from_backends": "CpuCores"
   },
   {
    "name": "be-memory",
-   "values": [
-    "11.73 GB"
-   ],
    "match": "cell",
    "columns": [
     "Memory"
-   ]
+   ],
+   "from_backends": "Memory"
   }
  ]
 }
