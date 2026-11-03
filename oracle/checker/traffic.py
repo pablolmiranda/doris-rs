@@ -2,20 +2,25 @@
 
     traffic.py PCAP OUT.bin.gz
 
-Thrift (9020, 9050, 9060) and gRPC (8060) messages come from the wire extractor
-(oracle/wire/bin/extract.py); BE HTTP on 8040 (stream load) is split into request/response
-exchanges here. Every message gets the epoch time of its first segment (time_ms), which
-derive.py uses to give it to the suite that was running. Nothing is dropped silently: streams
-the extractor could not split are printed.
+Thrift (9020, 9050, 9060) and BE HTTP (8040, stream load) connections are reassembled in one
+streaming pass (pcapstream.py: payloads spooled to disk, so a run's tens of gigabytes never sit
+in memory); gRPC (8060) needs tshark's HPACK decoding and is cut out with tcpdump first. Every
+message gets the epoch time of the segment carrying its first byte (time_ms), which derive.py
+uses to give it to the suite that was running. Holes in the capture are written next to the
+output (traffic-holes.json) and printed, never dropped silently.
 """
 import json
 import os
+import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "wire", "bin"))
 import extract  # noqa: E402
+import pcapstream  # noqa: E402
 import records  # noqa: E402
+import thrift_split  # noqa: E402
 
 json_array_items = extract.json_array_items
 HTTP_PORT = 8040
@@ -86,61 +91,77 @@ def http_exchanges(c2s, s2c, complete_only=False):
     return out
 
 
-def http_messages(segs, streams, times):
-    """(records, damaged): records for every complete exchange on the BE HTTP port, timed by the
-    request's first segment, and the directions with a capture hole (exchanges from the hole on
-    are not recorded)."""
-    out, damaged = [], []
-    by_direction = {}
-    for frame, s, sport, _, seq, payload in segs:
-        if s in streams and streams[s]["server_port"] == HTTP_PORT:
-            by_direction.setdefault((s, sport == streams[s]["client_port"]), []).append((seq, payload, frame))
-    for s in sorted({s for s, _ in by_direction}):
-        info = streams[s]
-        data = {}
-        for to_server, isn in ((True, info["client_isn"]), (False, info["server_isn"])):
-            items = by_direction.get((s, to_server), [])
-            data[to_server], gap, _ = extract.reassemble_until_gap([(q, p) for q, p, _ in items], isn + 1)
-            if gap:
-                damaged.append({"tcp_stream": s, "from": "client" if to_server else "server", "gap": list(gap)})
-        first = min((f for _, _, f in by_direction.get((s, True), [])), default=0)
-        for ex in http_exchanges(data[True], data[False], complete_only=True):
-            kind = "stream_load" if ex["path"].endswith("/_stream_load") else ex["path"].split("?")[0]
-            header = {"protocol": "http", "service": "http", "method": kind, "path": ex["path"],
-                      "status": ex["status"], "tcp_stream": s, "time_ms": times.get(first)}
-            out.append(({**header, "kind": "request"}, ex["request"]))
-            out.append(({**header, "kind": "response"}, ex["response"]))
+def http_records(conn, stream_id):
+    """(records, damaged): a request and a response record for every complete exchange on one
+    BE HTTP connection, timed by the request's first byte, and its directions with a hole."""
+    damaged = [{"tcp_stream": stream_id, "from": side, "gap": list(d.gap)}
+               for side, d in (("client", conn.client), ("server", conn.server)) if d.gap]
+    out, at = [], 0
+    for ex in http_exchanges(conn.client.data, conn.server.data, complete_only=True):
+        kind = "stream_load" if ex["path"].endswith("/_stream_load") else ex["path"].split("?")[0]
+        header = {"protocol": "http", "service": "http", "method": kind, "path": ex["path"],
+                  "status": ex["status"], "tcp_stream": stream_id, "time_ms": conn.client.time_at(at)}
+        out.append(({**header, "kind": "request"}, ex["request"]))
+        out.append(({**header, "kind": "response"}, ex["response"]))
+        at += len(ex["request"])
     return out, damaged
 
 
-def extract_run(pcap, out_path):
-    ports = [*extract.CAPTURED_PORTS, HTTP_PORT]
-    streams = extract.syn_streams(pcap)
-    segs = extract.segments(pcap, ports)
-    times = extract.frame_times(pcap, ports)
-    thrift, dropped = extract.thrift_messages(segs, streams)
-    grpc = extract.grpc_messages(pcap, streams)
-    items = []
-    for m in sorted(thrift + grpc, key=lambda m: (m["frame"], m["protocol"], m["tcp_stream"])):
+def thrift_records(conn, stream_id):
+    """(records, holes): the Thrift messages of both directions of one connection, each timed by
+    its first byte; a direction with a hole or a partial message at its end is reported."""
+    out, holes = [], []
+    for side, d, kinds in (("client", conn.client, "to_server"), ("server", conn.server, "to_client")):
+        msgs = thrift_split.split_messages(d.data)
+        left = len(d.data) - (msgs[-1].end if msgs else 0) + d.after_gap
+        if left or d.gap:
+            entry = {"tcp_stream": stream_id, "from": side, "bytes": left}
+            if d.gap:
+                entry["gap"] = list(d.gap)
+            holes.append(entry)
+        for m in msgs:
+            out.append(({"protocol": "thrift", "port": conn.server_port,
+                         "service": extract.THRIFT_PORTS[conn.server_port], "method": m.name,
+                         "kind": thrift_split.KINDS[m.mtype], "seqid": m.seqid, "tcp_stream": stream_id,
+                         "time_ms": d.time_at(m.start)}, d.data[m.start:m.end]))
+    return out, holes
+
+
+def grpc_records(pcap, tmp_dir):
+    """gRPC (8060) messages, read by tshark (HPACK headers name the method) from a capture cut
+    down to that port with tcpdump, so tshark never reads the whole run."""
+    small = os.path.join(tmp_dir, "grpc.pcap")
+    subprocess.run(["tcpdump", "-r", pcap, "-w", small, f"tcp port {extract.GRPC_PORT}"],
+                   check=True, capture_output=True)
+    streams = extract.syn_streams(small)
+    times = extract.frame_times(small, [extract.GRPC_PORT])
+    out = []
+    for m in extract.grpc_messages(small, streams):
         data = m.pop("data")
         m["time_ms"] = times.get(m["frame"])
-        items.append((m, data))
-    http, damaged = http_messages(segs, streams, times)
-    items += http
+        out.append((m, data))
+    return out
+
+
+def extract_run(pcap, out_path):
+    stats = {}
+    items, holes = [], []
+    for i, conn in enumerate(pcapstream.connections(pcap, {*extract.THRIFT_PORTS, HTTP_PORT}, stats)):
+        if conn.server_port == HTTP_PORT:
+            recs, damaged = http_records(conn, i)
+        else:
+            recs, damaged = thrift_records(conn, i)
+        items += recs
+        holes += [d for d in damaged if "gap" in d]
+    with tempfile.TemporaryDirectory() as tmp:
+        items += grpc_records(pcap, tmp)
     items.sort(key=lambda it: (it[0]["time_ms"] or 0))
     records.write(out_path, items)
-    without_handshake, without_messages = extract.unextracted_streams(
-        [s for s in segs if s[3] != HTTP_PORT and s[2] != HTTP_PORT], streams, thrift + grpc)
-    for label, entries in (("without handshake", without_handshake), ("without messages", without_messages),
-                           ("ending inside a Thrift message or at a capture hole", dropped),
-                           ("of BE HTTP with a capture hole", damaged)):
-        if entries:
-            print(f"{len(entries)} streams {label}: {entries[:5]}", file=sys.stderr)
-    holes = [d for d in dropped if "gap" in d] + damaged
     with open(os.path.join(os.path.dirname(os.path.abspath(out_path)), "traffic-holes.json"), "w", encoding="utf-8") as fh:
         json.dump(holes, fh, indent=1)
-    return {"messages": len(items), "streams": len(streams),
-            "holes": sum(1 for d in dropped if "gap" in d) + len(damaged)}
+    if holes:
+        print(f"{len(holes)} connection directions with a capture hole: {holes[:5]}", file=sys.stderr)
+    return {"messages": len(items), "holes": len(holes), "thrift_or_http_without_handshake": stats["without_handshake"]}
 
 
 def main(argv):
