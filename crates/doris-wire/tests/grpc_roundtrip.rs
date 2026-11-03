@@ -1,42 +1,9 @@
 //! Every captured gRPC payload decodes with the prost types and re-encodes to the same bytes, and
 //! so does the compact-protocol Thrift plan nested in fragment execution requests.
-mod common;
-
-use common::first_difference;
-use doris_proto::doris::{
-    PCancelPlanFragmentRequest, PCancelPlanFragmentResult, PExecPlanFragmentRequest,
-    PExecPlanFragmentResult, PExecPlanFragmentStartRequest, PFetchDataRequest, PFetchDataResult,
-    PFragmentRequestVersion,
-};
-use doris_thrift::dispatch::roundtrip_plan_compact;
+use doris_proto::doris::{PExecPlanFragmentRequest, PFragmentRequestVersion};
+use doris_wire::roundtrip::{first_difference, grpc_codec, plan, Outcome};
 use doris_wire::{Kind, Manifest, MessageEntry, Protocol};
 use prost::Message;
-
-type Reencode = fn(&[u8]) -> Result<Vec<u8>, prost::DecodeError>;
-
-fn reencode<M: Message + Default>(bytes: &[u8]) -> Result<Vec<u8>, prost::DecodeError> {
-    Ok(M::decode(bytes)?.encode_to_vec())
-}
-
-/// The prost types of each captured `PBackendService` method (`internal_service.proto`).
-fn codec(method: &str, kind: Kind) -> Option<Reencode> {
-    let request = kind == Kind::Request;
-    Some(match (method, request) {
-        ("exec_plan_fragment" | "exec_plan_fragment_prepare", true) => {
-            reencode::<PExecPlanFragmentRequest>
-        }
-        ("exec_plan_fragment_start", true) => reencode::<PExecPlanFragmentStartRequest>,
-        (
-            "exec_plan_fragment" | "exec_plan_fragment_prepare" | "exec_plan_fragment_start",
-            false,
-        ) => reencode::<PExecPlanFragmentResult>,
-        ("cancel_plan_fragment", true) => reencode::<PCancelPlanFragmentRequest>,
-        ("cancel_plan_fragment", false) => reencode::<PCancelPlanFragmentResult>,
-        ("fetch_data", true) => reencode::<PFetchDataRequest>,
-        ("fetch_data", false) => reencode::<PFetchDataResult>,
-        _ => return None,
-    })
-}
 
 fn describe(e: &MessageEntry) -> String {
     format!(
@@ -64,7 +31,7 @@ fn every_grpc_message_reencodes_identically() {
             failures.push(format!("{what}: compressed flag {:?}", e.compressed));
             continue;
         }
-        let Some(reencode) = codec(&e.method, e.kind) else {
+        let Some(reencode) = grpc_codec(&e.method, e.kind == Kind::Request) else {
             failures.push(format!("{what}: no prost type for this method"));
             continue;
         };
@@ -116,18 +83,10 @@ fn exec_plan_fragment_plans_reencode_identically() {
             ));
             continue;
         }
-        let plan = request.request.unwrap_or_default();
-        match roundtrip_plan_compact(&plan) {
-            Err(err) => failures.push(format!("{what}: plan: {err}")),
-            Ok(out) => {
-                if let Some(at) = first_difference(&plan, &out) {
-                    failures.push(format!(
-                        "{what}: plan re-encoding differs at byte {at} ({} bytes captured, {} re-encoded)",
-                        plan.len(),
-                        out.len()
-                    ));
-                }
-            }
+        match plan(&m.read(e)) {
+            Ok(Outcome::Identical) => {}
+            Ok(other) => failures.push(format!("{what}: plan re-encodes as {other:?}")),
+            Err(err) => failures.push(format!("{what}: {err}")),
         }
         checked += 1;
     }

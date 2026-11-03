@@ -7,9 +7,11 @@ use std::path::Path;
 use doris_wire::roundtrip::{check, Outcome};
 use doris_wire::suites::{corpus_dir, read_suite, suite_files};
 
-fn check_file(path: &Path, failures: &mut Vec<String>) -> (usize, usize) {
+/// (checked, reordered, not checked) for one suite file; failures are appended.
+fn check_file(path: &Path, failures: &mut Vec<String>) -> (usize, usize, usize) {
     let mut checked = 0;
     let mut reordered = 0;
+    let mut not_checked = 0;
     for (i, record) in read_suite(path)
         .expect("readable suite file")
         .iter()
@@ -21,7 +23,7 @@ fn check_file(path: &Path, failures: &mut Vec<String>) -> (usize, usize) {
                 checked += 1;
                 reordered += 1;
             }
-            Ok(Outcome::NotChecked) => {}
+            Ok(Outcome::NotChecked) => not_checked += 1,
             Err(e) => failures.push(format!(
                 "{} record {i} {}: {e}",
                 path.display(),
@@ -29,7 +31,7 @@ fn check_file(path: &Path, failures: &mut Vec<String>) -> (usize, usize) {
             )),
         }
     }
-    (checked, reordered)
+    (checked, reordered, not_checked)
 }
 
 #[test]
@@ -52,33 +54,44 @@ fn fixture_written_by_python_reads_and_reencodes() {
         ]
     );
     let mut failures = Vec::new();
-    let (checked, _) = check_file(&path, &mut failures);
+    let (checked, _, not_checked) = check_file(&path, &mut failures);
     assert!(failures.is_empty(), "{failures:#?}");
     assert_eq!(
-        checked, 5,
+        (checked, not_checked),
+        (5, 1),
         "every Thrift and gRPC record is checked; HTTP is not"
     );
 }
 
 #[test]
 fn every_suite_message_reencodes_identically() {
-    let files = suite_files(&corpus_dir());
+    let dir = corpus_dir();
+    let files = suite_files(&dir);
     if files.is_empty() {
+        // Before the first `make epic-baseline` there is no reference; once it exists, a missing
+        // corpus is a broken checkout, not something to pass over.
+        assert!(
+            !dir.parent().is_some_and(|p| p.join("marks.json").exists()),
+            "the Epic 1 reference exists but its traffic corpus {} is empty",
+            dir.display()
+        );
         eprintln!(
             "no per-suite corpus in {} yet; run `make -C oracle epic-baseline`",
-            corpus_dir().display()
+            dir.display()
         );
         return;
     }
     let mut failures = Vec::new();
-    let (mut checked, mut reordered) = (0, 0);
+    let (mut checked, mut reordered, mut not_checked) = (0, 0, 0);
     for f in &files {
-        let (c, r) = check_file(f, &mut failures);
+        let (c, r, n) = check_file(f, &mut failures);
         checked += c;
         reordered += r;
+        not_checked += n;
     }
     eprintln!(
-        "{checked} messages in {} suites re-encode ({reordered} up to set/map order)",
+        "{checked} messages in {} suites re-encode ({reordered} up to set/map order); \
+         {not_checked} not checked (HTTP, and gRPC methods without a type)",
         files.len()
     );
     assert!(
