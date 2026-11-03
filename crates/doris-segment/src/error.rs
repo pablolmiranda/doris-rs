@@ -25,6 +25,8 @@ pub enum Error {
     UnsupportedEncoding { column: u32, encoding: i32 },
     #[error("column {column}: unsupported storage field type {field_type}")]
     UnsupportedType { column: u32, field_type: i32 },
+    #[error("unsupported dictionary data page mode {0}")]
+    UnsupportedDictPageMode(u32),
     #[error("no column with unique id {0} in this segment")]
     ColumnNotFound(u32),
     #[error("column {0} has no ordinal index")]

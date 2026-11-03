@@ -4,7 +4,8 @@ import unittest
 
 CORPUS = os.path.join(os.path.dirname(__file__), "..", "corpus")
 EXPECTED = os.path.join(CORPUS, "expected")
-TABLES = ["scalar_ints", "scalar_others", "zstd_ints", "empty_table", "lz4f_big", "zstd_big"]
+TABLES = ["scalar_ints", "scalar_others", "zstd_ints", "empty_table", "lz4f_big", "zstd_big",
+          "strings_fallback", "scalar_more"]
 
 
 class ExpectedRowsTests(unittest.TestCase):

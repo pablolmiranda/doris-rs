@@ -5,7 +5,8 @@ import unittest
 
 CORPUS = os.path.join(os.path.dirname(__file__), "..", "corpus")
 MANIFEST = os.path.join(CORPUS, "manifest.json")
-TABLES = ["scalar_ints", "scalar_others", "zstd_ints", "empty_table", "lz4f_big", "zstd_big"]
+TABLES = ["scalar_ints", "scalar_others", "zstd_ints", "empty_table", "lz4f_big", "zstd_big",
+          "strings_fallback", "scalar_more"]
 
 
 def load_manifest():

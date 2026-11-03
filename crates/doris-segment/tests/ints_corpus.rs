@@ -1,107 +1,34 @@
 //! Integer column decoding against the golden corpus expected rows.
-use std::collections::BTreeMap;
+mod common;
+
 use std::path::Path;
 
-use doris_segment::column::{read_int_column, IntValues};
+use common::{assert_table_matches, expected_rows};
 use doris_segment::corpus::Manifest;
 use doris_segment::page::decode_page;
 use doris_segment::pb::segment_v2::{CompressionTypePb, PageFooterPb, PageTypePb};
 use doris_segment::{Error, SegmentFile};
 use prost::Message;
 
-/// Column names of the two integer tables, in schema order.
-const INT_COLUMNS: [&str; 7] = [
-    "k",
-    "c_bool",
-    "c_tinyint",
-    "c_smallint",
-    "c_int",
-    "c_bigint",
-    "c_largeint",
+/// Columns of the two integer tables, (unique id, name) in schema order.
+const INT_COLUMNS: [(u32, &str); 7] = [
+    (0, "k"),
+    (1, "c_bool"),
+    (2, "c_tinyint"),
+    (3, "c_smallint"),
+    (4, "c_int"),
+    (5, "c_bigint"),
+    (6, "c_largeint"),
 ];
-
-fn expected_rows(table: &str) -> Vec<Vec<String>> {
-    let path = Manifest::corpus_dir()
-        .join("expected")
-        .join(format!("{table}.tsv"));
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    text.lines()
-        .map(|l| l.split('\t').map(str::to_string).collect())
-        .collect()
-}
-
-fn to_strings(values: &IntValues) -> Vec<String> {
-    fn fmt<T: ToString>(v: &[Option<T>]) -> Vec<String> {
-        v.iter()
-            .map(|x| x.as_ref().map_or("NULL".to_string(), ToString::to_string))
-            .collect()
-    }
-    match values {
-        IntValues::Bool(v) => v
-            .iter()
-            .map(|x| {
-                x.map_or(
-                    "NULL".to_string(),
-                    |b| if b { "1".into() } else { "0".into() },
-                )
-            })
-            .collect(),
-        IntValues::I8(v) => fmt(v),
-        IntValues::I16(v) => fmt(v),
-        IntValues::I32(v) => fmt(v),
-        IntValues::I64(v) => fmt(v),
-        IntValues::I128(v) => fmt(v),
-    }
-}
-
-/// Decode every integer column of every segment of `table`, concatenate rows in manifest file
-/// order, and return them sorted by `k` so they line up with the expected TSV.
-fn decoded_rows(m: &Manifest, table: &str) -> Vec<Vec<String>> {
-    let t = &m.tables[table];
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    for f in &t.files {
-        let seg = SegmentFile::open(&m.resolve(&f.path)).unwrap();
-        let by_name: BTreeMap<&str, Vec<String>> = INT_COLUMNS
-            .iter()
-            .enumerate()
-            .map(|(unique_id, name)| {
-                let col = read_int_column(&seg, unique_id as u32)
-                    .unwrap_or_else(|e| panic!("{table}/{}: column {name}: {e}", f.path.display()));
-                (*name, to_strings(&col))
-            })
-            .collect();
-        let n = seg.footer.num_rows.unwrap() as usize;
-        for (name, col) in &by_name {
-            assert_eq!(col.len(), n, "{table}: column {name} length");
-        }
-        rows.extend((0..n).map(|i| {
-            INT_COLUMNS
-                .iter()
-                .map(|name| by_name[name][i].clone())
-                .collect::<Vec<String>>()
-        }));
-    }
-    rows.sort_by_key(|r| r[0].parse::<i64>().unwrap());
-    rows
-}
 
 #[test]
 fn scalar_ints_columns_match_expected_tsv() {
-    let m = Manifest::load();
-    let expected = expected_rows("scalar_ints");
-    let got = decoded_rows(&m, "scalar_ints");
-    assert_eq!(got.len(), expected.len());
-    for (g, e) in got.iter().zip(&expected) {
-        assert_eq!(g, e);
-    }
+    assert_table_matches("scalar_ints", &INT_COLUMNS);
 }
 
 #[test]
 fn zstd_ints_decode_identically() {
-    let m = Manifest::load();
-    let expected = expected_rows("zstd_ints");
-    let got = decoded_rows(&m, "zstd_ints");
-    assert_eq!(got, expected);
+    assert_table_matches("zstd_ints", &INT_COLUMNS);
 }
 
 #[test]
@@ -177,11 +104,8 @@ fn big_table_matches_expected(table: &str, codec: CompressionTypePb) {
     let mut saw_codec = false;
     let mut saw_compressed_page = false;
     let mut saw_index_page = false;
-    let mut got: Vec<Vec<String>> = Vec::new();
     for f in &t.files {
         let seg = SegmentFile::open(&m.resolve(&f.path)).unwrap();
-        let n = seg.footer.num_rows.unwrap() as usize;
-        let mut cols: Vec<Vec<String>> = Vec::new();
         for (id, name) in BIG_INT_COLUMNS {
             let meta = doris_segment::column::column_meta(&seg, id).unwrap();
             let col_codec = meta.compression();
@@ -193,11 +117,7 @@ fn big_table_matches_expected(table: &str, codec: CompressionTypePb) {
                     .unwrap_or_else(|e| panic!("{table}: {name}: {e}"));
                 saw_compressed_page |= page.compressed && col_codec == codec;
             }
-            let col = read_int_column(&seg, id).unwrap_or_else(|e| panic!("{table}: {name}: {e}"));
-            assert_eq!(col.len(), n, "{table}: column {name} length");
-            cols.push(to_strings(&col));
         }
-        got.extend((0..n).map(|i| cols.iter().map(|c| c[i].clone()).collect::<Vec<String>>()));
     }
     assert!(saw_codec, "{table}: no segment uses {codec:?}");
     assert!(
@@ -208,12 +128,7 @@ fn big_table_matches_expected(table: &str, codec: CompressionTypePb) {
         saw_index_page,
         "{table}: every column fit in one page, so the ordinal index page path is unverified"
     );
-    let expected = expected_rows(table);
-    assert_eq!(got.len(), expected.len(), "{table}: row count");
-    got.sort_by_key(|r| r[0].parse::<i64>().unwrap());
-    for (g, e) in got.iter().zip(&expected) {
-        assert_eq!(g[..], e[..BIG_INT_COLUMNS.len()]);
-    }
+    assert_table_matches(table, &BIG_INT_COLUMNS);
 }
 
 #[test]
@@ -233,13 +148,61 @@ fn bitshuffle_header_with_zero_element_size_is_an_error_not_a_panic() {
     for v in [1u32, 16, 8, 0] {
         values.extend_from_slice(&v.to_le_bytes());
     }
-    let err = doris_segment::column::decode_bitshuffle_values(&values, 1).unwrap_err();
+    let err = doris_segment::column::decode_bitshuffle_values(&values, 1, 4).unwrap_err();
     assert!(matches!(err, Error::Corrupt(_)), "{err}");
     // and an absurd element size must not try to allocate
     let mut values = Vec::new();
     for v in [1u32, 16, 8, 0xFFFF_FFFF] {
         values.extend_from_slice(&v.to_le_bytes());
     }
-    let err = doris_segment::column::decode_bitshuffle_values(&values, 1).unwrap_err();
+    let err = doris_segment::column::decode_bitshuffle_values(&values, 1, 4).unwrap_err();
+    assert!(matches!(err, Error::Corrupt(_)), "{err}");
+}
+
+/// A one-column INT segment with a single data page whose footer claims `num_values` rows,
+/// built from scratch so every checksum is valid.
+fn segment_with_claimed_rows(num_values: u64, segment_rows: u32) -> SegmentFile {
+    use doris_segment::pb::segment_v2::{
+        BTreeMetaPb, ColumnIndexMetaPb, ColumnIndexTypePb, ColumnMetaPb, EncodingTypePb,
+        OrdinalIndexPb, PagePointerPb, SegmentFooterPb,
+    };
+    let page = common::data_page(vec![0u8; 16], num_values, 0);
+    let column = ColumnMetaPb {
+        column_id: Some(0),
+        unique_id: Some(0),
+        r#type: Some(5),
+        length: Some(4),
+        encoding: Some(EncodingTypePb::BitShuffle as i32),
+        compression: Some(CompressionTypePb::NoCompression as i32),
+        is_nullable: Some(false),
+        indexes: vec![ColumnIndexMetaPb {
+            r#type: Some(ColumnIndexTypePb::OrdinalIndex as i32),
+            ordinal_index: Some(OrdinalIndexPb {
+                root_page: Some(BTreeMetaPb {
+                    root_page: Some(PagePointerPb {
+                        offset: 0,
+                        size: page.len() as u32,
+                    }),
+                    is_root_data_page: Some(true),
+                }),
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let footer = SegmentFooterPb {
+        version: Some(1),
+        columns: vec![column],
+        num_rows: Some(segment_rows),
+        ..Default::default()
+    };
+    common::segment(page, footer)
+}
+
+#[test]
+fn page_claiming_more_rows_than_the_segment_is_an_error() {
+    // a crc-valid page footer claiming 2^62 rows must not drive a 2^62-entry allocation
+    let seg = segment_with_claimed_rows(1 << 62, 3);
+    let err = doris_segment::column::read_column(&seg, 0).unwrap_err();
     assert!(matches!(err, Error::Corrupt(_)), "{err}");
 }

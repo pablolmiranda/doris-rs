@@ -8,6 +8,10 @@ Layout written:
     manifest.json                               reference identity + per-table tablet id, schema
                                                 hash, row count, file sha256 and size
 Requires the reference cluster from compose/reference-single.yml to be up and `golden` loaded.
+
+    extract.py              extract every table, rewriting manifest.json
+    extract.py t1 t2 ...    extract only the named tables and merge them into manifest.json,
+                            leaving other tables' committed files and entries untouched
 """
 import hashlib
 import json
@@ -99,15 +103,23 @@ def main():
     cid = container_name()
     if not cid:
         raise SystemExit("reference container is not running; run `make up` first")
-    _, rows = mysql("SHOW TABLES FROM golden")
-    tables = sorted(r[0] for r in rows)
-    manifest = {"corpus_version": 1, "reference": reference_identity(), "tables": {}}
+    manifest_path = os.path.join(CORPUS, "manifest.json")
+    if len(sys.argv) > 1:
+        tables = sorted(sys.argv[1:])
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+        if manifest["reference"] != reference_identity():
+            raise SystemExit("reference identity differs from manifest.json; do a full rebuild")
+    else:
+        _, rows = mysql("SHOW TABLES FROM golden")
+        tables = sorted(r[0] for r in rows)
+        manifest = {"corpus_version": 1, "reference": reference_identity(), "tables": {}}
     for table in tables:
         manifest["tables"][table] = extract_table(table, cid)
         t = manifest["tables"][table]
         print(f"{table:16s} tablet={t['tablet_id']} files={len(t['files'])} rows={t['rows']} "
               f"bytes={sum(f['bytes'] for f in t['files'])}")
-    with open(os.path.join(CORPUS, "manifest.json"), "w", encoding="utf-8") as fh:
+    with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, sort_keys=True)
         fh.write("\n")
     print("manifest.json written")

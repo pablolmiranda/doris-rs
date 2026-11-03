@@ -3,6 +3,7 @@
 //! The on-disk format is defined by the Doris C++ Backend; this crate reads it and is verified
 //! against the golden corpus in `oracle/corpus` (tablets written by the reference release).
 
+pub mod binary;
 pub mod bitshuffle;
 pub mod column;
 pub mod corpus;
@@ -11,6 +12,7 @@ pub mod footer;
 pub mod ordinal;
 pub mod page;
 pub mod rle;
+pub mod values;
 pub mod varint;
 
 /// Protobuf types generated from the pinned Doris `.proto` files (see `proto/README.md`).
