@@ -19,4 +19,5 @@ services:
       - -U
       - -w
       - /out/${CAPTURE_FILE:-capture.pcap}
-      - tcp port 9020 or tcp port 9050 or tcp port 9060 or tcp port 8060
+      # CAPTURE_FILTER: the Epic 1 runs add BE HTTP (tcp port 8040) for stream loads
+      - ${CAPTURE_FILTER:-tcp port 9020 or tcp port 9050 or tcp port 9060 or tcp port 8060}

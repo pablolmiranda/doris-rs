@@ -14,6 +14,9 @@
 #   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 #   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
 #   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
+#   make epic-baseline               Epic 1 reference: 4 serial runs on clusters A and B, derived into epic1/
+#   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
+#   make epic-grade RUN=..           grade an already recorded run again
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -33,7 +36,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,17p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,20p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -105,10 +108,26 @@ wire-capture:
 wire-extract:
 	python3 wire/bin/extract.py $(PCAP)
 
+EPIC_SUITES ?= suites/epic1.txt
+EPIC_REF    ?= epic1
+
+epic-baseline: src
+	bin/epic_baseline.sh $(EPIC_SUITES)
+
+epic-check: src
+	@test -f $(EPIC_REF)/marks.json || { echo "no Epic 1 reference in $(EPIC_REF); run: make epic-baseline"; exit 1; }
+	PROXY=1 SERIAL=1 bin/run_suites.sh "$(TARGET)" "$(EPIC_SUITES)"
+	-python3 bin/compare.py $(EPIC_REF)/baseline.json results/$(TARGET)/latest/results.json --ignore suites/ignore.txt
+	python3 checker/grade.py results/$(TARGET)/latest $(EPIC_REF) scores --json results/$(TARGET)/latest/grade.json
+
+epic-grade:
+	@test -n "$(RUN)" || { echo "usage: make epic-grade RUN=results/<target>/<run-id>"; exit 1; }
+	python3 checker/grade.py $(RUN) $(EPIC_REF) scores --json $(RUN)/grade.json
+
 triage:
 	python3 bin/triage.py "$(or $(RESULTS),results/reference-$(PROFILE)/latest/results.json)"
 
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract epic-baseline epic-check epic-grade
