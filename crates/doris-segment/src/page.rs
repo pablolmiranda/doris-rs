@@ -68,16 +68,19 @@ pub fn read_page(
     ptr: &PagePointerPb,
     codec: CompressionTypePb,
 ) -> Result<Page, Error> {
-    let start = ptr.offset as usize;
-    let end = start + ptr.size as usize;
-    if end > file.bytes.len() || start > end {
-        return Err(Error::PageOutOfBounds {
-            offset: ptr.offset,
-            size: ptr.size,
-            len: file.bytes.len(),
-        });
-    }
-    decode_page(&file.bytes[start..end], codec)
+    // Pointers come from crc-valid but untrusted metadata: compute the end without overflow and
+    // bound it by the file before indexing.
+    let out_of_bounds = || Error::PageOutOfBounds {
+        offset: ptr.offset,
+        size: ptr.size,
+        len: file.bytes.len(),
+    };
+    let end = ptr
+        .offset
+        .checked_add(u64::from(ptr.size))
+        .filter(|end| *end <= file.bytes.len() as u64)
+        .ok_or_else(out_of_bounds)?;
+    decode_page(&file.bytes[ptr.offset as usize..end as usize], codec)
 }
 
 fn decompress(codec: CompressionTypePb, input: &[u8]) -> Result<Vec<u8>, Error> {

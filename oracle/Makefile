@@ -11,7 +11,9 @@
 #   make compare BASE=.. CAND=..     compare two results files
 #   make triage RESULTS=..           failures by directory and top error phrases
 #   make test                        unit tests for the harness scripts
-#   make corpus                      rebuild the golden on-disk corpus (load, expect, extract)
+#   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
+#   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
+#   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -30,7 +32,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,15p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,17p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -85,15 +87,21 @@ compare:
 	python3 bin/compare.py "$(BASE)" "$(CAND)" --ignore suites/ignore.txt
 
 corpus-load:
-	corpus/bin/load.sh
+	corpus/bin/load.sh $(TABLES)
 
 corpus-expect:
-	corpus/bin/expect.sh
+	corpus/bin/expect.sh $(TABLES)
 
 corpus-extract:
-	python3 corpus/bin/extract.py
+	python3 corpus/bin/extract.py $(TABLES)
 
 corpus: corpus-load corpus-expect corpus-extract
+
+wire-capture:
+	wire/bin/capture.sh
+
+wire-extract:
+	python3 wire/bin/extract.py $(PCAP)
 
 triage:
 	python3 bin/triage.py "$(or $(RESULTS),results/reference-$(PROFILE)/latest/results.json)"
@@ -101,4 +109,4 @@ triage:
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract

@@ -27,6 +27,7 @@ Java Frontend plus C++ Backend.
 | Path | Purpose |
 |---|---|
 | `oracle/` | The conformance harness: reference cluster, suite runner, baseline, and gate |
+| `crates/` | Rust crates (see Status) |
 | `.cache/` | Untracked: pinned upstream source worktree, build outputs |
 
 The upstream source is expected as a sibling checkout at `../doris`. The harness pins a release
@@ -34,4 +35,15 @@ tag from it; see `oracle/versions.env`.
 
 ## Status
 
-Phase 0: oracle harness. No Rust code yet.
+- `oracle/`: conformance harness over the upstream regression suites, with committed baselines
+  against the 4.1.5 reference, the golden on-disk corpus (`oracle/corpus/`), and the wire
+  corpus of captured FE↔BE RPC messages (`oracle/wire/`).
+- `crates/doris-segment`: reads V2-format segment files written by the reference and decodes
+  every scalar column type, verified row by row against the corpus.
+- `crates/doris-proto`: prost types for the pinned `.proto` files (segment format and
+  `PBackendService`).
+- `crates/doris-thrift`: Rust types generated from the pinned Thrift IDL, plus a compact
+  protocol writer that matches the reference's field headers.
+- `crates/doris-wire`: every message in the wire corpus decodes and re-encodes to the captured
+  bytes (Thrift calls and replies, gRPC payloads, and the compact Thrift plans inside them), up
+  to the order of set elements, which the Java FE writes in hash order.
