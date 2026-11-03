@@ -53,7 +53,8 @@ services:
     stop_grace_period: 60s
     cpuset: "0-1"
     # A container memory limit, so the memory the BE reports differs from cluster A's. 8g with a
-    # 30% BE share ran out of memory (MEM_ALLOC_FAILED) partway through the smoke suites.
+    # 30% BE share ran out of memory (MEM_ALLOC_FAILED) partway through the smoke suites, and 10g
+    # with 40% partway through the full epic suites (the BE's caches grow over a run).
     mem_limit: 10g
     depends_on:
       fe:
@@ -64,7 +65,7 @@ services:
       BE_HEARTBEAT_PORT: "9150"
       BE_HTTP_PORT: "8140"
       BE_CONFIG_EXTRA: |
-        mem_limit = ${BE_MEM_LIMIT:-40%}
+        mem_limit = ${BE_MEM_LIMIT:-75%}
         path_gc_check_interval_second = 1
         max_garbage_sweep_interval = 180
         enable_stream_load_record = true

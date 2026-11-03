@@ -59,6 +59,21 @@ def replace_exactly(text, old, new, count, what):
     return text.replace(old, new)
 
 
+# Patch 4: TRuntimeProfileNode.info_strings values are bytes (see patches.md).
+INFO_STRINGS_BYTES = [
+    ("pub info_strings: BTreeMap<String, String>,", "pub info_strings: BTreeMap<String, Vec<u8>>,"),
+    ("info_strings: BTreeMap<String, String>, info_strings_display_order",
+     "info_strings: BTreeMap<String, Vec<u8>>, info_strings_display_order"),
+    ("let mut f_6: Option<BTreeMap<String, String>> = None;",
+     "let mut f_6: Option<BTreeMap<String, Vec<u8>>> = None;"),
+    ("let mut val: BTreeMap<String, String> = BTreeMap::new();",
+     "let mut val: BTreeMap<String, Vec<u8>> = BTreeMap::new();"),
+    ("let map_val_2 = i_prot.read_string()?;", "let map_val_2 = i_prot.read_bytes()?;"),
+    ("    for (k, v) in &self.info_strings {\n      o_prot.write_string(k)?;\n      o_prot.write_string(v)?;",
+     "    for (k, v) in &self.info_strings {\n      o_prot.write_string(k)?;\n      o_prot.write_bytes(v)?;"),
+]
+
+
 def services(module, text):
     """[(service, wire method name, args struct, result struct)] for every processor in a module."""
     out = []
@@ -109,6 +124,9 @@ def main(gen):
         # Patch 2: a list of unions is boxed into a Vec of the plain type.
         if module == "parquet":
             text = replace_exactly(text, "val.push(Box::new(elem));", "val.push(elem);", 1, path)
+        if module == "runtime_profile":
+            for old, new in INFO_STRINGS_BYTES:
+                text = replace_exactly(text, old, new, 1, path)
         # Patch 3: per-method structs become public so the method table can reach them.
         for service, name, args, result in services(module, text):
             text = expose(text, args)

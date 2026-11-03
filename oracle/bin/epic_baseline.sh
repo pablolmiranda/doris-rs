@@ -59,12 +59,15 @@ python3 checker/traffic.py "results/reference-single/$STAMP-a1/traffic.pcap" "re
 run reference-single "$STAMP-a2"
 "${SINGLE[@]}" down -v >> "$LOG" 2>&1
 
-phase "cluster B"
-"${SPLIT[@]}" up --wait >> "$LOG" 2>&1
-bin/cluster_setup.sh doris-oracle-split-fe-1 >> "$LOG"
-run reference-split "$STAMP-b1"
-run reference-split "$STAMP-b2"
-"${SPLIT[@]}" down -v >> "$LOG" 2>&1
+# A fresh cluster B for each run: its BE has less memory than cluster A's, and its caches grow
+# over a run until allocations fail.
+for r in b1 b2; do
+  phase "cluster B for $r"
+  "${SPLIT[@]}" up --wait >> "$LOG" 2>&1
+  bin/cluster_setup.sh doris-oracle-split-fe-1 >> "$LOG"
+  run reference-split "$STAMP-$r"
+  "${SPLIT[@]}" down -v >> "$LOG" 2>&1
+done
 
 phase "derive into $OUT"
 rm -rf "$OUT"

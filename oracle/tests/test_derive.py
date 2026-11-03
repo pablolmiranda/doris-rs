@@ -1,4 +1,5 @@
 """Derive seam: recorded reference runs in, the reference products out."""
+import hashlib
 import json
 import os
 import sys
@@ -59,6 +60,37 @@ class TrafficTests(DeriveTestCase):
         with open(os.path.join(corpus, "manifest.json")) as fh:
             manifest = json.load(fh)
         self.assertEqual(manifest["background"], {"heartbeat": 1, "report": 1, "submit_tasks": 1})
+
+    def test_large_http_bodies_are_kept_as_length_and_digest(self):
+        body = b"1,a\n" * 20000
+        request = b"PUT /api/db/t/_stream_load HTTP/1.1\r\nContent-Length: 80000\r\n\r\n" + body
+        small = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+        traffic = [({"protocol": "http", "method": "stream_load", "kind": "request", "time_ms": 150}, request),
+                   ({"protocol": "http", "method": "stream_load", "kind": "response", "time_ms": 150}, small)]
+        derive.derive([self.run_dir(1, {A: ("passed", 100, 200)}, traffic=traffic)], self.out)
+        (h1, d1), (h2, d2) = records.read(os.path.join(self.out, "traffic", f"{A}.bin.gz"))
+        self.assertEqual(d1, b"PUT /api/db/t/_stream_load HTTP/1.1\r\nContent-Length: 80000\r\n\r\n")
+        self.assertEqual(h1["body_omitted"], {"bytes": 80000, "sha256": hashlib.sha256(body).hexdigest()})
+        self.assertEqual(d2, small)
+        self.assertNotIn("body_omitted", h2)
+
+    def test_grpc_frames_without_a_method_are_reported_not_kept(self):
+        unnamed = ({"protocol": "grpc", "method": "?", "kind": "request", "time_ms": 150,
+                    "tcp_stream": 2, "h2_stream": 8192, "frame": 7}, b"\x01")
+        run = self.run_dir(1, {A: ("passed", 100, 200)},
+                           traffic=[unnamed, msg("fetch_data", 160, protocol="grpc", kind="request")])
+        derive.derive([run], self.out)
+        corpus = os.path.join(self.out, "traffic")
+        self.assertEqual([h["method"] for h, _ in records.read(os.path.join(corpus, f"{A}.bin.gz"))], ["fetch_data"])
+        with open(os.path.join(corpus, "manifest.json")) as fh:
+            self.assertEqual(json.load(fh)["unnamed_grpc"],
+                             [{"suite": A, "tcp_stream": 2, "h2_stream": 8192, "frame": 7, "bytes": 1}])
+
+    def test_tablet_stat_polling_is_background(self):
+        run = self.run_dir(1, {A: ("passed", 100, 200)}, traffic=[msg("get_tablet_stat", 150, kind="reply")])
+        derive.derive([run], self.out)
+        with open(os.path.join(self.out, "traffic", "manifest.json")) as fh:
+            self.assertEqual(json.load(fh)["background"], {"get_tablet_stat": 1})
 
     def test_reaches_be_counts_work_sent_to_the_be(self):
         traffic = [msg("exec_plan_fragment", 150, protocol="grpc", kind="request"), msg("heartbeat", 350)]

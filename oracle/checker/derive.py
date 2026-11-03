@@ -8,7 +8,8 @@ Run 1 is the anchor: its replies are the expected replies. Writes into OUT_DIR:
   baseline.json   run 1's results for the gate suites
   replies/        <suite>.jsonl.gz, run 1's canonical exchanges
   marks.json      probe marks per suite, with the runs they came from
-  traffic/        <suite>.bin.gz, run 1's FE<->BE messages per suite, and manifest.json
+  traffic/        <suite>.bin.gz, run 1's FE<->BE messages per suite (HTTP bodies over 64 KiB
+                  kept as length and digest), and manifest.json
   reaches_be.txt  gate suites that sent the BE work (plan fragments, tasks, loads)
   ranking.json    unsupported features by the gate suites they block (with --needs)
 """
@@ -35,7 +36,7 @@ def passed_everywhere(runs, in_scope):
     return gate, flaky
 
 
-BACKGROUND_METHODS = {"heartbeat", "report", "publish_topic_info", "get_dictionary_status"}
+BACKGROUND_METHODS = {"heartbeat", "report", "publish_topic_info", "get_dictionary_status", "get_tablet_stat"}
 BE_WORK = ("exec_plan_fragment", "submit_tasks", "tablet_writer", "stream_load", "http")
 
 
@@ -50,6 +51,36 @@ def split_traffic(messages, wins):
         else:
             by_suite.setdefault(suite, []).append((header, data))
     return by_suite, background
+
+
+# HTTP bodies above this size (load data, tablet metadata dumps) are the suites' own files or
+# BE state, not messages a BE implementation must reproduce; the corpus keeps their length and
+# digest so it stays small enough to commit.
+MAX_HTTP_BODY = 64 * 1024
+
+
+def trim_http(header, data):
+    if header.get("protocol") != "http":
+        return header, data
+    end = data.find(b"\r\n\r\n")
+    if end < 0 or len(data) - (end + 4) <= MAX_HTTP_BODY:
+        return header, data
+    body = data[end + 4:]
+    return {**header, "body_omitted": {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}}, data[:end + 4]
+
+
+def named_grpc(items):
+    """(items, unnamed): gRPC frames tshark gave no method (no HEADERS seen for their HTTP/2
+    stream; their stream ids are impossible, so tshark lost the frame boundaries there) are
+    left out of the corpus and reported instead."""
+    kept, unnamed = [], []
+    for h, d in items:
+        if h.get("protocol") == "grpc" and h.get("method") == "?":
+            unnamed.append({"tcp_stream": h.get("tcp_stream"), "h2_stream": h.get("h2_stream"),
+                            "frame": h.get("frame"), "bytes": len(d)})
+        else:
+            kept.append((h, d))
+    return kept, unnamed
 
 
 def reaches_be(items):
@@ -73,13 +104,14 @@ def write_traffic(run_dir, out_dir, gate, dependencies=()):
     # corpus, so the needs of the suites running then may be incomplete.
     without = [k for k in gate if not by_suite.get(k)]
     manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background,
-                "capture_holes": holes, "without_traffic": without, "suites": {}}
+                "capture_holes": holes, "without_traffic": without, "unnamed_grpc": [], "suites": {}}
     for k in sorted(set(gate) | set(dependencies)):
-        items = by_suite.get(k, [])
+        items, unnamed = named_grpc(by_suite.get(k, []))
+        manifest["unnamed_grpc"] += [{"suite": k, **u} for u in unnamed]
         if not items:
             continue
         target = os.path.join(corpus, f"{k}.bin.gz")
-        records.write(target, items)
+        records.write(target, [trim_http(h, d) for h, d in items])
         with open(target, "rb") as fh:
             manifest["suites"][k] = {"messages": len(items), "sha256": hashlib.sha256(fh.read()).hexdigest()}
     with open(os.path.join(corpus, "manifest.json"), "w", encoding="utf-8") as fh:
