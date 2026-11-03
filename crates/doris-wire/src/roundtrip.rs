@@ -1,7 +1,8 @@
 //! Re-encoding checks for one captured message, by its corpus header: Thrift messages through
 //! `doris_thrift::dispatch`, gRPC payloads through the `doris-proto` type of the method, and the
 //! compact-protocol plan inside fragment requests. A Thrift message whose re-encoding differs
-//! only in set/map order (Java writes hash order, the Rust types sorted) is `Reordered`.
+//! only in set/map order (Java writes hash order, the Rust types sorted) is `Reordered`; so is
+//! a fragment request whose compact-protocol plan does.
 use doris_proto::doris::{
     PCancelPlanFragmentRequest, PCancelPlanFragmentResult, PExecPlanFragmentRequest,
     PExecPlanFragmentResult, PExecPlanFragmentStartRequest, PFetchDataRequest, PFetchDataResult,
@@ -9,7 +10,7 @@ use doris_proto::doris::{
 use doris_thrift::dispatch::{roundtrip_message, roundtrip_plan_compact};
 use prost::Message;
 
-use crate::canonical::binary_message;
+use crate::canonical::{binary_message, compact_struct};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -68,12 +69,24 @@ pub fn grpc(method: &str, request: bool, bytes: &[u8]) -> Result<Outcome, String
     let out = match (method, request) {
         ("exec_plan_fragment" | "exec_plan_fragment_prepare", true) => {
             let plan = fragment_plan(bytes)?;
+            let again = roundtrip_plan_compact(&plan).map_err(|e| e.to_string())?;
+            let outcome = if first_difference(&plan, &again).is_none() {
+                Outcome::Identical
+            } else {
+                let canonical = compact_struct(&plan);
+                if canonical.is_ok() && canonical == compact_struct(&again) {
+                    Outcome::Reordered
+                } else {
+                    compare("plan", &plan, &again)?;
+                    Outcome::Identical
+                }
+            };
             compare(
-                "plan",
-                &plan,
-                &roundtrip_plan_compact(&plan).map_err(|e| e.to_string())?,
+                "gRPC payload",
+                bytes,
+                &reencode::<PExecPlanFragmentRequest>(bytes)?,
             )?;
-            reencode::<PExecPlanFragmentRequest>(bytes)?
+            return Ok(outcome);
         }
         ("exec_plan_fragment_start", true) => reencode::<PExecPlanFragmentStartRequest>(bytes)?,
         (

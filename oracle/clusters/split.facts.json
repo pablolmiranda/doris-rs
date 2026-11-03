@@ -113,7 +113,7 @@
   {
    "name": "be-memory",
    "values": [
-    "8.00 GB"
+    "10.00 GB"
    ],
    "match": "cell",
    "columns": [

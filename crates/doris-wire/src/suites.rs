@@ -15,9 +15,12 @@ pub struct SuiteRecord {
     pub data: Vec<u8>,
 }
 
-/// `oracle/epic1/traffic` in this checkout.
+/// `oracle/epic1/traffic` in this checkout, or `$DORIS_TRAFFIC_CORPUS` when set (to check a
+/// corpus derived elsewhere, such as a dry run's).
 pub fn corpus_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oracle/epic1/traffic")
+    std::env::var_os("DORIS_TRAFFIC_CORPUS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oracle/epic1/traffic"))
 }
 
 /// The suite files of a corpus directory, sorted; empty when the directory does not exist.
