@@ -121,6 +121,24 @@ def facts(host, port):
                                        {"name": "be-port", "values": [port], "match": "cell"}]}
 
 
+class NothingToCompareTests(GradeTestCase):
+    W = {S: ("passed", 100, 200)}
+
+    def test_suite_without_recorded_exchanges_does_not_pass_strict_for_free(self):
+        ref = self.reference((self.W, [[(500, q("select 1", [["1"]]))]]))  # nothing inside the window
+        self.assertEqual(self.reference_status(ref), "no_replies")
+        verdict = self.grade(ref, self.W, [[(500, q("select 1", [["1"]]))]])
+        self.assertEqual(verdict["strict"]["passing"], [])
+        self.assertEqual(verdict["strict"]["not_compared"], {"no_replies": [S]})
+
+    def test_skipped_statements_are_reported_apart(self):
+        def run(first):
+            return [[(150, first), (160, q("select 2", [["2"]]))]]
+        ref = self.reference((self.W, run(q("select 1", [["1"]]))), (self.W, run(e("select 1", 1105, "timeout"))))
+        verdict = self.grade(ref, self.W, run(q("select 1", [["7"]])))
+        self.assertEqual(verdict["strict"]["skipped_statements"], {S: 1})
+
+
 class DeploymentFactTests(GradeTestCase):
     def backends(self, host, port, error_host=None):
         return [[(150, q("show backends", [[host, port, "19050"]])),
@@ -198,7 +216,7 @@ class ProbeMarkTests(GradeTestCase):
     def test_suite_whose_exchange_count_varied_is_unstable_not_compared(self):
         ref = self.reference((self.W, one("q", [["1"]])), (self.W, [[(150, q("q", [["1"]])), (160, q("r", [["2"]]))]]))
         verdict = self.grade(ref, self.W, one("q", [["5"]]))
-        self.assertEqual(verdict["strict"]["unstable"], [S])
+        self.assertEqual(verdict["strict"]["not_compared"], {"unstable": [S]})
         self.assertEqual((verdict["strict"]["passing"], verdict["strict"]["differences"]), ([], {}))
 
     def test_reply_whose_kind_varied_is_skipped_and_the_rest_compared(self):

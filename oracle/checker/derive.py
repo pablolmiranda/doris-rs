@@ -13,11 +13,10 @@ Run 1 is the anchor: its replies are the expected replies. Writes into OUT_DIR:
   ranking.json    unsupported features by the gate suites they block (with --needs)
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
-
-import hashlib
 
 import marks as probe_marks
 import records
@@ -57,11 +56,13 @@ def reaches_be(items):
     return any(str(h.get("method", "")).startswith(BE_WORK) or h.get("protocol") == "http" for h, _ in items)
 
 
-def write_traffic(run_dir, out_dir, gate):
-    """Per-suite corpus from the anchor run's message file; returns the suites reaching the BE."""
+def write_traffic(run_dir, out_dir, gate, dependencies=()):
+    """Per-suite corpus from the anchor run's message file, for the gate suites and the load
+    suites they depend on. Returns (gate suites reaching the BE, gate suites without any
+    traffic), or None when the run has no capture."""
     path = os.path.join(run_dir, "traffic.bin.gz")
     if not os.path.exists(path):
-        return []
+        return None
     wins = replies.windows(replies.results(run_dir))
     by_suite, background = split_traffic(records.read(path), wins)
     corpus = os.path.join(out_dir, "traffic")
@@ -70,9 +71,10 @@ def write_traffic(run_dir, out_dir, gate):
     holes = replies.load_json(holes_path) if os.path.exists(holes_path) else []
     # Capture holes: messages after a hole on that connection direction are missing from the
     # corpus, so the needs of the suites running then may be incomplete.
+    without = [k for k in gate if not by_suite.get(k)]
     manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background,
-                "capture_holes": holes, "suites": {}}
-    for k in gate:
+                "capture_holes": holes, "without_traffic": without, "suites": {}}
+    for k in sorted(set(gate) | set(dependencies)):
         items = by_suite.get(k, [])
         if not items:
             continue
@@ -82,27 +84,31 @@ def write_traffic(run_dir, out_dir, gate):
             manifest["suites"][k] = {"messages": len(items), "sha256": hashlib.sha256(fh.read()).hexdigest()}
     with open(os.path.join(corpus, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=1, sort_keys=True)
-    return [k for k in gate if reaches_be(by_suite.get(k, []))]
+    return [k for k in gate if reaches_be(by_suite.get(k, []))], without
 
 
-def directory_loads(suites):
-    """{suite: [load suites of its directory]}: a directory's `load` suites create the tables
-    its other suites query, so their needs are the suite's needs too."""
-    loads = {}
-    for k in suites:
-        directory, _, name = k.rpartition(".")
-        if name == "load":
-            loads.setdefault(directory.rpartition(".")[0], []).append(k)
-    return {k: [l for l in loads.get(k.rpartition(".")[0].rpartition(".")[0], []) if l != k] for k in suites}
+def is_load(key):
+    """A directory's load.groovy creates the tables its other suites query (whatever the suite
+    inside is called)."""
+    return key.split(".")[-2] == "load"
+
+
+def directory(key):
+    return key.rsplit(".", 2)[0]
 
 
 def rank(index, supported, suites):
-    """Unsupported features, ranked by the suites each one alone blocks, then by all it blocks."""
-    loads = directory_loads(suites)
+    """Unsupported features, ranked by the suites each one alone blocks, then by all it blocks.
+    A suite's needs include those of its directory's load suites, gate or not: a fixture that
+    cannot load blocks everything that queries it."""
+    loads = {}
+    for k in index:
+        if is_load(k):
+            loads.setdefault(directory(k), []).append(k)
     blockers = {}
     for k in suites:
         needs = set()
-        for source in [k, *loads[k]]:
+        for source in {k, *loads.get(directory(k), [])}:
             needs |= {f"{kind}:{v}" for kind, values in index.get(source, {}).items() for v in values}
         blockers[k] = needs - supported
     features = {f for b in blockers.values() for f in b}
@@ -125,9 +131,10 @@ def derive(run_dirs, out_dir, scope=None, needs_index=None, supported=frozenset(
         return scope is None or not scope.get(key, {"reasons": ["unknown"]})["reasons"]
 
     gate, flaky = passed_everywhere(runs, in_scope)
+    run_ids = [os.path.basename(os.path.normpath(d)) for d in run_dirs]
     write_lines(os.path.join(out_dir, "suites.txt"), gate)
     write_lines(os.path.join(out_dir, "flaky.txt"),
-                [f"{k}  # flaky on reference: failed in runs {', '.join(map(str, r))}" for k, r in flaky.items()])
+                [f"{k}  # flaky on reference: failed in {', '.join(run_ids[i - 1] for i in r)}" for k, r in flaky.items()])
     with open(os.path.join(out_dir, "baseline.json"), "w", encoding="utf-8") as fh:
         json.dump({"meta": {"runs": [os.path.basename(os.path.normpath(d)) for d in run_dirs]},
                    "suites": {k: runs[0][k] for k in gate}}, fh, indent=2, sort_keys=True)
@@ -136,16 +143,25 @@ def derive(run_dirs, out_dir, scope=None, needs_index=None, supported=frozenset(
     marks = {}
     for k in gate:
         replies.write_suite(os.path.join(out_dir, "replies", f"{k}.jsonl.gz"), exchanges[0].get(k, []))
-        marks[k] = probe_marks.derive_marks([e.get(k, []) for e in exchanges])
+        if not exchanges[0].get(k):
+            # Nothing was recorded for the suite, so there is nothing to hold a candidate to.
+            marks[k] = {"status": "no_replies", "reason": "no exchanges recorded in the suite's window", "exchanges": {}}
+        else:
+            marks[k] = probe_marks.derive_marks([e.get(k, []) for e in exchanges])
     with open(os.path.join(out_dir, "marks.json"), "w", encoding="utf-8") as fh:
         json.dump({"runs": [os.path.basename(os.path.normpath(d)) for d in run_dirs], "suites": marks},
                   fh, indent=1, sort_keys=True)
-    be = write_traffic(run_dirs[0], out_dir, gate)
+    gate_dirs = {directory(k) for k in gate}
+    loads = [k for k in runs[0] if is_load(k) and in_scope(k) and directory(k) in gate_dirs]
+    traffic = write_traffic(run_dirs[0], out_dir, gate, loads)
+    be, without = traffic if traffic is not None else ([], [])
     write_lines(os.path.join(out_dir, "reaches_be.txt"), be)
     if needs_index is not None:
         with open(os.path.join(out_dir, "ranking.json"), "w", encoding="utf-8") as fh:
             json.dump(rank(needs_index, set(supported), gate), fh, indent=1)
-    return {"gate": len(gate), "flaky": len(flaky), "reaches_be": len(be)}
+    return {"gate": len(gate), "flaky": len(flaky), "reaches_be": len(be),
+            "traffic": "no capture in run 1" if traffic is None else "captured", "without_traffic": len(without),
+            "no_replies": sum(1 for m in marks.values() if m["status"] == "no_replies")}
 
 
 def main(argv):

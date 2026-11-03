@@ -117,7 +117,8 @@ epic-baseline: src
 epic-check: src
 	@test -f $(EPIC_REF)/marks.json || { echo "no Epic 1 reference in $(EPIC_REF); run: make epic-baseline"; exit 1; }
 	PROXY=1 SERIAL=1 bin/run_suites.sh "$(TARGET)" "$(EPIC_SUITES)"
-	-python3 bin/compare.py $(EPIC_REF)/baseline.json results/$(TARGET)/latest/results.json --ignore suites/ignore.txt
+	-cat suites/ignore.txt $(EPIC_REF)/flaky.txt > results/$(TARGET)/latest/ignore.txt
+	-python3 bin/compare.py $(EPIC_REF)/baseline.json results/$(TARGET)/latest/results.json --ignore results/$(TARGET)/latest/ignore.txt
 	python3 checker/grade.py results/$(TARGET)/latest $(EPIC_REF) scores --json results/$(TARGET)/latest/grade.json
 
 epic-grade:

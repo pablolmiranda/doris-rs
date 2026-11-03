@@ -58,6 +58,18 @@ class ScopeTests(unittest.TestCase):
                      "def array = [1, 2]", "streamLoad { set 'format', 'json' }"]:
             self.assertEqual(scope.exclusion_reasons(text), [], text)
 
+    def test_exclusion_report_groups_suites_by_reason_with_counts(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            lst = os.path.join(d, "list.txt")
+            open(lst, "w").write("d\ne\n")
+            out = [os.path.join(d, n) for n in ("scope.json", "dirs.txt", "exclusions.txt")]
+            self.assertEqual(scope.main(["scope", FIXTURES, lst, *out]), 0)
+            report = open(out[2]).read().splitlines()
+        self.assertIn("in scope: 2 of 4 suites", report)
+        self.assertIn("aggregate_key: 1", report)
+        self.assertIn("  d.suite.suite", report)
+
 
 if __name__ == "__main__":
     unittest.main()

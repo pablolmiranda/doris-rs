@@ -38,12 +38,15 @@ def grade(run_dir, reference_dir, scores_dir):
 
     out_passing = [k for k in gate if results.get(k, {}).get("status") == "passed"]
     actual = replies.run_exchanges(run_dir)
-    strict_passing, differences, unstable = [], {}, []
+    strict_passing, differences, not_compared, skipped = [], {}, {}, {}
     for k in out_passing:
-        mark = marks.get(k, {"status": "stable", "exchanges": {}})
+        mark = marks.get(k, {"status": "no_replies", "exchanges": {}})
         if mark["status"] != "stable":
-            unstable.append(k)
+            not_compared.setdefault(mark["status"], []).append(k)
             continue
+        n_skipped = sum(1 for m in mark["exchanges"].values() if m.get("skip"))
+        if n_skipped:
+            skipped[k] = n_skipped
         expected = replies.read_suite(os.path.join(reference_dir, "replies", f"{k}.jsonl.gz"))
         diff = replies.compare(expected, mark, actual.get(k, []))
         if diff is None:
@@ -59,7 +62,8 @@ def grade(run_dir, reference_dir, scores_dir):
         ratchet["new"][g] = [k for k in passing[g] if k not in listed]
     return {
         "out": {"passing": out_passing, "numbers": numbers(out_passing, gate, reaches_be)},
-        "strict": {"passing": strict_passing, "differences": differences, "unstable": unstable,
+        "strict": {"passing": strict_passing, "differences": differences, "not_compared": not_compared,
+                   "skipped_statements": skipped,
                    "numbers": numbers(strict_passing, gate, reaches_be)},
         "ratchet": ratchet,
         "ok": not any(ratchet["lost"].values()),
@@ -76,8 +80,12 @@ def report(verdict):
         lines.append(f"strict difference in {k} at exchange {d['index']} ({d['field']}): {d['statement']}")
         lines.append(f"    expected: {json.dumps(d['expected'])[:300]}")
         lines.append(f"    actual:   {json.dumps(d['actual'])[:300]}")
-    if verdict["strict"]["unstable"]:
-        lines.append(f"unstable on the reference (not compared): {len(verdict['strict']['unstable'])}")
+    for status, suites in sorted(verdict["strict"]["not_compared"].items()):
+        lines.append(f"not compared ({status} on the reference): {len(suites)} suites")
+    skipped = verdict["strict"]["skipped_statements"]
+    if skipped:
+        lines.append(f"statements whose whole reply varied on the reference (not compared): "
+                     f"{sum(skipped.values())} in {len(skipped)} suites")
     for g in GATES:
         for k in verdict["ratchet"]["lost"][g]:
             lines.append(f"RATCHET {g}: {k} is listed but no longer passes")

@@ -1,12 +1,13 @@
 """Which upstream suites Epic 1 owns, by static rules over the suite sources.
 
-    scope.py SUITES_ROOT SUITE_LIST OUT_JSON OUT_DIRS
+    scope.py SUITES_ROOT SUITE_LIST OUT_JSON OUT_DIRS OUT_EXCLUSIONS
 
 SUITES_ROOT is regression-test/suites of the pinned source; SUITE_LIST the p0-core directory
 list. A suite's text is its .groovy file plus every .sql file in its directory tree (upstream
 keeps DDL there). OUT_JSON maps each suite key (the results.json format) to its file and the
 rules it trips; an empty list means in scope. OUT_DIRS lists the directories with at least one
-in-scope suite, for the runner. Counts per rule are printed.
+in-scope suite, for the runner. OUT_EXCLUSIONS is the exclusion report: the count per rule and
+the suites each rule excluded.
 """
 import json
 import os
@@ -83,11 +84,24 @@ def scan(suites_root, dirs):
     return out
 
 
+def exclusion_report(result):
+    by_reason = {}
+    for key, v in sorted(result.items()):
+        for r in v["reasons"]:
+            by_reason.setdefault(r, []).append(key)
+    lines = [f"in scope: {sum(1 for v in result.values() if not v['reasons'])} of {len(result)} suites",
+             "# a suite can be excluded by several rules; it is listed under each"]
+    for r, keys in sorted(by_reason.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        lines.append(f"{r}: {len(keys)}")
+        lines += [f"  {k}" for k in keys]
+    return lines
+
+
 def main(argv):
-    if len(argv) != 5:
+    if len(argv) != 6:
         print(__doc__, file=sys.stderr)
         return 2
-    root, suite_list, out_json, out_dirs = argv[1:]
+    root, suite_list, out_json, out_dirs, out_exclusions = argv[1:]
     with open(suite_list, encoding="utf-8") as fh:
         dirs = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
     result = scan(root, dirs)
@@ -97,13 +111,10 @@ def main(argv):
     with open(out_dirs, "w", encoding="utf-8") as fh:
         fh.write("# p0-core directories with at least one Epic 1 suite (computed by checker/scope.py)\n")
         fh.write("".join(d + "\n" for d in keep_dirs))
-    counts = {}
-    for v in result.values():
-        for r in v["reasons"]:
-            counts[r] = counts.get(r, 0) + 1
-    print(f"{sum(1 for v in result.values() if not v['reasons'])} of {len(result)} suites in scope")
-    for r, n in sorted(counts.items(), key=lambda kv: -kv[1]):
-        print(f"  {r:18} {n}")
+    report = exclusion_report(result)
+    with open(out_exclusions, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(report) + "\n")
+    print("\n".join(line for line in report if not line.startswith("  ")))
     return 0
 
 

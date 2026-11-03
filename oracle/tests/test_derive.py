@@ -41,7 +41,7 @@ class GateListTests(DeriveTestCase):
         scope = {A: {"reasons": []}, B: {"reasons": []}, C: {"reasons": ["variant"]}}
         derive.derive(runs, self.out, scope=scope)
         self.assertEqual(self.lines("suites.txt"), [A])
-        self.assertEqual(self.lines("flaky.txt"), [f"{B}  # flaky on reference: failed in runs 2"])
+        self.assertEqual(self.lines("flaky.txt"), [f"{B}  # flaky on reference: failed in run2"])
         with open(os.path.join(self.out, "baseline.json")) as fh:
             self.assertEqual(list(json.load(fh)["suites"]), [A])
 
@@ -75,6 +75,15 @@ class TrafficTests(DeriveTestCase):
         with open(os.path.join(self.out, "traffic", "manifest.json")) as fh:
             self.assertEqual(json.load(fh)["capture_holes"], holes)
 
+    def test_missing_capture_and_suites_without_traffic_are_reported(self):
+        no_capture = derive.derive([self.run_dir(1, {A: ("passed", 100, 200)})], self.out)
+        self.assertEqual(no_capture["traffic"], "no capture in run 1")
+        run = self.run_dir(2, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=[msg("fetch_data", 150)])
+        summary = derive.derive([run], self.out)
+        self.assertEqual(summary["without_traffic"], 1)
+        with open(os.path.join(self.out, "traffic", "manifest.json")) as fh:
+            self.assertEqual(json.load(fh)["without_traffic"], [B])
+
     def test_overlapping_windows_are_rejected(self):
         run = self.run_dir(1, {A: ("passed", 100, 300), B: ("passed", 200, 400)}, traffic=[])
         with self.assertRaises(ValueError):
@@ -99,6 +108,17 @@ class NeedsRankingTests(DeriveTestCase):
         load, query = "d.load.load", "d.q.q"
         r = self.rank([load, query], {load: {"task": ["CREATE"]}, query: {"plan_node": ["X"]}}, supported={"plan_node:X"})
         self.assertIn({"feature": "task:CREATE", "alone": 2, "total": 2}, r)
+
+    def test_load_suite_outside_the_gate_still_blocks_its_dependents(self):
+        load, query = "d.load.load_data", "d.q.q"
+        traffic = [msg("submit_tasks", 150), msg("exec_plan_fragment", 350, protocol="grpc", kind="request")]
+        runs = [self.run_dir(1, {load: ("passed", 100, 200), query: ("passed", 300, 400)}, traffic=traffic),
+                self.run_dir(2, {load: ("failed", 100, 200), query: ("passed", 300, 400)})]
+        derive.derive(runs, self.out, needs_index={load: {"task": ["CREATE"]}, query: {"plan_node": ["X"]}},
+                      supported={"plan_node:X"})
+        self.assertTrue(os.path.exists(os.path.join(self.out, "traffic", f"{load}.bin.gz")))
+        with open(os.path.join(self.out, "ranking.json")) as fh:
+            self.assertEqual(json.load(fh), [{"feature": "task:CREATE", "alone": 1, "total": 1}])
 
 
 if __name__ == "__main__":

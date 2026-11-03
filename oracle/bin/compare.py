@@ -68,7 +68,7 @@ def main(argv):
     ignore = set()
     if args.ignore:
         with open(args.ignore, encoding="utf-8") as fh:
-            ignore = {l.strip() for l in fh if l.strip() and not l.startswith("#")}
+            ignore = {l.split("#")[0].strip() for l in fh if l.split("#")[0].strip()}
 
     baseline, candidate = load(args.baseline), load(args.candidate)
     report = classify(baseline, candidate)
