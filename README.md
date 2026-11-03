@@ -37,7 +37,9 @@ tag from it; see `oracle/versions.env`.
 
 - `oracle/`: conformance harness over the upstream regression suites, with committed baselines
   against the 4.1.5 reference, the golden on-disk corpus (`oracle/corpus/`), and the wire
-  corpus of captured FE↔BE RPC messages (`oracle/wire/`).
+  corpus of captured FE↔BE RPC messages (`oracle/wire/`). The Epic 1 checker grades a candidate
+  BE on 1622 upstream p0 suites with two gates (`.out` and byte-equal MySQL replies) and ranks
+  the features doris-rs needs next; see "Epic 1 checker" in `oracle/README.md`.
 - `crates/doris-segment`: reads V2-format segment files written by the reference and decodes
   every scalar column type, verified row by row against the corpus.
 - `crates/doris-proto`: prost types for the pinned `.proto` files (segment format and

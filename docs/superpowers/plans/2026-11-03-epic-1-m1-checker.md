@@ -33,6 +33,24 @@ bytes, the doris-wire round-trip, live runs):
 - **Harness bug fixed:** `run_suites.sh` passed the conf directory to `--conf`, which upstream
   ignores, so every run used the source tree's default conf.
 - **Cluster B** reports the host's CPU count whatever its cpuset; recorded under `not_varied`.
+- **Five reference runs**, not four: a1 and a2 on one cluster A, a3 on a fresh cluster A, b1 and
+  b2 each on a fresh cluster B. The fifth was added after a self-check found rare variation four
+  runs had not shown.
+- **Cluster B memory:** the BE gets 75% of its 10g container (`BE_MEM_LIMIT`); 30% and 40% ran
+  out of memory under the suites.
+- **Live facts:** BE cores and memory are filled from `SHOW BACKENDS` at run time
+  (`checker/facts.py`, `"from_backends"` in `clusters/*.facts.json`), so no host value is committed.
+- **Corpus size:** HTTP bodies over 64 KiB are stored as length plus SHA-256 (`body_omitted`);
+  `get_tablet_stat` is background; gRPC frames tshark cannot name are listed in the manifest
+  (`unnamed_grpc`), not kept. The corpus is 48 MB in plain git. The pcap is streamed
+  (`checker/pcapstream.py`).
+- **Attribution:** a connection belongs to the suite whose window holds its handshake; its
+  exchanges outside that window are unattributed. A suite's connections are compared in order of
+  their content, not their time. Commands with no reply (`COM_QUIT`, `COM_STMT_CLOSE`,
+  `COM_STMT_SEND_LONG_DATA`) and the framework plugin's `show backends` lookup are dropped.
+- **Codec patch 4:** profile info strings are bytes, not strings (the BE writes raw key bytes).
+- **Self-check result:** `.out` 1622/1622, strict 1519/1531 compared; the 12 are rare Doris
+  nondeterminism, listed in `oracle/README.md`.
 
 ## Global Constraints
 

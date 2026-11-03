@@ -1,0 +1,8 @@
+compaction.test_base_compaction_no_value.test_base_compaction_no_value  # flaky on reference: failed in 20261102-195034-a2
+compaction.test_compaction_profile_action.test_compaction_profile_action  # flaky on reference: failed in 20261102-195034-a2, 20261103-090354, 20261102-195034-b1, 20261102-195034-b2
+insert_p0.test_insert_strict_fail_url.test_insert_strict_fail_url  # flaky on reference: failed in 20261103-090354
+inverted_index_p0.test_index_policy_drop.test_index_policy_drop  # flaky on reference: failed in 20261102-195034-a2
+nereids_p0.partition_topn.check_orderkey.check_orderkey  # flaky on reference: failed in 20261102-195034-a2
+query_p0.in_predicate.inPredicate.inPredicate  # flaky on reference: failed in 20261102-195034-a2
+query_p0.sql_functions.string_functions.test_compress_uncompress.test_compress_uncompress  # flaky on reference: failed in 20261102-195034-a1, 20261102-195034-a2, 20261103-090354
+unique_with_mow_p0.flexible.downgrade.test.test_flexible_partial_update_downgrade  # flaky on reference: failed in 20261102-195034-a2
