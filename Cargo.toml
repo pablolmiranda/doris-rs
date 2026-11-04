@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/doris-proto", "crates/doris-segment", "crates/doris-thrift", "crates/doris-wire"]
+members = [
+    "crates/doris-be",
+    "crates/doris-proto",
+    "crates/doris-rs",
+    "crates/doris-segment",
+    "crates/doris-storage",
+    "crates/doris-thrift",
+    "crates/doris-wire",
+]
 
 [workspace.package]
 edition = "2021"
@@ -10,6 +18,8 @@ rust-version = "1.93"
 [workspace.dependencies]
 doris-proto = { path = "crates/doris-proto" }
 doris-thrift = { path = "crates/doris-thrift" }
+doris-storage = { path = "crates/doris-storage" }
+doris-be = { path = "crates/doris-be" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"
@@ -21,3 +31,12 @@ lz4_flex = "0.14"
 zstd = "0.14"
 thrift = "0.25"
 flate2 = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util"] }
+hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+pbjson = "0.8"
+pbjson-types = "0.8"
+pbjson-build = "0.8"
+tempfile = "3"

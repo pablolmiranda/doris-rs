@@ -1,0 +1,20 @@
+[package]
+name = "doris-be"
+version = "0.1.0"
+description = "doris-rs BE role: heartbeat, agent tasks, reports and the BE's network services"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+doris-storage = { workspace = true }
+doris-thrift = { workspace = true }
+doris-proto = { workspace = true }
+thrift = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

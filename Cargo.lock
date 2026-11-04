@@ -90,12 +90,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "doris-be"
+version = "0.1.0"
+dependencies = [
+ "doris-proto",
+ "doris-storage",
+ "doris-thrift",
+ "tempfile",
+ "thiserror",
+ "thrift",
+]
+
+[[package]]
 name = "doris-proto"
 version = "0.1.0"
 dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+]
+
+[[package]]
+name = "doris-rs"
+version = "0.1.0"
+dependencies = [
+ "doris-be",
 ]
 
 [[package]]
@@ -110,6 +129,17 @@ dependencies = [
  "serde_json",
  "thiserror",
  "zstd",
+]
+
+[[package]]
+name = "doris-storage"
+version = "0.1.0"
+dependencies = [
+ "doris-proto",
+ "doris-thrift",
+ "prost",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -707,6 +737,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
+ "getrandom",
  "once_cell",
  "rustix",
  "windows-sys",

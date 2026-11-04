@@ -1,0 +1,19 @@
+[package]
+name = "doris-storage"
+version = "0.1.0"
+description = "doris-rs BE storage: data directories in the C++ BE layout, tablets and their headers"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+doris-proto = { workspace = true }
+doris-thrift = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
