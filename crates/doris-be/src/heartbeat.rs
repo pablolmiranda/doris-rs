@@ -79,6 +79,7 @@ impl HeartbeatHandler {
                 if info.epoch > s.epoch {
                     s.master = Some(addr.clone());
                     s.epoch = info.epoch;
+                    s.report_signal += 1;
                 } else {
                     return Err(format!(
                         "epoch is not greater than local. ignore heartbeat. host: {}, port: {}, local epoch: {}, received epoch: {}",
@@ -87,6 +88,7 @@ impl HeartbeatHandler {
                 }
             } else if info.epoch > s.epoch {
                 s.epoch = info.epoch;
+                s.report_signal += 1;
             }
             if let Some(token) = &info.token {
                 match &s.token {

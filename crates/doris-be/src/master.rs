@@ -18,6 +18,8 @@ pub(crate) struct ClusterState {
     pub backend_id: Option<i64>,
     pub master_http_port: Option<i32>,
     pub frontends: Vec<TFrontendInfo>,
+    /// Bumped when a heartbeat changes the master or its epoch (`need_report`).
+    pub report_signal: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +60,11 @@ impl MasterInfo {
     /// `BackendOptions::get_localhost()`: the address this BE registers as.
     pub fn localhost(&self) -> String {
         self.with(|s| s.localhost.clone())
+    }
+
+    /// Counts heartbeats that asked for an immediate report.
+    pub fn report_signal(&self) -> u64 {
+        self.with(|s| s.report_signal)
     }
 
     /// Sets the master directly, as a heartbeat would (tests and tools).

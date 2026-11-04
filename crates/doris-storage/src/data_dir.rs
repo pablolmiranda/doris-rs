@@ -115,6 +115,25 @@ impl DataDir {
         Ok(())
     }
 
+    /// (total, available) bytes of the file system holding the root.
+    pub fn capacity(&self) -> Result<(i64, i64), StorageError> {
+        let total = fs4::total_space(&self.root).at(&self.root)?;
+        let available = fs4::available_space(&self.root).at(&self.root)?;
+        Ok((total as i64, available as i64))
+    }
+
+    /// Bytes under `trash/`.
+    pub fn trash_used(&self) -> i64 {
+        fn size(p: &Path) -> u64 {
+            match fs::symlink_metadata(p) {
+                Ok(m) if m.is_dir() => fs::read_dir(p).map(|d| d.flatten().map(|e| size(&e.path())).sum()).unwrap_or(0),
+                Ok(m) => m.len(),
+                Err(_) => 0,
+            }
+        }
+        size(&self.root.join("trash")) as i64
+    }
+
     pub fn headers(&self) -> &HeaderStore {
         &self.headers
     }

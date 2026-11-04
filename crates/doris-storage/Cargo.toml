@@ -14,6 +14,7 @@ doris-proto = { workspace = true }
 doris-thrift = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
+fs4 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

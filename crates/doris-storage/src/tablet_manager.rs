@@ -33,6 +33,8 @@ pub struct TabletManager {
     /// `RowsetIdGenerator`: a per-process random id and a counter.
     backend_uid: (u64, u64),
     next_rowset: u64,
+    /// `_tablet_stat_list_cache`: filled by each tablet report, read by `get_tablet_stat`.
+    stat_cache: Vec<TTabletStat>,
 }
 
 fn now_secs() -> i64 {
@@ -64,6 +66,7 @@ impl TabletManager {
             report_version: now_secs() * 10_000,
             backend_uid: (random_u64(), random_u64()),
             next_rowset: 1,
+            stat_cache: Vec::new(),
         })
     }
 
@@ -196,27 +199,38 @@ impl TabletManager {
         }
     }
 
-    /// The stat cache `build_all_report_tablets_info` fills, which `get_tablet_stat` returns.
-    pub fn tablet_stats(&self) -> Vec<TTabletStat> {
-        self.tablets
+    /// `build_all_report_tablets_info`: the tablets for a tablet report, refreshing the stat
+    /// cache `get_tablet_stat` answers from.
+    pub fn report_tablets(&mut self) -> BTreeMap<i64, TTablet> {
+        let tablets = self.tablet_infos();
+        self.stat_cache = tablets
             .values()
-            .map(|t| {
-                let i = self.report_info(t);
-                TTabletStat {
-                    tablet_id: i.tablet_id,
-                    data_size: Some(i.data_size),
-                    row_count: Some(i.row_count),
-                    total_version_count: i.total_version_count,
-                    remote_data_size: i.remote_data_size,
-                    visible_version_count: i.visible_version_count,
-                    visible_version: Some(i.version),
-                    local_index_size: i.local_index_size,
-                    local_segment_size: i.local_segment_size,
-                    remote_index_size: i.remote_index_size,
-                    remote_segment_size: i.remote_segment_size,
-                }
+            .flat_map(|t| &t.tablet_infos)
+            .map(|i| TTabletStat {
+                tablet_id: i.tablet_id,
+                data_size: Some(i.data_size),
+                row_count: Some(i.row_count),
+                total_version_count: i.total_version_count,
+                remote_data_size: i.remote_data_size,
+                visible_version_count: i.visible_version_count,
+                visible_version: Some(i.version),
+                local_index_size: i.local_index_size,
+                local_segment_size: i.local_segment_size,
+                remote_index_size: i.remote_index_size,
+                remote_segment_size: i.remote_segment_size,
             })
-            .collect()
+            .collect();
+        tablets
+    }
+
+    /// `TabletManager::get_tablet_stat`: the stats as of the last tablet report.
+    pub fn tablet_stats(&self) -> Vec<TTabletStat> {
+        self.stat_cache.clone()
+    }
+
+    /// Bytes of tablet data on a root (`DataDir` local used capacity).
+    pub fn data_used(&self, dir: usize) -> i64 {
+        self.tablets.values().filter(|t| t.dir == dir).flat_map(|t| &t.meta.rs_metas).map(|r| r.total_disk_size()).sum()
     }
 }
 
