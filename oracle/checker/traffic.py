@@ -6,8 +6,9 @@ Thrift (9020, 9050, 9060) and BE HTTP (8040, stream load) connections are reasse
 streaming pass (pcapstream.py: payloads spooled to disk, so a run's tens of gigabytes never sit
 in memory); gRPC (8060) needs tshark's HPACK decoding and is cut out with tcpdump first. Every
 message gets the epoch time of the segment carrying its first byte (time_ms), which derive.py
-uses to give it to the suite that was running. Holes in the capture are written next to the
-output (traffic-holes.json) and printed, never dropped silently.
+uses to give it to the suite that was running. Directions that lost bytes (a hole in the
+capture, or a message cut off at its end) are written next to the output (traffic-holes.json)
+and printed, never dropped silently.
 """
 import json
 import os
@@ -24,6 +25,31 @@ import thrift_split  # noqa: E402
 
 json_array_items = extract.json_array_items
 HTTP_PORT = 8040
+
+
+def _routes():
+    with open(os.path.join(HERE, "..", "wire", "be_http_routes.txt"), encoding="utf-8") as fh:
+        return [line.strip().split("/") for line in fh if line.strip() and not line.startswith("#")]
+
+
+ROUTES = _routes()
+
+
+def route(path):
+    """The BE route template a request path hits (`/api/meta/{op}/{tablet_id}`), so requests to
+    one endpoint share a name whatever ids or table names they carry; the bare path when no
+    route matches. Literal segments win over placeholders."""
+    bare = path.split("?")[0]
+    segments = bare.split("/")
+    best, literals = None, -1
+    for template in ROUTES:
+        if len(template) != len(segments):
+            continue
+        if all(t == s or t.startswith("{") for t, s in zip(template, segments)):
+            n = sum(not t.startswith("{") for t in template)
+            if n > literals:
+                best, literals = template, n
+    return "/".join(best) if best else bare
 
 
 class Incomplete(Exception):
@@ -91,14 +117,25 @@ def http_exchanges(c2s, s2c, complete_only=False):
     return out
 
 
+def damage(stream_id, side, direction, trailing=0):
+    """What one direction lost, or None: its capture hole (`gap`) if any, and `bytes`, the
+    captured bytes no record holds (a partial message at the end, plus everything past a hole)."""
+    if not (direction.gap or trailing):
+        return None
+    entry = {"tcp_stream": stream_id, "from": side, "bytes": trailing + direction.after_gap}
+    if direction.gap:
+        entry["gap"] = list(direction.gap)
+    return entry
+
+
 def http_records(conn, stream_id):
     """(records, damaged): a request and a response record for every complete exchange on one
     BE HTTP connection, timed by the request's first byte, and its directions with a hole."""
-    damaged = [{"tcp_stream": stream_id, "from": side, "gap": list(d.gap)}
-               for side, d in (("client", conn.client), ("server", conn.server)) if d.gap]
+    damaged = [e for e in (damage(stream_id, "client", conn.client), damage(stream_id, "server", conn.server)) if e]
     out, at = [], 0
     for ex in http_exchanges(conn.client.data, conn.server.data, complete_only=True):
-        kind = "stream_load" if ex["path"].endswith("/_stream_load") else ex["path"].split("?")[0]
+        template = route(ex["path"])
+        kind = "stream_load" if template == "/api/{db}/{table}/_stream_load" else template
         header = {"protocol": "http", "service": "http", "method": kind, "path": ex["path"],
                   "status": ex["status"], "tcp_stream": stream_id, "time_ms": conn.client.time_at(at)}
         out.append(({**header, "kind": "request"}, ex["request"]))
@@ -111,13 +148,10 @@ def thrift_records(conn, stream_id):
     """(records, holes): the Thrift messages of both directions of one connection, each timed by
     its first byte; a direction with a hole or a partial message at its end is reported."""
     out, holes = [], []
-    for side, d, kinds in (("client", conn.client, "to_server"), ("server", conn.server, "to_client")):
+    for side, d in (("client", conn.client), ("server", conn.server)):
         msgs = thrift_split.split_messages(d.data)
-        left = len(d.data) - (msgs[-1].end if msgs else 0) + d.after_gap
-        if left or d.gap:
-            entry = {"tcp_stream": stream_id, "from": side, "bytes": left}
-            if d.gap:
-                entry["gap"] = list(d.gap)
+        entry = damage(stream_id, side, d, trailing=len(d.data) - (msgs[-1].end if msgs else 0))
+        if entry:
             holes.append(entry)
         for m in msgs:
             out.append(({"protocol": "thrift", "port": conn.server_port,
@@ -152,7 +186,7 @@ def extract_run(pcap, out_path):
         else:
             recs, damaged = thrift_records(conn, i)
         items += recs
-        holes += [d for d in damaged if "gap" in d]
+        holes += damaged
     with tempfile.TemporaryDirectory() as tmp:
         items += grpc_records(pcap, tmp)
     items.sort(key=lambda it: (it[0]["time_ms"] or 0))
@@ -160,7 +194,8 @@ def extract_run(pcap, out_path):
     with open(os.path.join(os.path.dirname(os.path.abspath(out_path)), "traffic-holes.json"), "w", encoding="utf-8") as fh:
         json.dump(holes, fh, indent=1)
     if holes:
-        print(f"{len(holes)} connection directions with a capture hole: {holes[:5]}", file=sys.stderr)
+        print(f"{len(holes)} connection directions lost bytes (a capture hole or a cut-off message): {holes[:5]}",
+              file=sys.stderr)
     return {"messages": len(items), "holes": len(holes), "thrift_or_http_without_handshake": stats["without_handshake"]}
 
 

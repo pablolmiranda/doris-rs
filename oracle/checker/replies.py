@@ -9,7 +9,7 @@ import gzip
 import json
 import os
 
-import harness
+import background
 import marks as probe_marks
 import mysql_wire
 import records
@@ -87,7 +87,7 @@ def run_exchanges(run_dir):
         # Commands without a reply say nothing about the server, and whether they land inside
         # the suite's window is timing.
         exchanges = [ex for ex in mysql_wire.decode_session(c2s, s2c, times) if ex["command"] not in mysql_wire.NO_REPLY]
-        if not exchanges or harness.is_connection(exchanges):
+        if not exchanges or background.is_harness_connection(exchanges):
             continue
         opener = owner(exchanges[0]["t_ms"], wins)
         for ex in exchanges:

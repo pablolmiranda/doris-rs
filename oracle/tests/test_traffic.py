@@ -35,8 +35,22 @@ class HttpTests(unittest.TestCase):
             traffic.http_exchanges(PUT1[:-2], b"")
 
 
+class RouteTests(unittest.TestCase):
+    def test_a_path_is_named_by_the_be_route_it_hits(self):
+        self.assertEqual(traffic.route("/api/meta/header/1793678150382"), "/api/meta/{op}/{tablet_id}")
+        self.assertEqual(traffic.route("/api/regression_test_x/t1/_stream_load_2pc"), "/api/{db}/{table}/_stream_load_2pc")
+        self.assertEqual(traffic.route("/api/compaction/show?tablet_id=7"), "/api/compaction/show")
+
+    def test_literal_segments_win_over_placeholders(self):
+        self.assertEqual(traffic.route("/api/_http_stream"), "/api/_http_stream")
+        self.assertEqual(traffic.route("/api/running_pipeline_tasks/180"), "/api/running_pipeline_tasks/{duration}")
+
+    def test_a_path_no_route_matches_keeps_its_path(self):
+        self.assertEqual(traffic.route("/nowhere/x?y=1"), "/nowhere/x")
+
+
 class HttpRecordTests(unittest.TestCase):
-    def connection(self, packets):
+    def connection(self, packets, port=8040):
         import tempfile
         from test_pcapstream import pcap
         import pcapstream
@@ -44,7 +58,7 @@ class HttpRecordTests(unittest.TestCase):
         os.write(fd, pcap(packets))
         os.close(fd)
         self.addCleanup(os.remove, path)
-        return next(pcapstream.connections(path, ports={8040}))
+        return next(pcapstream.connections(path, ports={port}))
 
     def test_exchanges_are_timed_by_their_request(self):
         from test_pcapstream import packet, SYN, ACK
@@ -70,7 +84,19 @@ class HttpRecordTests(unittest.TestCase):
                              packet(1_003_000, "127.0.0.1", 40000, "127.0.0.1", 8040, 100 + len(PUT1) + 10, ACK, PUT2[10:])])
         items, damaged = traffic.http_records(c, 7)
         self.assertEqual([(h["kind"], d) for h, d in items], [("request", PUT1), ("response", OK1)])
-        self.assertEqual(damaged, [{"tcp_stream": 7, "from": "client", "gap": [len(PUT1), len(PUT1) + 10]}])
+        self.assertEqual(damaged, [{"tcp_stream": 7, "from": "client", "gap": [len(PUT1), len(PUT1) + 10],
+                                    "bytes": len(PUT2) - 10}])
+
+    def test_thrift_direction_ending_inside_a_message_is_reported(self):
+        from test_pcapstream import packet, SYN, ACK
+        call = b"\x80\x01\x00\x01\x00\x00\x00\x04ping\x00\x00\x00\x01\x00"
+        c = self.connection([packet(1_000_000, "127.0.0.1", 40000, "127.0.0.1", 9060, 99, SYN),
+                             packet(1_000_000, "127.0.0.1", 9060, "127.0.0.1", 40000, 499, SYN | ACK),
+                             packet(1_001_000, "127.0.0.1", 40000, "127.0.0.1", 9060, 100, ACK, call + call[:6])],
+                            port=9060)
+        items, damaged = traffic.thrift_records(c, 3)
+        self.assertEqual([h["method"] for h, _ in items], ["ping"])
+        self.assertEqual(damaged, [{"tcp_stream": 3, "from": "client", "bytes": 6}])
 
 
 class JsonStreamTests(unittest.TestCase):

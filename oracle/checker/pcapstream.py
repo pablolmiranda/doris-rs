@@ -12,7 +12,11 @@ import bisect
 import collections
 import os
 import struct
+import sys
 import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wire", "bin"))
+import extract  # noqa: E402
 
 SYN, ACK = 0x02, 0x10
 
@@ -32,19 +36,15 @@ class Direction:
         return self._times[i] if i >= 0 else None
 
     def reassemble(self, spool):
+        pieces = sorted(self.pieces)
+        uses, self.gap, self.after_gap = extract.until_gap([(off, n) for off, _, n, _ in pieces])
         out = bytearray()
-        for i, (off, at, n, t) in enumerate(sorted(self.pieces)):
-            if off > len(out):
-                self.gap = (len(out), off)
-                self.after_gap = sum(p[2] for p in sorted(self.pieces)[i:])
-                break
-            end = off + n
-            if end > len(out):
-                spool.seek(at)
-                chunk = spool.read(n)
-                self._starts.append(len(out))
-                self._times.append(t)
-                out += chunk[len(out) - off:]
+        for i, skip in uses:
+            _, at, n, t = pieces[i]
+            spool.seek(at)
+            self._starts.append(len(out))
+            self._times.append(t)
+            out += spool.read(n)[skip:]
         self.data = bytes(out)
         self.pieces = []
 

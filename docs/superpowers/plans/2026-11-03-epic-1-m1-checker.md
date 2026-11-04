@@ -48,10 +48,19 @@ bytes, the doris-wire round-trip, live runs):
   exchanges outside that window are unattributed. A suite's connections are compared in order of
   their content, not their time. Commands with no reply (`COM_QUIT`, `COM_STMT_CLOSE`,
   `COM_STMT_SEND_LONG_DATA`) are dropped.
-- **Harness traffic** is declared, with its source, in `oracle/harness_traffic.json`: the
-  framework's query-timeout plugin (a `show backends` connection every 5 minutes, BE polling
-  every minute) and the image's health check. It is left out of replies and the corpus and
-  counted in the manifest. The relaxation rule below gains this third, declared source.
+- **Background traffic** is declared, each entry with the code that sends it, in
+  `oracle/background_traffic.json`: the harness's (the framework's query-timeout plugin, a
+  `show backends` connection every 5 minutes and BE polling every minute, and the image's
+  health check) and the cluster's periodic RPCs, which replace `BACKGROUND_METHODS`. It is left
+  out of replies and the corpus and counted in the manifest. The relaxation rule below gains
+  this third, declared source.
+- **Reaches the BE** means any request to the BE (gRPC, HTTP, Thrift `BackendService` calls),
+  not a list of methods. **HTTP records** are named by the BE route template they hit
+  (`oracle/wire/be_http_routes.txt`), so ids and table names do not split one endpoint into many
+  features. **`reportExecStatus`** is a suite's need only for a query its own plans started; late
+  reports from the previous suite's queries are not.
+- **Lost bytes:** `traffic-holes.json` lists every direction that lost bytes, a capture hole or
+  a message cut off at the end, not only holes.
 - **Codec patch 4:** profile info strings are bytes, not strings (the BE writes raw key bytes).
 - **No per-statement skip:** a reply that varied beyond any mark makes its suite unstable, as
   the spec says (41 unstable suites).
@@ -62,7 +71,7 @@ bytes, the doris-wire round-trip, live runs):
 
 - Reference: Doris `4.1.5`, suites from `4.1.5-release` (`oracle/versions.env`); nothing pins another version.
 - Harness code is standard-library Python only; no `pip install`. Containers used: the reference image, the existing runner image, `nicolaka/netshoot:v0.16` (capture) and `python:3.11-slim` (tap).
-- Relaxations come only from variation the reference itself shows (probe marks), from declared deployment facts, and from declared harness traffic (`oracle/harness_traffic.json`, each entry with its source). No hand-written masks, ever.
+- Relaxations come only from variation the reference itself shows (probe marks), from declared deployment facts, and from declared harness traffic (`oracle/background_traffic.json`, each entry with its source). No hand-written masks, ever.
 - Single profile only: one FE, one BE.
 - `parallel_pipeline_task_num` is pinned to `4` globally on every cluster before any suite runs.
 - The repo is public: no credentials, tokens or host-specific paths in committed files.

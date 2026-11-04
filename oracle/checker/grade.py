@@ -60,6 +60,7 @@ def grade(run_dir, reference_dir, scores_dir):
     return {
         "out": {"passing": out_passing, "numbers": numbers(out_passing, gate, reaches_be)},
         "strict": {"passing": strict_passing, "differences": differences, "not_compared": not_compared,
+                   "unattributed": len(actual.get(replies.UNATTRIBUTED, [])),
                    "numbers": numbers(strict_passing, gate, reaches_be)},
         "ratchet": ratchet,
         "ok": not any(ratchet["lost"].values()),
@@ -78,6 +79,9 @@ def report(verdict):
         lines.append(f"    actual:   {json.dumps(d['actual'])[:300]}")
     for status, suites in sorted(verdict["strict"]["not_compared"].items()):
         lines.append(f"not compared ({status} on the reference): {len(suites)} suites")
+    if verdict["strict"]["unattributed"]:
+        # Exchanges after their connection's suite ended (a thread the suite left running).
+        lines.append(f"exchanges outside every suite (not compared): {verdict['strict']['unattributed']}")
     for g in GATES:
         for k in verdict["ratchet"]["lost"][g]:
             lines.append(f"RATCHET {g}: {k} is listed but no longer passes")

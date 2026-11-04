@@ -16,8 +16,9 @@ A, B, C = "d.a.a", "d.b.b", "d.c.c"
 CONN = [[(150, q("select 1", [["1"]]))]]
 
 
-def msg(method, t_ms, data=b"\x00", protocol="thrift", kind="call"):
-    return ({"protocol": protocol, "method": method, "kind": kind, "time_ms": t_ms}, data)
+def msg(method, t_ms, data=b"\x00", protocol="thrift", kind="call", service=None):
+    header = {"protocol": protocol, "method": method, "kind": kind, "time_ms": t_ms}
+    return ({**header, "service": service} if service else header, data)
 
 
 class DeriveTestCase(unittest.TestCase):
@@ -90,7 +91,8 @@ class TrafficTests(DeriveTestCase):
         def http(path, kind):
             return ({"protocol": "http", "method": path, "path": path, "kind": kind, "time_ms": 150}, b"")
         traffic = [http("/api/health", "request"), http("/api/health", "response"),
-                   http("/api/running_pipeline_tasks/180", "request"), msg("exec_plan_fragment", 350, protocol="grpc")]
+                   http("/api/running_pipeline_tasks/180", "request"),
+                   msg("exec_plan_fragment", 350, protocol="grpc", kind="request")]
         run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
         derive.derive([run], self.out)
         self.assertEqual(self.lines("reaches_be.txt"), [B])
@@ -107,6 +109,13 @@ class TrafficTests(DeriveTestCase):
 
     def test_reaches_be_counts_work_sent_to_the_be(self):
         traffic = [msg("exec_plan_fragment", 150, protocol="grpc", kind="request"), msg("heartbeat", 350)]
+        run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
+        derive.derive([run], self.out)
+        self.assertEqual(self.lines("reaches_be.txt"), [A])
+
+    def test_any_request_to_the_be_reaches_it_and_calls_to_the_fe_do_not(self):
+        traffic = [msg("check_storage_format", 150, service="BackendService"),
+                   msg("reportExecStatus", 350, service="FrontendService")]
         run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
         derive.derive([run], self.out)
         self.assertEqual(self.lines("reaches_be.txt"), [A])

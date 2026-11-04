@@ -68,9 +68,7 @@ fn reencode<M: Message + Default>(bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// (`internal_service.proto`), as a re-encoding function.
 pub fn grpc_codec(method: &str, request: bool) -> Option<Reencode> {
     Some(match (method, request) {
-        ("exec_plan_fragment" | "exec_plan_fragment_prepare", true) => {
-            reencode::<PExecPlanFragmentRequest>
-        }
+        (m, true) if carries_plan(m) => reencode::<PExecPlanFragmentRequest>,
         ("exec_plan_fragment_start", true) => reencode::<PExecPlanFragmentStartRequest>,
         (
             "exec_plan_fragment" | "exec_plan_fragment_prepare" | "exec_plan_fragment_start",
@@ -84,7 +82,13 @@ pub fn grpc_codec(method: &str, request: bool) -> Option<Reencode> {
     })
 }
 
-/// The plan carried by an `exec_plan_fragment` or `exec_plan_fragment_prepare` request.
+/// Whether a request of this `PBackendService` method carries a plan fragment
+/// (a `PExecPlanFragmentRequest`).
+pub fn carries_plan(method: &str) -> bool {
+    matches!(method, "exec_plan_fragment" | "exec_plan_fragment_prepare")
+}
+
+/// The plan carried by a request of a method that [`carries_plan`].
 pub fn fragment_plan(request: &[u8]) -> Result<Vec<u8>, String> {
     let r = PExecPlanFragmentRequest::decode(request).map_err(|e| e.to_string())?;
     if r.compact != Some(true) {
@@ -110,7 +114,7 @@ pub fn grpc(method: &str, request: bool, bytes: &[u8]) -> Result<Outcome, String
         return Ok(Outcome::NotChecked);
     };
     judge("gRPC payload", bytes, &codec(bytes)?, exact)?;
-    if request && matches!(method, "exec_plan_fragment" | "exec_plan_fragment_prepare") {
+    if request && carries_plan(method) {
         return plan(bytes);
     }
     Ok(Outcome::Identical)

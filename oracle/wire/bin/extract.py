@@ -40,36 +40,40 @@ class Gap(Exception):
     """Bytes are missing from a reassembled stream."""
 
 
+def until_gap(pieces):
+    """pieces: (offset, length) of one direction's segments, sorted by offset. Returns (uses,
+    gap, after): uses lists (index, skip) for each piece that adds bytes, skip being how many of
+    its leading bytes are already covered; gap is the first (start, end) range never captured,
+    or None; after counts the captured bytes past it."""
+    uses, end = [], 0
+    for i, (off, n) in enumerate(pieces):
+        if off > end:
+            return uses, (end, off), sum(length for _, length in pieces[i:])
+        if off + n > end:
+            uses.append((i, end - off))
+            end = off + n
+    return uses, None, 0
+
+
+def _pieces(segments, start_seq):
+    return sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
+
+
 def reassemble(segments, start_seq):
     """Concatenate (seq_raw, payload) segments of one direction starting at `start_seq`
     (the ISN + 1), modulo 2^32, keeping each byte once and failing on a hole."""
-    pieces = sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
-    out = bytearray()
-    for off, payload in pieces:
-        if off > len(out):
-            raise Gap(f"bytes {len(out)}..{off} missing")
-        end = off + len(payload)
-        if end > len(out):
-            out += payload[len(out) - off:]
-    return bytes(out)
+    data, gap, _ = reassemble_until_gap(segments, start_seq)
+    if gap:
+        raise Gap(f"bytes {gap[0]}..{gap[1]} missing")
+    return data
 
 
 def reassemble_until_gap(segments, start_seq):
     """(bytes up to the first hole, (hole start, hole end) or None, captured bytes after it).
     Unframed Thrift cannot be split again after a hole, so a direction keeps its prefix only."""
-    try:
-        return reassemble(segments, start_seq), None, 0
-    except Gap:
-        pass
-    pieces = sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
-    out = bytearray()
-    for i, (off, payload) in enumerate(pieces):
-        if off > len(out):
-            return bytes(out), (len(out), off), sum(len(p) for _, p in pieces[i:])
-        end = off + len(payload)
-        if end > len(out):
-            out += payload[len(out) - off:]
-    return bytes(out), None, 0
+    pieces = _pieces(segments, start_seq)
+    uses, gap, after = until_gap([(off, len(p)) for off, p in pieces])
+    return b"".join(pieces[i][1][skip:] for i, skip in uses), gap, after
 
 
 def split_grpc(stream):

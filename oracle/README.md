@@ -78,10 +78,11 @@ that exercise the BE, with two gates. Design: `docs/superpowers/specs/2026-11-02
   - **Deployment facts:** values that depend on the deployment (host, ports, BE cores and memory)
     are substituted from `clusters/*.facts.json`; cores and memory are read from `SHOW BACKENDS`
     at run time.
-  - **Harness traffic:** traffic the harness sends on its own clock, whichever suite is running,
-    is declared with its source in `harness_traffic.json` and left out of replies and the corpus.
-    It covers the framework plugin's `show backends` lookup and BE polling, and the image's
-    health check.
+  - **Background traffic:** traffic sent on a clock rather than by a suite is declared, each
+    entry with the code that sends it, in `background_traffic.json`, and left out of replies and
+    the corpus. It covers the harness (the framework plugin's `show backends` lookup and BE
+    polling, the image's health check) and the cluster's periodic RPCs (heartbeats, reports,
+    topic publishing, dictionary and tablet-stat polling).
 
 ```
 make epic-baseline                  # 5 reference runs (3 on cluster A, 2 on split cluster B) → epic1/

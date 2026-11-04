@@ -1,7 +1,7 @@
 //! Every captured gRPC payload decodes with the prost types and re-encodes to the same bytes, and
 //! so does the compact-protocol Thrift plan nested in fragment execution requests.
 use doris_proto::doris::{PExecPlanFragmentRequest, PFragmentRequestVersion};
-use doris_wire::roundtrip::{first_difference, grpc_codec, plan, Outcome};
+use doris_wire::roundtrip::{carries_plan, first_difference, grpc_codec, plan, Outcome};
 use doris_wire::{Kind, Manifest, MessageEntry, Protocol};
 use prost::Message;
 
@@ -65,12 +65,7 @@ fn exec_plan_fragment_plans_reencode_identically() {
     let mut checked = 0;
     let mut failures = Vec::new();
     for e in m.messages().iter().filter(|e| {
-        e.protocol == Protocol::Grpc
-            && e.kind == Kind::Request
-            && matches!(
-                e.method.as_str(),
-                "exec_plan_fragment" | "exec_plan_fragment_prepare"
-            )
+        e.protocol == Protocol::Grpc && e.kind == Kind::Request && carries_plan(&e.method)
     }) {
         let what = describe(e);
         let request = PExecPlanFragmentRequest::decode(&m.read(e)[..]).expect("checked above");

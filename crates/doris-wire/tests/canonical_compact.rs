@@ -96,3 +96,11 @@ fn truncated_input_is_an_error_not_a_panic() {
     // a field header whose type nibble is not a compact type (14)
     assert_eq!(compact_struct(&[0x1e]), Err(CanonicalError::BadType(14)));
 }
+
+#[test]
+fn a_varint_longer_than_ten_bytes_is_reported_as_such() {
+    // field 1, i32, whose varint never ends
+    let mut bytes = vec![0x15];
+    bytes.extend([0xff; 11]);
+    assert_eq!(compact_struct(&bytes), Err(CanonicalError::VarintTooLong));
+}

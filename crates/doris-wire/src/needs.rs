@@ -8,12 +8,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use doris_thrift::gen::backend_service::BackendServiceSubmitTasksArgs;
+use doris_thrift::gen::frontend_service::FrontendServiceReportExecStatusArgs;
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
 use thrift::protocol::{
     TBinaryInputProtocol, TCompactInputProtocol, TInputProtocol, TSerializable,
 };
 
-use crate::roundtrip::fragment_plan;
+use crate::roundtrip::{carries_plan, fragment_plan};
 use crate::suites::SuiteRecord;
 
 pub type Needs = BTreeMap<&'static str, BTreeSet<String>>;
@@ -92,11 +93,52 @@ fn collect(debug: &str, names: &HashMap<(String, i32), String>, needs: &mut Need
     }
 }
 
+const REPORT: &str = "reportExecStatus";
+
+fn plan_list(r: &SuiteRecord) -> Result<TPipelineFragmentParamsList, String> {
+    let plan = fragment_plan(&r.data)?;
+    let mut bytes = &plan[..];
+    TPipelineFragmentParamsList::read_from_in_protocol(&mut TCompactInputProtocol::new(&mut bytes))
+        .map_err(|e| e.to_string())
+}
+
+fn is_plan_request(r: &SuiteRecord) -> bool {
+    r.header["protocol"] == "grpc"
+        && r.header["kind"] == "request"
+        && r.header["method"].as_str().is_some_and(carries_plan)
+}
+
+/// The query a `reportExecStatus` call reports on, as (hi, lo).
+fn reported_query(r: &SuiteRecord) -> Result<Option<(i64, i64)>, String> {
+    let mut bytes = &r.data[..];
+    let mut i = TBinaryInputProtocol::new(&mut bytes, true);
+    i.read_message_begin().map_err(|e| e.to_string())?;
+    let args = FrontendServiceReportExecStatusArgs::read_from_in_protocol(&mut i)
+        .map_err(|e| e.to_string())?;
+    Ok(args.params.query_id.map(|q| (q.hi, q.lo)))
+}
+
 /// The needs of one suite's records.
+///
+/// A query's status reports can arrive after its suite ended, inside the next suite's window, so
+/// `reportExecStatus` is a need only when it reports on a query this suite's plans started.
 pub fn needs_of(records: &[SuiteRecord]) -> Result<Needs, String> {
     let names = enum_names();
     let mut needs = Needs::new();
+    let mut started = BTreeSet::new();
+    for r in records.iter().filter(|r| is_plan_request(r)) {
+        for p in plan_list(r)?.params_list.unwrap_or_default() {
+            started.insert((p.query_id.hi, p.query_id.lo));
+        }
+    }
     for r in records {
+        if r.header["method"] == REPORT {
+            let ours = r.header["kind"] == "call"
+                && reported_query(r)?.is_some_and(|q| started.contains(&q));
+            if !ours {
+                continue;
+            }
+        }
         let s = |k: &str| {
             r.header
                 .get(k)
@@ -122,19 +164,8 @@ pub fn needs_of(records: &[SuiteRecord]) -> Result<Needs, String> {
                 .map_err(|e| e.to_string())?;
             collect(&format!("{args:?}"), &names, &mut needs);
         }
-        if protocol == "grpc"
-            && kind == "request"
-            && matches!(
-                method.as_str(),
-                "exec_plan_fragment" | "exec_plan_fragment_prepare"
-            )
-        {
-            let plan = fragment_plan(&r.data)?;
-            let mut bytes = &plan[..];
-            let mut i = TCompactInputProtocol::new(&mut bytes);
-            let list = TPipelineFragmentParamsList::read_from_in_protocol(&mut i)
-                .map_err(|e| e.to_string())?;
-            collect(&format!("{list:?}"), &names, &mut needs);
+        if is_plan_request(r) {
+            collect(&format!("{:?}", plan_list(r)?), &names, &mut needs);
         }
     }
     Ok(needs)

@@ -15,6 +15,10 @@ pub enum CanonicalError {
     BadType(u8),
     /// A negative length or element count.
     NegativeSize(i32),
+    /// A compact-protocol varint that does not end within ten bytes.
+    VarintTooLong,
+    /// A compact-protocol length or element count too large for this platform.
+    SizeTooLarge(u64),
     /// Structs or collections nested deeper than [`MAX_DEPTH`].
     TooDeep,
     /// Bytes left after the message.
@@ -85,6 +89,51 @@ impl<'a> Reader<'a> {
         usize::try_from(n).map_err(|_| CanonicalError::NegativeSize(n))
     }
 
+    /// `n` collection elements, each read by `read`, appended to `out`; sorted by their
+    /// canonical encodings when the collection is a set.
+    fn elements(
+        &mut self,
+        n: usize,
+        sort: bool,
+        out: &mut Vec<u8>,
+        read: impl Fn(&mut Self, &mut Vec<u8>) -> Result<(), CanonicalError>,
+    ) -> Result<(), CanonicalError> {
+        let mut elems = Vec::new();
+        for _ in 0..n {
+            let mut e = Vec::new();
+            read(self, &mut e)?;
+            elems.push(e);
+        }
+        if sort {
+            elems.sort();
+        }
+        elems.iter().for_each(|e| out.extend_from_slice(e));
+        Ok(())
+    }
+
+    /// `n` map entries, sorted by their canonical (key, value) encodings, appended to `out`.
+    fn entries(
+        &mut self,
+        n: usize,
+        out: &mut Vec<u8>,
+        key: impl Fn(&mut Self, &mut Vec<u8>) -> Result<(), CanonicalError>,
+        val: impl Fn(&mut Self, &mut Vec<u8>) -> Result<(), CanonicalError>,
+    ) -> Result<(), CanonicalError> {
+        let mut entries = Vec::new();
+        for _ in 0..n {
+            let (mut k, mut v) = (Vec::new(), Vec::new());
+            key(self, &mut k)?;
+            val(self, &mut v)?;
+            entries.push((k, v));
+        }
+        entries.sort();
+        for (k, v) in &entries {
+            out.extend_from_slice(k);
+            out.extend_from_slice(v);
+        }
+        Ok(())
+    }
+
     /// One value of type `t`, appended to `out` in canonical form.
     fn value(&mut self, t: u8, depth: usize, out: &mut Vec<u8>) -> Result<(), CanonicalError> {
         let fixed = match t {
@@ -119,46 +168,22 @@ impl<'a> Reader<'a> {
                 out.extend_from_slice(self.take(2)?); // field id
                 self.value(field_type, depth + 1, out)?;
             },
-            LIST => {
+            LIST | SET => {
                 let elem = self.byte()?;
                 let n = self.size()?;
                 out.extend_from_slice(&self.buf[start..self.pos]);
-                for _ in 0..n {
-                    self.value(elem, depth + 1, out)?;
-                }
-                Ok(())
-            }
-            SET => {
-                let elem = self.byte()?;
-                let n = self.size()?;
-                out.extend_from_slice(&self.buf[start..self.pos]);
-                let mut elems = Vec::new();
-                for _ in 0..n {
-                    let mut e = Vec::new();
-                    self.value(elem, depth + 1, &mut e)?;
-                    elems.push(e);
-                }
-                elems.sort();
-                elems.iter().for_each(|e| out.extend_from_slice(e));
-                Ok(())
+                self.elements(n, t == SET, out, |r, e| r.value(elem, depth + 1, e))
             }
             MAP => {
                 let (key, val) = (self.byte()?, self.byte()?);
                 let n = self.size()?;
                 out.extend_from_slice(&self.buf[start..self.pos]);
-                let mut entries = Vec::new();
-                for _ in 0..n {
-                    let (mut k, mut v) = (Vec::new(), Vec::new());
-                    self.value(key, depth + 1, &mut k)?;
-                    self.value(val, depth + 1, &mut v)?;
-                    entries.push((k, v));
-                }
-                entries.sort();
-                for (k, v) in &entries {
-                    out.extend_from_slice(k);
-                    out.extend_from_slice(v);
-                }
-                Ok(())
+                self.entries(
+                    n,
+                    out,
+                    |r, e| r.value(key, depth + 1, e),
+                    |r, e| r.value(val, depth + 1, e),
+                )
             }
             other => Err(CanonicalError::BadType(other)),
         }
@@ -205,12 +230,12 @@ impl Reader<'_> {
                 return Ok(v);
             }
         }
-        Err(CanonicalError::BadType(0x80))
+        Err(CanonicalError::VarintTooLong)
     }
 
     fn compact_size(&mut self, out: &mut Vec<u8>) -> Result<usize, CanonicalError> {
         let n = self.varint(out)?;
-        usize::try_from(n).map_err(|_| CanonicalError::NegativeSize(-1))
+        usize::try_from(n).map_err(|_| CanonicalError::SizeTooLarge(n))
     }
 
     /// One compact value of type `t`, appended to `out` in canonical form.
@@ -262,16 +287,9 @@ impl Reader<'_> {
                 if !(C_BOOL_TRUE..=C_UUID).contains(&elem) {
                     return Err(CanonicalError::BadType(elem));
                 }
-                let mut elems = Vec::new();
-                for _ in 0..n {
-                    let mut e = Vec::new();
-                    self.compact_value(elem, depth + 1, &mut e)?;
-                    elems.push(e);
-                }
-                if t == C_SET {
-                    elems.sort();
-                }
-                elems.iter().for_each(|e| out.extend_from_slice(e));
+                self.elements(n, t == C_SET, out, |r, e| {
+                    r.compact_value(elem, depth + 1, e)
+                })?;
             }
             C_MAP => {
                 let n = self.compact_size(out)?;
@@ -286,18 +304,12 @@ impl Reader<'_> {
                         return Err(CanonicalError::BadType(k));
                     }
                 }
-                let mut entries = Vec::new();
-                for _ in 0..n {
-                    let (mut k, mut v) = (Vec::new(), Vec::new());
-                    self.compact_value(key, depth + 1, &mut k)?;
-                    self.compact_value(val, depth + 1, &mut v)?;
-                    entries.push((k, v));
-                }
-                entries.sort();
-                for (k, v) in &entries {
-                    out.extend_from_slice(k);
-                    out.extend_from_slice(v);
-                }
+                self.entries(
+                    n,
+                    out,
+                    |r, e| r.compact_value(key, depth + 1, e),
+                    |r, e| r.compact_value(val, depth + 1, e),
+                )?;
             }
             other => return Err(CanonicalError::BadType(other)),
         }

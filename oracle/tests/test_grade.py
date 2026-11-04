@@ -108,6 +108,9 @@ class StrictGateTests(GradeTestCase):
         self.assertEqual(self.reference_status(ref), "stable")
         verdict = self.grade(ref, suites, run(350, [160, 305, 315, 325, 335, 345]))
         self.assertEqual(sorted(verdict["strict"]["passing"]), [p, S])
+        # the thread's exchanges after its suite ended belong to no suite, and are shown
+        self.assertEqual(verdict["strict"]["unattributed"], 5)
+        self.assertIn("exchanges outside every suite (not compared): 5", grade.report(verdict))
 
     def test_connections_opened_at_once_compare_in_either_order(self):
         def run(t_a, t_b):

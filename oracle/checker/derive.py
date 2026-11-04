@@ -19,7 +19,7 @@ import json
 import os
 import sys
 
-import harness
+import background
 import marks as probe_marks
 import records
 import replies
@@ -37,24 +37,20 @@ def passed_everywhere(runs, in_scope):
     return gate, flaky
 
 
-BACKGROUND_METHODS = {"heartbeat", "report", "publish_topic_info", "get_dictionary_status", "get_tablet_stat"}
-BE_WORK = ("exec_plan_fragment", "submit_tasks", "tablet_writer", "stream_load", "http")
-
-
 def split_traffic(messages, wins):
-    """({suite: [(header, data)]}, background count per method, declared harness traffic count
-    per path): messages outside every window, the FE's periodic calls and the traffic declared
-    in harness_traffic.json belong to no suite."""
-    by_suite, background, declared = {}, {}, {}
+    """({suite: [(header, data)]}, count per method of the cluster's periodic RPCs and of
+    messages outside every window, count per path of the harness's HTTP): only the rest belongs
+    to a suite. The periodic RPCs and harness traffic are declared in background_traffic.json."""
+    by_suite, periodic, harness = {}, {}, {}
     for header, data in messages:
         suite = replies.owner(header.get("time_ms"), wins)
-        if harness.is_http(header):
-            declared[header["path"]] = declared.get(header["path"], 0) + 1
-        elif header.get("method") in BACKGROUND_METHODS or suite == replies.UNATTRIBUTED:
-            background[header.get("method")] = background.get(header.get("method"), 0) + 1
+        if background.is_harness_http(header):
+            harness[header["path"]] = harness.get(header["path"], 0) + 1
+        elif header.get("method") in background.CLUSTER_RPCS or suite == replies.UNATTRIBUTED:
+            periodic[header.get("method")] = periodic.get(header.get("method"), 0) + 1
         else:
             by_suite.setdefault(suite, []).append((header, data))
-    return by_suite, background, declared
+    return by_suite, periodic, harness
 
 
 # HTTP bodies above this size (load data, tablet metadata dumps) are the suites' own files or
@@ -87,8 +83,18 @@ def named_grpc(items):
     return kept, unnamed
 
 
+def to_be(header):
+    """Whether a message is a request to the BE: every gRPC and HTTP request (both are captured
+    on BE ports only) and Thrift calls to BackendService. Calls to FrontendService come from
+    the BE."""
+    protocol, kind = header.get("protocol"), header.get("kind")
+    return (protocol in ("grpc", "http") and kind == "request") or \
+        (protocol == "thrift" and kind == "call" and header.get("service") == "BackendService")
+
+
 def reaches_be(items):
-    return any(str(h.get("method", "")).startswith(BE_WORK) or h.get("protocol") == "http" for h, _ in items)
+    """Whether a suite's own traffic (background removed) asks the BE for anything."""
+    return any(to_be(h) for h, _ in items)
 
 
 def write_traffic(run_dir, out_dir, gate, dependencies=()):
@@ -99,7 +105,7 @@ def write_traffic(run_dir, out_dir, gate, dependencies=()):
     if not os.path.exists(path):
         return None
     wins = replies.windows(replies.results(run_dir))
-    by_suite, background, declared = split_traffic(records.read(path), wins)
+    by_suite, periodic, harness = split_traffic(records.read(path), wins)
     corpus = os.path.join(out_dir, "traffic")
     os.makedirs(corpus, exist_ok=True)
     holes_path = os.path.join(run_dir, "traffic-holes.json")
@@ -107,8 +113,8 @@ def write_traffic(run_dir, out_dir, gate, dependencies=()):
     # Capture holes: messages after a hole on that connection direction are missing from the
     # corpus, so the needs of the suites running then may be incomplete.
     without = [k for k in gate if not by_suite.get(k)]
-    manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background,
-                "harness": declared, "capture_holes": holes, "without_traffic": without, "unnamed_grpc": [], "suites": {}}
+    manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": periodic,
+                "harness": harness, "capture_holes": holes, "without_traffic": without, "unnamed_grpc": [], "suites": {}}
     for k in sorted(set(gate) | set(dependencies)):
         items, unnamed = named_grpc(by_suite.get(k, []))
         manifest["unnamed_grpc"] += [{"suite": k, **u} for u in unnamed]
