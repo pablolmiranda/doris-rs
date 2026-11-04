@@ -139,20 +139,28 @@ def directory(key):
     return key.rsplit(".", 2)[0]
 
 
-def rank(index, supported, suites):
-    """Unsupported features, ranked by the suites each one alone blocks, then by all it blocks.
-    A suite's needs include those of its directory's load suites, gate or not: a fixture that
-    cannot load blocks everything that queries it."""
+def unsupported_needs(index, supported, suites):
+    """Suite -> its needs (`kind:value`) not in `supported`. A suite's needs include those of
+    its directory's load suites, gate or not: a fixture that cannot load blocks everything that
+    queries it."""
     loads = {}
     for k in index:
         if is_load(k):
             loads.setdefault(directory(k), []).append(k)
-    blockers = {}
+    out = {}
     for k in suites:
         needs = set()
         for source in {k, *loads.get(directory(k), [])}:
             needs |= {f"{kind}:{v}" for kind, values in index.get(source, {}).items() for v in values}
-        blockers[k] = needs - supported
+        out[k] = needs - set(supported)
+    return out
+
+
+def rank(index, supported, suites):
+    """Unsupported features, ranked by the suites each one alone blocks, then by all it blocks.
+    A suite's needs include those of its directory's load suites, gate or not: a fixture that
+    cannot load blocks everything that queries it."""
+    blockers = unsupported_needs(index, supported, suites)
     features = {f for b in blockers.values() for f in b}
     out = [{"feature": f, "alone": sum(1 for b in blockers.values() if b == {f}),
             "total": sum(1 for b in blockers.values() if f in b)} for f in features]

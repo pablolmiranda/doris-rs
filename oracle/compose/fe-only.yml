@@ -1,0 +1,57 @@
+# The cluster doris-rs is graded in: the reference image's FE alone (DORIS_ROLE=fe), with the
+# same FE settings as reference-single.yml, and no BE. doris-rs runs natively on the host and is
+# added as the only backend by `make fe-up`; the FE reaches it at the address host.docker.internal
+# resolves to inside the container (OrbStack and Docker Desktop on macOS; Linux is a follow-up).
+# Healthy when the FE answers on 9030.
+name: doris-oracle-rust
+services:
+  fe:
+    image: ${DORIS_IMAGE:-apache/doris:all-in-one-4.1.5}
+    container_name: doris-oracle-fe-only
+    stop_grace_period: 60s
+    environment:
+      DORIS_ROLE: fe
+      FE_HEAP: ${FE_HEAP:-1024m}
+      # Same as reference-single.yml (tests/test_compose_settings.py keeps them in step).
+      FE_CONFIG_EXTRA: |
+        catalog_trash_expire_second = 1
+        enable_outfile_to_local = true
+        tablet_create_timeout_second = 100
+        remote_fragment_exec_timeout_ms = 120000
+        enable_feature_binlog = true
+        enable_debug_points = true
+        enable_mtmv = true
+        dynamic_partition_check_interval_seconds = 3
+        desired_max_waiting_jobs = 200
+        edit_log_roll_num = 1000
+        history_job_keep_max_second = 300
+        streaming_label_keep_max_second = 300
+        label_keep_max_second = 300
+        enable_job_schedule_second_for_test = true
+        mtmv_task_queue_size = 4096
+        enable_workload_group = true
+        publish_topic_info_interval_ms = 1000
+        workload_sched_policy_interval_ms = 1000
+        disable_decimalv2 = false
+        disable_datev1 = false
+        master_sync_policy = WRITE_NO_SYNC
+        replica_sync_policy = WRITE_NO_SYNC
+        enable_advance_next_id = true
+        max_query_profile_num = 2000
+        max_spilled_profile_num = 2000
+        max_bucket_num_per_partition = 512
+        max_remote_file_system_cache_num = 1000
+        force_olap_table_replication_allocation = tag.location.default:1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${FE_PORT:-9030}:9030"
+      - "${FE_HTTP_PORT:-8030}:8030"
+      - "${FE_RPC_PORT:-9020}:9020"
+    networks:
+      oracle:
+        aliases: [doris, fe-1]
+networks:
+  oracle:
+    name: ${ORACLE_NETWORK:-doris-oracle}
+    driver: bridge

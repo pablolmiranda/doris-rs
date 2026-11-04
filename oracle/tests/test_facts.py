@@ -33,6 +33,11 @@ class LiveFactsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             facts.fill(template, BACKENDS)
 
+    def test_a_format_builds_a_value_from_the_column(self):
+        template = {"facts": [{"name": "be-port-endpoint", "from_backends": "Host", "format": "{}:9060", "match": "substring"}]}
+        self.assertEqual(facts.fill(template, BACKENDS)["facts"][0]["values"], ["172.30.42.20:9060"])
+        self.assertNotIn("format", facts.fill(template, BACKENDS)["facts"][0])
+
     def test_no_backend_is_an_error(self):
         with self.assertRaises(ValueError):
             facts.fill(TEMPLATE, "BackendId\tHost\tCpuCores\tMemory\n")

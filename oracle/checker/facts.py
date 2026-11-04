@@ -1,6 +1,7 @@
 """The deployment facts of a run: a committed template (clusters/*.facts.json) with the facts that
 depend on the host (`from_backends`: a SHOW BACKENDS column, such as the cores and memory the BE
-reports) filled from the running cluster, so nothing machine-specific is committed.
+reports) filled from the running cluster, so nothing machine-specific is committed. A `format`
+builds the value from the column (`"{}:9050"`: the BE's host and its heartbeat port).
 
     facts.py TEMPLATE FE_CONTAINER OUT
 """
@@ -20,12 +21,13 @@ def fill(template, show_backends):
     out = copy.deepcopy(template)
     for fact in out["facts"]:
         column = fact.pop("from_backends", None)
+        fmt = fact.pop("format", "{}")
         if column is None:
             continue
         if column not in header:
             raise ValueError(f"fact {fact['name']}: SHOW BACKENDS has no column {column}")
         i = header.index(column)
-        fact["values"] = sorted({row[i] for row in rows})
+        fact["values"] = sorted({fmt.format(row[i]) for row in rows})
     return out
 
 

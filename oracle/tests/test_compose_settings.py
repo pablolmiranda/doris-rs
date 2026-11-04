@@ -30,5 +30,22 @@ class SplitSettingsTests(unittest.TestCase):
                 self.assertIn(line, ours, f"{name}: reference-split.yml lacks '{line}'")
 
 
+class RustClusterSettingsTests(unittest.TestCase):
+    single = os.path.join(COMPOSE, "reference-single.yml")
+
+    def test_fe_only_keeps_every_fe_setting(self):
+        ours = set(block(os.path.join(COMPOSE, "fe-only.yml"), "FE_CONFIG_EXTRA"))
+        for line in block(self.single, "FE_CONFIG_EXTRA"):
+            self.assertIn(line, ours, f"fe-only.yml lacks '{line}'")
+
+    def test_rust_be_conf_keeps_every_be_setting(self):
+        path = os.path.join(COMPOSE, "..", "rust", "be.conf")
+        ours = {line.strip() for line in open(path, encoding="utf-8")}
+        for line in block(self.single, "BE_CONFIG_EXTRA"):
+            if line.startswith("mem_limit"):
+                continue
+            self.assertIn(line, ours, f"rust/be.conf lacks '{line}'")
+
+
 if __name__ == "__main__":
     unittest.main()

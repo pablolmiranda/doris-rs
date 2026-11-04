@@ -300,5 +300,34 @@ class RatchetTests(GradeTestCase):
         self.assertEqual(verdict["out"]["numbers"], {"passing": 1, "total": 2, "passing_be": 0, "total_be": 1})
 
 
+class EligibleTests(GradeTestCase):
+    T, W = RatchetTests.T, RatchetTests.W
+
+    def setUp(self):
+        super().setUp()
+        self.ref = self.reference((self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]]))
+
+    def write_needs(self, ref, needs, supported):
+        with open(os.path.join(ref, "needs.json"), "w") as fh:
+            json.dump(needs, fh)
+        with open(os.path.join(self.scores, "epic1-supported.json"), "w") as fh:
+            json.dump({"features": supported}, fh)
+
+    def test_eligible_suites_follow_supported_features(self):
+        self.write_needs(self.ref, {S: {"task": ["CREATE"]}, self.T: {"task": ["CREATE"], "rpc": ["X.y"]}}, ["task:CREATE"])
+        verdict = self.grade(self.ref, {S: ("failed", 100, 200), self.T: ("passed", 300, 400)},
+                             [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]])
+        self.assertEqual(verdict["eligible"]["suites"], [S])
+        self.assertEqual(verdict["eligible"]["failing"]["out"], [S])
+        self.assertEqual(verdict["eligible"]["failing"]["strict"], [S])
+        self.assertIn("eligible: 1; failing out-gate: 1; failing strict: 1", grade.report(verdict))
+
+    def test_suites_without_needs_are_eligible(self):
+        self.write_needs(self.ref, {self.T: {"rpc": ["X.y"]}}, [])
+        verdict = self.grade(self.ref, self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]])
+        self.assertEqual(verdict["eligible"]["suites"], [S])
+        self.assertEqual(verdict["eligible"]["failing"], {"out": [], "strict": []})
+
+
 if __name__ == "__main__":
     unittest.main()
