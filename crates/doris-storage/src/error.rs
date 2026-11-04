@@ -16,6 +16,16 @@ pub enum StorageError {
     ClusterIdAssigned { current: i32, new: i32 },
     #[error("{path}: not a cluster id: {text:?}")]
     BadClusterId { path: PathBuf, text: String },
+    /// `drop_tablet_callback`'s `Status::NotFound`.
+    #[error("could not find tablet {tablet_id}")]
+    TabletNotFound { tablet_id: i64 },
+    /// `TabletManager::_drop_tablet`'s `Status::Aborted`.
+    #[error("replica_id not match({current} vs {requested})")]
+    ReplicaMismatch { current: i64, requested: i64 },
+    #[error("doris-rs does not support {what} yet")]
+    Unsupported { what: String },
+    #[error("no storage root is configured")]
+    NoDataDir,
     #[error("{path}: bad tablet header: {source}")]
     BadHeader { path: PathBuf, source: prost::DecodeError },
 }

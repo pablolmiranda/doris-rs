@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/doris-be",
+    "crates/doris-fixtures",
     "crates/doris-proto",
     "crates/doris-rs",
     "crates/doris-segment",
@@ -20,6 +21,7 @@ doris-proto = { path = "crates/doris-proto" }
 doris-thrift = { path = "crates/doris-thrift" }
 doris-storage = { path = "crates/doris-storage" }
 doris-be = { path = "crates/doris-be" }
+doris-fixtures = { path = "crates/doris-fixtures" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"
@@ -36,7 +38,6 @@ hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
-pbjson = "0.8"
-pbjson-types = "0.8"
-pbjson-build = "0.8"
+pbjson = "0.9"
+pbjson-build = "0.9"
 tempfile = "3"

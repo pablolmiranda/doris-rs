@@ -9,9 +9,16 @@ rust-version.workspace = true
 [lints.rust]
 unsafe_code = "forbid"
 
+[features]
+# serde (protobuf JSON mapping, proto field names) for comparing with the C++ BE's JSON output
+json = ["dep:pbjson", "dep:serde"]
+
 [dependencies]
 prost = { workspace = true }
+pbjson = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 
 [build-dependencies]
 prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }
+pbjson-build = { workspace = true }

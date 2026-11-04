@@ -30,6 +30,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -102,12 +108,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "doris-fixtures"
+version = "0.1.0"
+dependencies = [
+ "doris-thrift",
+ "serde",
+ "serde_json",
+ "thrift",
+]
+
+[[package]]
 name = "doris-proto"
 version = "0.1.0"
 dependencies = [
+ "pbjson",
+ "pbjson-build",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "serde",
 ]
 
 [[package]]
@@ -135,9 +154,11 @@ dependencies = [
 name = "doris-storage"
 version = "0.1.0"
 dependencies = [
+ "doris-fixtures",
  "doris-proto",
  "doris-thrift",
  "prost",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]
@@ -410,6 +431,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "pbjson"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8edd1efdd8ab23ba9cb9ace3d9987a72663d5d7c9f74fa00b51d6213645cf6c"
+dependencies = [
+ "base64",
+ "serde",
+]
+
+[[package]]
+name = "pbjson-build"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ed4d5c6ae95e08ac768883c8401cf0e8deb4e6e1d6a4e1fd3d2ec4f0ec63200"
+dependencies = [
+ "heck",
+ "itertools",
+ "prost",
+ "prost-types",
 ]
 
 [[package]]
