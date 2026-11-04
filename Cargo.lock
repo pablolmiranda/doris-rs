@@ -99,6 +99,7 @@ dependencies = [
 name = "doris-be"
 version = "0.1.0"
 dependencies = [
+ "doris-fixtures",
  "doris-proto",
  "doris-storage",
  "doris-thrift",
