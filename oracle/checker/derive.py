@@ -139,6 +139,26 @@ def directory(key):
     return key.rsplit(".", 2)[0]
 
 
+SUPPLEMENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "needs_supplement.json")
+
+
+def load_supplement(path=SUPPLEMENT):
+    return replies.load_json(path) if os.path.exists(path) else {"suites": {}}
+
+
+def with_supplement(index, supplement):
+    """The needs index plus the declared needs its traffic cannot show (needs_supplement.json:
+    each entry `kind:value` needs with the evidence)."""
+    out = {k: {kind: list(v) for kind, v in needs.items()} for k, needs in index.items()}
+    for k, entry in supplement.get("suites", {}).items():
+        for need in entry["needs"]:
+            kind, value = need.split(":", 1)
+            values = out.setdefault(k, {}).setdefault(kind, [])
+            if value not in values:
+                values.append(value)
+    return out
+
+
 def unsupported_needs(index, supported, suites):
     """Suite -> its needs (`kind:value`) not in `supported`. A suite's needs include those of
     its directory's load suites, gate or not: a fixture that cannot load blocks everything that
@@ -223,7 +243,7 @@ def main(argv):
     parser.add_argument("--supported", help="JSON {\"features\": [...]} of features doris-rs supports")
     args = parser.parse_args(argv[1:])
     scope = replies.load_json(args.scope) if args.scope else None
-    needs = replies.load_json(args.needs) if args.needs else None
+    needs = with_supplement(replies.load_json(args.needs), load_supplement()) if args.needs else None
     supported = set(replies.load_json(args.supported)["features"]) if args.supported else set()
     print(json.dumps(derive(args.run_dirs, args.out_dir, scope, needs, supported)))
     return 0

@@ -1,0 +1,13 @@
+{
+ "about": "Needs the traffic corpus cannot show, each with its evidence. checker/derive.py merges them into the needs index for the ranking and grade.py's eligible suites. An entry is a need a suite has, never a reason to skip it; remove one when the corpus starts showing it.",
+ "suites": {
+  "nereids_p0.cte.test_cte_filter_pushdown.test_cte_filter_pushdown": {
+   "needs": ["data:nereids_p0.load.load"],
+   "reason": "Its explain shape plan reads nereids_test_query_db.test, which nereids_p0/load.groovy loads; with the table empty the FE plans PhysicalEmptyRelation instead of the expected filter (doris-rs run m2-eligible-1, 2026-11-04). That load suite is outside the gate, so the index has no needs for it."
+  },
+  "load_p0.stream_load.test_stream_load_illegal_timeout.test_stream_load_illegal_timeout": {
+   "needs": ["rpc:http.stream_load"],
+   "reason": "The suite expects the C++ BE's stream load reply \"[INVALID_ARGUMENT]Invalid format of 'timeout': 'abc', stoi\", so its stream load reaches the BE, but the corpus kept no BE HTTP exchange for it (the reference traffic for this suite holds only Thrift)."
+  }
+ }
+}

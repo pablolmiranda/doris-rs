@@ -53,5 +53,5 @@ services:
         aliases: [doris, fe-1]
 networks:
   oracle:
-    name: ${ORACLE_NETWORK:-doris-oracle}
+    name: ${ORACLE_RUST_NETWORK:-doris-oracle-rust}
     driver: bridge

@@ -331,6 +331,13 @@ class EligibleTests(GradeTestCase):
         self.assertEqual(verdict["eligible"]["suites"], [S, self.T])
         self.assertEqual(verdict["eligible"]["failing"], {"out": [], "strict": []})
 
+    def test_a_supplement_need_blocks_eligibility(self):
+        self.write_needs(self.ref, {}, ["task:CREATE"])
+        supplement = {"suites": {S: {"needs": ["data:d.load.load"], "reason": "r"}}}
+        verdict = grade.grade(write_run(self.dir("cand-s"), self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]]),
+                              self.ref, self.scores, supplement=supplement)
+        self.assertEqual(verdict["eligible"]["suites"], [self.T])
+
     def test_suites_without_needs_are_eligible(self):
         self.write_needs(self.ref, {self.T: {"rpc": ["X.y"]}}, [])
         verdict = self.grade(self.ref, self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]])

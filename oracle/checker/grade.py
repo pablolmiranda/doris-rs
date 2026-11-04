@@ -33,7 +33,7 @@ def numbers(passing, gate, reaches_be):
             "passing_be": len(passing & be), "total_be": len(be)}
 
 
-def grade(run_dir, reference_dir, scores_dir):
+def grade(run_dir, reference_dir, scores_dir, supplement=None):
     gate = read_list(os.path.join(reference_dir, "suites.txt"))
     reaches_be = read_list(os.path.join(reference_dir, "reaches_be.txt"))
     marks = replies.load_json(os.path.join(reference_dir, "marks.json"))["suites"]
@@ -64,6 +64,7 @@ def grade(run_dir, reference_dir, scores_dir):
         os.path.join(reference_dir, "needs.json")) else {}
     supported_path = os.path.join(scores_dir, "epic1-supported.json")
     supported = replies.load_json(supported_path)["features"] if os.path.exists(supported_path) else []
+    needs = derive.with_supplement(needs, derive.load_supplement() if supplement is None else supplement)
     blocked = derive.unsupported_needs(needs, supported, gate)
     eligible = [k for k in gate if not blocked[k]]
     return {

@@ -18,6 +18,7 @@ Any implementation that speaks those protocols can be measured by the same 9,000
 | `compose/reference-multi.yml` | 3 FE + 3 BE reference cluster, for replica and failover suites |
 | `compose/runner.Dockerfile` | JDK 17 + Maven image that runs the Groovy framework |
 | `targets/*.env` | Where a target cluster listens (`reference-single`, `reference-multi`, `rust`, add more) |
+| `compose/fe-only.yml`, `rust/be.conf` | The cluster doris-rs is graded in: the reference FE, and doris-rs on the host |
 | `suites/*.txt` | Which suite directories to run; `ignore.txt` lists known-flaky suites |
 | `bin/run_suites.sh` | Renders the conf, runs the framework in the runner container, parses output |
 | `bin/override_conf.py` | Copies the upstream conf and overrides only the address keys |
@@ -53,7 +54,22 @@ if you want them to count.
 
 ## Gating doris-rs
 
-Start the Rust binary with the stock ports, then:
+doris-rs is graded as the BE of an FE-only cluster: the reference image's FE alone
+(`compose/fe-only.yml`, the same FE settings as `reference-single.yml`) and doris-rs running
+natively on the host as its only backend, with the reference's BE settings (`rust/be.conf`).
+
+```
+make fe-up                          # FE-only cluster; registers the host as its BE
+make rust-be                        # second terminal: build and run doris-rs be (storage in /tmp/doris-rs-oracle)
+make epic-check TARGET=rust         # both gates; the report's first line counts eligible suites
+make fe-down
+```
+
+The FE reaches doris-rs at the address `host.docker.internal` resolves to inside its container
+(OrbStack and Docker Desktop on macOS); doris-rs takes that address from the first heartbeat.
+The `rust` deployment facts (`clusters/rust.facts.json`) read the BE's host from `SHOW BACKENDS`.
+
+The older directory-level gate also works against any target:
 
 ```
 make check TARGET=rust SUITES=suites/p0-core.txt
