@@ -125,9 +125,10 @@ suites; `scores/epic1-supported.json` lists the features doris-rs supports.
     command, or a reply varied in a way no mark describes;
   - 83 suites not compared because they have no replies: they pass without a statement of their
     own, mostly suites that return early off a cloud or multi-FE deployment (34 in `load_p0`);
-- **Traffic corpus:** 48 MB.
-  - Every message re-encodes to its bytes in `cargo test`: 494,496 messages, of which 4,592 match
-    up to set order.
+- **Traffic corpus:** 42 MB.
+  - Every checked message re-encodes to its bytes in `cargo test`: 494,384 messages in 1456
+    suites, of which 4,592 match up to set order. 18,936 are not checked (HTTP, and gRPC methods
+    without a prost type).
   - HTTP bodies over 64 KiB are kept as length and SHA-256.
   - 11 gRPC frames with no method are listed but not kept, from tshark misframing compressed streams.
 - **Self-check:** a sixth run on a fresh cluster A, graded against the reference:
