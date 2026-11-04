@@ -11,3 +11,9 @@ unsafe_code = "forbid"
 
 [dependencies]
 doris-be = { workspace = true }
+
+[dev-dependencies]
+doris-fixtures = { workspace = true }
+doris-thrift = { workspace = true }
+thrift = { workspace = true }
+tempfile = { workspace = true }

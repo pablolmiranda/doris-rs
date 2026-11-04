@@ -17,8 +17,15 @@ fn main() -> ExitCode {
 }
 
 fn run_be(path: PathBuf) -> ExitCode {
-    match doris_be::config::BeConfig::load(&path) {
-        Ok(_cfg) => ExitCode::SUCCESS,
+    let cfg = match doris_be::config::BeConfig::load(&path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("doris-rs be: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    match doris_be::run(cfg) {
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("doris-rs be: {e}");
             ExitCode::from(1)
