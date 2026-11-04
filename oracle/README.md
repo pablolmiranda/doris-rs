@@ -70,13 +70,18 @@ that exercise the BE, with two gates. Design: `docs/superpowers/specs/2026-11-02
 
 - **`.out` gate:** each suite still passes, as upstream judges it.
 - **Strict gate:** every MySQL reply is byte-equal to the reference's, except where the reference
-  itself varied. A tap between the framework and the FE records each connection. Probe marks,
-  derived from the reference runs, are the only relaxations: a reply that varied is compared
-  unordered, with columns or fields masked, or by pattern. A suite whose replies varied in a way
-  no mark describes (a different kind of reply, error code, or row count) is unstable and not
-  compared. Values that depend on the deployment (host,
-  ports, BE cores and memory) are substituted from `clusters/*.facts.json`; cores and memory are
-  read from `SHOW BACKENDS` at run time.
+  itself varied. A tap between the framework and the FE records each connection. There are three
+  relaxations, and nothing else is relaxed by hand:
+  - **Probe marks**, derived from the reference runs: a reply that varied is compared unordered,
+    with columns or fields masked, or by pattern. A suite whose replies varied in a way no mark
+    describes (a different kind of reply, error code, or row count) is unstable and not compared.
+  - **Deployment facts:** values that depend on the deployment (host, ports, BE cores and memory)
+    are substituted from `clusters/*.facts.json`; cores and memory are read from `SHOW BACKENDS`
+    at run time.
+  - **Harness traffic:** traffic the harness sends on its own clock, whichever suite is running,
+    is declared with its source in `harness_traffic.json` and left out of replies and the corpus.
+    It covers the framework plugin's `show backends` lookup and BE polling, and the image's
+    health check.
 
 ```
 make epic-baseline                  # 5 reference runs (3 on cluster A, 2 on split cluster B) → epic1/
@@ -91,7 +96,7 @@ make epic-grade RUN=results/<target>/<run-id>
 | `suites.txt` | The gate: in-scope suites that passed in every reference run |
 | `flaky.txt` | In-scope suites that failed in some reference run, with the runs |
 | `replies/`, `marks.json` | Reference replies per suite and the probe marks |
-| `traffic/` | Per-suite FE↔BE corpus (Thrift, gRPC, BE HTTP); `manifest.json` lists background traffic, capture holes and unnamed gRPC frames |
+| `traffic/` | Per-suite FE↔BE corpus (Thrift, gRPC, BE HTTP); `manifest.json` lists background and harness traffic, capture holes and unnamed gRPC frames |
 | `reaches_be.txt` | Gate suites that sent work to the BE |
 | `needs.json`, `ranking.json` | Features each suite needs; features ranked by suites they block |
 

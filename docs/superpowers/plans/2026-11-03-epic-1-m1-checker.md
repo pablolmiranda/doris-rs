@@ -47,7 +47,11 @@ bytes, the doris-wire round-trip, live runs):
 - **Attribution:** a connection belongs to the suite whose window holds its handshake; its
   exchanges outside that window are unattributed. A suite's connections are compared in order of
   their content, not their time. Commands with no reply (`COM_QUIT`, `COM_STMT_CLOSE`,
-  `COM_STMT_SEND_LONG_DATA`) and the framework plugin's `show backends` lookup are dropped.
+  `COM_STMT_SEND_LONG_DATA`) are dropped.
+- **Harness traffic** is declared, with its source, in `oracle/harness_traffic.json`: the
+  framework's query-timeout plugin (a `show backends` connection every 5 minutes, BE polling
+  every minute) and the image's health check. It is left out of replies and the corpus and
+  counted in the manifest. The relaxation rule below gains this third, declared source.
 - **Codec patch 4:** profile info strings are bytes, not strings (the BE writes raw key bytes).
 - **No per-statement skip:** a reply that varied beyond any mark makes its suite unstable, as
   the spec says (41 unstable suites).
@@ -58,7 +62,7 @@ bytes, the doris-wire round-trip, live runs):
 
 - Reference: Doris `4.1.5`, suites from `4.1.5-release` (`oracle/versions.env`); nothing pins another version.
 - Harness code is standard-library Python only; no `pip install`. Containers used: the reference image, the existing runner image, `nicolaka/netshoot:v0.16` (capture) and `python:3.11-slim` (tap).
-- Relaxations come only from variation the reference itself shows (probe marks) and from declared deployment facts. No hand-written masks, ever.
+- Relaxations come only from variation the reference itself shows (probe marks), from declared deployment facts, and from declared harness traffic (`oracle/harness_traffic.json`, each entry with its source). No hand-written masks, ever.
 - Single profile only: one FE, one BE.
 - `parallel_pipeline_task_num` is pinned to `4` globally on every cluster before any suite runs.
 - The repo is public: no credentials, tokens or host-specific paths in committed files.

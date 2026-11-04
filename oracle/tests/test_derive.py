@@ -86,6 +86,19 @@ class TrafficTests(DeriveTestCase):
             self.assertEqual(json.load(fh)["unnamed_grpc"],
                              [{"suite": A, "tcp_stream": 2, "h2_stream": 8192, "frame": 7, "bytes": 1}])
 
+    def test_declared_harness_http_is_not_the_suites(self):
+        def http(path, kind):
+            return ({"protocol": "http", "method": path, "path": path, "kind": kind, "time_ms": 150}, b"")
+        traffic = [http("/api/health", "request"), http("/api/health", "response"),
+                   http("/api/running_pipeline_tasks/180", "request"), msg("exec_plan_fragment", 350, protocol="grpc")]
+        run = self.run_dir(1, {A: ("passed", 100, 200), B: ("passed", 300, 400)}, traffic=traffic)
+        derive.derive([run], self.out)
+        self.assertEqual(self.lines("reaches_be.txt"), [B])
+        with open(os.path.join(self.out, "traffic", "manifest.json")) as fh:
+            manifest = json.load(fh)
+        self.assertEqual(manifest["harness"], {"/api/health": 2, "/api/running_pipeline_tasks/180": 1})
+        self.assertEqual(manifest["without_traffic"], [A])
+
     def test_tablet_stat_polling_is_background(self):
         run = self.run_dir(1, {A: ("passed", 100, 200)}, traffic=[msg("get_tablet_stat", 150, kind="reply")])
         derive.derive([run], self.out)

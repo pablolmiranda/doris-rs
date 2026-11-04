@@ -19,6 +19,7 @@ import json
 import os
 import sys
 
+import harness
 import marks as probe_marks
 import records
 import replies
@@ -41,16 +42,19 @@ BE_WORK = ("exec_plan_fragment", "submit_tasks", "tablet_writer", "stream_load",
 
 
 def split_traffic(messages, wins):
-    """{suite: [(header, data)]} plus a background count per method: messages outside every
-    window, and the FE's periodic calls, belong to no suite."""
-    by_suite, background = {}, {}
+    """({suite: [(header, data)]}, background count per method, declared harness traffic count
+    per path): messages outside every window, the FE's periodic calls and the traffic declared
+    in harness_traffic.json belong to no suite."""
+    by_suite, background, declared = {}, {}, {}
     for header, data in messages:
         suite = replies.owner(header.get("time_ms"), wins)
-        if header.get("method") in BACKGROUND_METHODS or suite == replies.UNATTRIBUTED:
+        if harness.is_http(header):
+            declared[header["path"]] = declared.get(header["path"], 0) + 1
+        elif header.get("method") in BACKGROUND_METHODS or suite == replies.UNATTRIBUTED:
             background[header.get("method")] = background.get(header.get("method"), 0) + 1
         else:
             by_suite.setdefault(suite, []).append((header, data))
-    return by_suite, background
+    return by_suite, background, declared
 
 
 # HTTP bodies above this size (load data, tablet metadata dumps) are the suites' own files or
@@ -95,7 +99,7 @@ def write_traffic(run_dir, out_dir, gate, dependencies=()):
     if not os.path.exists(path):
         return None
     wins = replies.windows(replies.results(run_dir))
-    by_suite, background = split_traffic(records.read(path), wins)
+    by_suite, background, declared = split_traffic(records.read(path), wins)
     corpus = os.path.join(out_dir, "traffic")
     os.makedirs(corpus, exist_ok=True)
     holes_path = os.path.join(run_dir, "traffic-holes.json")
@@ -104,7 +108,7 @@ def write_traffic(run_dir, out_dir, gate, dependencies=()):
     # corpus, so the needs of the suites running then may be incomplete.
     without = [k for k in gate if not by_suite.get(k)]
     manifest = {"source": os.path.basename(os.path.normpath(run_dir)), "background": background,
-                "capture_holes": holes, "without_traffic": without, "unnamed_grpc": [], "suites": {}}
+                "harness": declared, "capture_holes": holes, "without_traffic": without, "unnamed_grpc": [], "suites": {}}
     for k in sorted(set(gate) | set(dependencies)):
         items, unnamed = named_grpc(by_suite.get(k, []))
         manifest["unnamed_grpc"] += [{"suite": k, **u} for u in unnamed]

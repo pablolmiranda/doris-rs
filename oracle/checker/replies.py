@@ -9,8 +9,10 @@ import gzip
 import json
 import os
 
+import harness
 import marks as probe_marks
 import mysql_wire
+import records
 import tap
 
 UNATTRIBUTED = "unattributed"
@@ -70,15 +72,6 @@ def collapse(exchanges):
     return out
 
 
-def plugin_lookup(exchanges):
-    """The regression framework's query-timeout plugin opens a connection on a timer, whichever
-    suite is running, to look up the backends: nothing but the driver's setup and
-    `show backends`."""
-    statements = [ex["statement"] for ex in exchanges if ex["command"] == "COM_QUERY"]
-    setup = [st for st in statements[:-1] if st.startswith(("/* mysql-connector-java", "SET "))]
-    return bool(statements) and statements[-1] == "show backends" and len(setup) == len(statements) - 1
-
-
 def run_exchanges(run_dir):
     """{suite: [exchange]} for one run, facts substituted, with UNATTRIBUTED for the rest.
 
@@ -94,7 +87,7 @@ def run_exchanges(run_dir):
         # Commands without a reply say nothing about the server, and whether they land inside
         # the suite's window is timing.
         exchanges = [ex for ex in mysql_wire.decode_session(c2s, s2c, times) if ex["command"] not in mysql_wire.NO_REPLY]
-        if not exchanges or plugin_lookup(exchanges):
+        if not exchanges or harness.is_connection(exchanges):
             continue
         opener = owner(exchanges[0]["t_ms"], wins)
         for ex in exchanges:
@@ -185,9 +178,7 @@ def substitute(exchange, run_facts):
 
 def write_suite(path, exchanges):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with gzip.open(path, "wt", encoding="utf-8") as fh:
-        for ex in exchanges:
-            fh.write(json.dumps(ex, sort_keys=True) + "\n")
+    records.write_text_gz(path, "".join(json.dumps(ex, sort_keys=True) + "\n" for ex in exchanges))
 
 
 def read_suite(path):

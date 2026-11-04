@@ -250,11 +250,6 @@
   "total": 236
  },
  {
-  "feature": "rpc:http./api/health",
-  "alone": 0,
-  "total": 222
- },
- {
   "feature": "rpc:FrontendService.streamLoadPut",
   "alone": 0,
   "total": 221
@@ -428,11 +423,6 @@
   "feature": "function:like",
   "alone": 0,
   "total": 62
- },
- {
-  "feature": "rpc:http./api/running_pipeline_tasks/180",
-  "alone": 0,
-  "total": 58
  },
  {
   "feature": "function:divide",

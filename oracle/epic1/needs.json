@@ -33,7 +33,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config",
       "http.stream_load"
     ],
@@ -96,7 +95,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -205,7 +203,6 @@
       "PBackendService.fetch_data",
       "http./api/compaction/run",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -264,7 +261,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -324,7 +320,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -370,9 +365,7 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data",
-      "http./api/compaction_score",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "http./api/compaction_score"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -422,7 +415,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -780,8 +772,7 @@
       "PBackendService.fetch_data",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -842,8 +833,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http./api/show_config",
       "http./api/update_config"
     ],
@@ -899,8 +888,6 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
       "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http./api/update_config",
       "http.stream_load"
     ],
@@ -1008,7 +995,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -1170,8 +1156,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -1231,7 +1215,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/running_pipeline_tasks/180",
       "http./api/show_config",
       "http.stream_load"
     ],
@@ -1352,7 +1335,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/show_config"
     ],
     "sink": [
@@ -2204,7 +2186,6 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -2258,8 +2239,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -2398,8 +2378,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -5284,8 +5263,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -5420,8 +5398,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -6820,8 +6797,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -7434,7 +7410,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -8955,8 +8930,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -9393,8 +9367,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -9466,8 +9439,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -9623,8 +9595,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -9827,8 +9798,7 @@
       "FrontendService.getTableNames",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "RESULT_SINK"
@@ -10093,8 +10063,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -10350,8 +10319,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -26803,8 +26771,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -27231,8 +27198,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -27432,7 +27398,6 @@
       "PBackendService.fetch_data",
       "PBackendService.fetch_table_schema",
       "http./api/_http_stream",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -27489,8 +27454,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -27601,9 +27564,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.group_commit_insert",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.group_commit_insert"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -27661,7 +27622,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -27717,8 +27677,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.group_commit_insert",
-      "http./api/health"
+      "PBackendService.group_commit_insert"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -27756,8 +27715,7 @@
       "FrontendService.finishTask",
       "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
-      "PBackendService.exec_plan_fragment",
-      "http./api/health"
+      "PBackendService.exec_plan_fragment"
     ],
     "sink": [
       "OLAP_TABLE_SINK"
@@ -27841,8 +27799,7 @@
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
-      "PBackendService.exec_plan_fragment",
-      "http./api/health"
+      "PBackendService.exec_plan_fragment"
     ],
     "sink": [
       "GROUP_COMMIT_BLOCK_SINK"
@@ -27874,8 +27831,7 @@
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
-      "PBackendService.exec_plan_fragment",
-      "http./api/health"
+      "PBackendService.exec_plan_fragment"
     ],
     "sink": [
       "GROUP_COMMIT_BLOCK_SINK"
@@ -27906,8 +27862,7 @@
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
-      "PBackendService.exec_plan_fragment",
-      "http./api/health"
+      "PBackendService.exec_plan_fragment"
     ],
     "sink": [
       "GROUP_COMMIT_BLOCK_SINK"
@@ -28260,7 +28215,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "http./api/compaction/show",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -28322,7 +28276,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "http./api/compaction/show",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -28384,7 +28337,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.send_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -28438,8 +28390,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/compaction/show",
-      "http./api/health"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -28533,9 +28484,7 @@
       "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "RESULT_SINK"
@@ -28603,7 +28552,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -29236,8 +29184,7 @@
   "load_p0.broker_load.test_domain_connection_and_ak_sk_correction.test_domain_connection_and_ak_sk_correction": {
     "rpc": [
       "BackendService.submit_tasks",
-      "FrontendService.finishTask",
-      "http./api/health"
+      "FrontendService.finishTask"
     ],
     "task": [
       "CREATE"
@@ -29276,8 +29223,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -29376,8 +29322,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.fetch_table_schema",
-      "http./api/_http_stream",
-      "http./api/health"
+      "http./api/_http_stream"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -29802,8 +29747,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -29975,8 +29919,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -30029,7 +29972,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -30244,7 +30186,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -30835,7 +30776,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -31315,7 +31255,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http./api/regression_test_load_p0_stream_load/test_2pc_table_with_sc/_stream_load_2pc",
       "http.stream_load"
     ],
@@ -31521,8 +31460,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "task": [
@@ -31576,7 +31513,6 @@
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -31763,7 +31699,6 @@
       "FrontendService.loadTxnRollback",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -31861,8 +31796,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.fetch_table_schema",
-      "http./api/health"
+      "PBackendService.fetch_table_schema"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -32467,8 +32401,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -32631,8 +32564,6 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -32695,8 +32626,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.update_cache",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -32749,8 +32678,7 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -33705,8 +33633,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -34735,8 +34662,7 @@
       "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "RESULT_SINK"
@@ -35049,8 +34975,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -35358,7 +35283,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -35516,8 +35440,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -35684,7 +35607,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -36091,8 +36013,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -36399,8 +36320,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -37101,8 +37021,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -37159,8 +37078,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -37281,8 +37199,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -38489,7 +38406,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -39504,8 +39420,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -39851,7 +39766,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -40139,8 +40053,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -40371,8 +40284,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -40850,8 +40762,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -41450,8 +41361,7 @@
       "BackendService.get_stream_load_record",
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
-      "FrontendService.reportExecStatus",
-      "http./api/health"
+      "FrontendService.reportExecStatus"
     ],
     "task": [
       "DROP"
@@ -42166,7 +42076,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -42464,8 +42373,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -43530,8 +43438,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -43687,8 +43593,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -43763,8 +43667,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -45001,8 +44903,7 @@
       "PBackendService.fetch_data",
       "PBackendService.rollback",
       "PBackendService.send_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -45325,8 +45226,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -45745,7 +45645,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -45802,8 +45701,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.update_cache",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -45949,8 +45846,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -46151,8 +46047,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.tablet_fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -46206,8 +46100,7 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data",
-      "PBackendService.tablet_fetch_data",
-      "http./api/health"
+      "PBackendService.tablet_fetch_data"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -47294,8 +47187,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -48662,9 +48554,7 @@
       "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -48847,7 +48737,6 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -49672,8 +49561,7 @@
       "FrontendService.finishTask",
       "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
-      "PBackendService.exec_plan_fragment",
-      "http./api/health"
+      "PBackendService.exec_plan_fragment"
     ],
     "sink": [
       "OLAP_TABLE_SINK"
@@ -50125,8 +50013,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -50305,8 +50191,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -50909,8 +50794,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51055,7 +50939,6 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -52784,8 +52667,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -54816,8 +54698,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -54978,8 +54859,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -56067,8 +55947,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -56850,8 +56729,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -57412,8 +57290,6 @@
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -59491,8 +59367,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -60137,7 +60012,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -60983,8 +60857,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -61653,8 +61526,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -61706,8 +61577,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -62131,7 +62001,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -62939,7 +62808,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -62999,7 +62867,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -63055,8 +62922,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63167,7 +63033,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -63222,7 +63087,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
       "PBackendService.update_cache",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -63320,8 +63184,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63368,8 +63231,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63596,8 +63458,7 @@
       "PBackendService.get_wal_queue_size",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63658,9 +63519,7 @@
       "PBackendService.get_wal_queue_size",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63722,7 +63581,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -63781,8 +63639,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -63844,7 +63701,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -63911,8 +63767,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http.stream_load"
     ],
     "sink": [
@@ -63975,8 +63829,7 @@
       "PBackendService.get_column_ids_by_tablet_ids",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64032,7 +63885,6 @@
       "PBackendService.fetch_data",
       "PBackendService.get_column_ids_by_tablet_ids",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -64097,8 +63949,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64148,8 +63999,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64231,9 +64081,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64324,8 +64172,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "PBackendService.update_cache",
-      "http./api/health"
+      "PBackendService.update_cache"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64433,8 +64280,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64501,8 +64347,6 @@
       "PBackendService.get_wal_queue_size",
       "http./api/compaction/run",
       "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180",
       "http./api/show_config",
       "http./api/update_config"
     ],
@@ -64561,8 +64405,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64726,9 +64569,7 @@
       "PBackendService.get_wal_queue_size",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health",
-      "http./api/running_pipeline_tasks/180"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -64788,8 +64629,7 @@
       "PBackendService.get_wal_queue_size",
       "http./api/compaction/run",
       "http./api/compaction/run_status",
-      "http./api/compaction/show",
-      "http./api/health"
+      "http./api/compaction/show"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -65008,7 +64848,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -65069,7 +64908,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_column_ids_by_tablet_ids",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -65137,7 +64975,6 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -65297,7 +65134,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http./api/regression_test_unique_with_mow_p0_flexible_publish/test_auto_inc_replica_consistency/_stream_load_2pc",
       "http.stream_load"
     ],
@@ -65497,7 +65333,6 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/meta/header/1793678150382",
       "http./api/show_config",
       "http./api/update_config"
@@ -65546,7 +65381,6 @@
       "PBackendService.fetch_data",
       "PBackendService.tablet_fetch_data",
       "http./api/compaction/show",
-      "http./api/health",
       "http./api/meta/header/1793678150398",
       "http./api/show_config",
       "http./api/update_config"
@@ -65656,7 +65490,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http./api/regression_test_unique_with_mow_p0_partial_update_publish/test_partial_update_publish_seq_map/_stream_load_2pc",
       "http.stream_load"
     ],
@@ -65914,8 +65747,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/running_pipeline_tasks/180"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -66073,7 +65905,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http./api/regression_test_unique_with_mow_p0_partial_update/test_partial_update_delete_sign_with_conflict/_stream_load_2pc",
       "http.stream_load"
     ],
@@ -66274,8 +66105,7 @@
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
-      "PBackendService.get_wal_queue_size",
-      "http./api/health"
+      "PBackendService.get_wal_queue_size"
     ],
     "sink": [
       "OLAP_TABLE_SINK"
@@ -66628,7 +66458,6 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -66687,7 +66516,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -66844,8 +66672,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -67384,7 +67211,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -67556,7 +67382,6 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
@@ -67588,7 +67413,6 @@
       "FrontendService.loadTxnCommit",
       "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
-      "http./api/health",
       "http.stream_load"
     ],
     "task": [
@@ -68307,8 +68131,7 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
-      "PBackendService.fetch_data",
-      "http./api/health"
+      "PBackendService.fetch_data"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -68464,7 +68287,6 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data",
-      "http./api/health",
       "http.stream_load"
     ],
     "sink": [
