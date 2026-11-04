@@ -1,10 +1,5 @@
 [
  {
-  "feature": "rpc:FrontendService.reportExecStatus",
-  "alone": 1,
-  "total": 775
- },
- {
   "feature": "rpc:BackendService.check_storage_format",
   "alone": 1,
   "total": 1
@@ -153,6 +148,11 @@
   "feature": "plan_node:UNION_NODE",
   "alone": 0,
   "total": 742
+ },
+ {
+  "feature": "rpc:FrontendService.reportExecStatus",
+  "alone": 0,
+  "total": 729
  },
  {
   "feature": "type:DATEV2",
@@ -741,6 +741,11 @@
  },
  {
   "feature": "rpc:FrontendService.loadTxnPreCommit",
+  "alone": 0,
+  "total": 9
+ },
+ {
+  "feature": "rpc:http./api/{db}/{table}/_stream_load_2pc",
   "alone": 0,
   "total": 9
  },
@@ -1706,6 +1711,11 @@
  },
  {
   "feature": "rpc:PBackendService.group_commit_insert",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "rpc:http./api/meta/{op}/{tablet_id}",
   "alone": 0,
   "total": 2
  },
@@ -2966,61 +2976,6 @@
  },
  {
   "feature": "rpc:http./api/compaction_score",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/meta/header/1793678150382",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/meta/header/1793678150398",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_load_p0_http_stream/test_http_stream_2pc/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_load_p0_stream_load/test_2pc_table_with_sc/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_flexible_legacy/test_f_2pc_schema_change/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_flexible_publish/test_auto_inc_replica_consistency/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_partial_update/test_p_seq_publish_read_from_old/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_partial_update/test_partial_update_2pc_schema_change/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_partial_update/test_partial_update_delete_sign_with_conflict/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_partial_update_publish/test_partial_update_publish_all_del/_stream_load_2pc",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "rpc:http./api/regression_test_unique_with_mow_p0_partial_update_publish/test_partial_update_publish_seq_map/_stream_load_2pc",
   "alone": 0,
   "total": 1
  },

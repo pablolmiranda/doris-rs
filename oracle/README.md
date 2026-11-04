@@ -117,8 +117,8 @@ suites; `scores/epic1-supported.json` lists the features doris-rs supports.
   - Arrow Flight: 64 (44)
   - external catalog: 12 (12)
   - vector: 2 (1)
-- **Gate:** 1622 suites; 8 flaky; 1453 reach the BE. Of the other 169, 166 send the BE nothing;
-  3 carry only `reportExecStatus` or `check_storage_format` calls, which do not count as work.
+- **Gate:** 1622 suites; 8 flaky; 1454 send the BE a request. Of the other 168, 166 send the BE
+  nothing, and 2 only receive late `reportExecStatus` calls for the previous suite's queries.
 - **Strict:**
   - 1498 suites compared (stable);
   - 41 suites not compared because they are unstable: their exchanges differed in number or
@@ -133,6 +133,8 @@ suites; `scores/epic1-supported.json` lists the features doris-rs supports.
 - **Self-check:** a sixth run on a fresh cluster A, graded against the reference:
   - `.out` gate: 1622 of 1622;
   - strict gate: 1489 of 1622, or 1489 of the 1498 compared. The other 9 show a difference.
+  - 1492 exchanges fell outside every suite (threads still running after their suite ended)
+    and were not compared.
 
   The 9 differences are rare nondeterminism in Doris itself, and each held steady in all five
   reference runs:
@@ -147,7 +149,6 @@ Top of the ranking (`alone` = suites blocked by this feature only, `total` = sui
 
 | Feature | Alone | Total |
 |---|---|---|
-| rpc:FrontendService.reportExecStatus | 1 | 775 |
 | rpc:BackendService.check_storage_format | 1 | 1 |
 | type:VARCHAR | 0 | 1396 |
 | expr:SLOT_REF | 0 | 1378 |
@@ -162,6 +163,7 @@ Top of the ranking (`alone` = suites blocked by this feature only, `total` = sui
 | type:STRING | 0 | 1245 |
 | type:DATETIMEV2 | 0 | 1224 |
 | plan_node:EXCHANGE_NODE | 0 | 1202 |
+| rpc:PBackendService.exec_plan_fragment_prepare | 0 | 1202 |
 
 Nearly every suite needs many features at once, so `alone` stays near zero until doris-rs
 supports the common ones; `total` is the better guide to order early on.

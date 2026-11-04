@@ -22,7 +22,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -5171,7 +5170,6 @@
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
-      "FrontendService.reportExecStatus",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
@@ -10101,7 +10099,6 @@
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
@@ -16288,7 +16285,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
@@ -23110,7 +23106,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
@@ -27670,7 +27665,6 @@
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -28438,7 +28432,6 @@
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.commit",
       "PBackendService.exec_plan_fragment",
@@ -28481,7 +28474,6 @@
     ],
     "rpc": [
       "BackendService.submit_tasks",
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
@@ -28550,7 +28542,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -29314,7 +29305,6 @@
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -29376,7 +29366,7 @@
       "PBackendService.fetch_data",
       "PBackendService.fetch_table_schema",
       "http./api/_http_stream",
-      "http./api/regression_test_load_p0_http_stream/test_http_stream_2pc/_stream_load_2pc"
+      "http./api/{db}/{table}/_stream_load_2pc"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -29511,7 +29501,6 @@
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -30184,7 +30173,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -30768,7 +30756,6 @@
       "FrontendService.getColumnInfo",
       "FrontendService.loadTxnCommit",
       "FrontendService.loadTxnRollback",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -31255,7 +31242,7 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.get_wal_queue_size",
-      "http./api/regression_test_load_p0_stream_load/test_2pc_table_with_sc/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -31458,7 +31445,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -31697,7 +31683,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnRollback",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -34559,7 +34544,6 @@
       "UNION_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
@@ -34659,7 +34643,6 @@
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
@@ -35277,7 +35260,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -35367,11 +35349,7 @@
       "VARCHAR"
     ]
   },
-  "nereids_p0.infer_expr_name.query61.nereids_test_create_blocked": {
-    "rpc": [
-      "FrontendService.reportExecStatus"
-    ]
-  },
+  "nereids_p0.infer_expr_name.query61.nereids_test_create_blocked": {},
   "nereids_p0.infer_predicate.infer_predicate.test_infer_predicate": {
     "expr": [
       "BINARY_PRED",
@@ -36781,7 +36759,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -38075,7 +38052,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -38404,7 +38380,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -39764,7 +39739,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -40154,11 +40128,7 @@
       "VARCHAR"
     ]
   },
-  "nereids_p0.show.test_nereids_show_resources.test_nereids_show_resources": {
-    "rpc": [
-      "FrontendService.reportExecStatus"
-    ]
-  },
+  "nereids_p0.show.test_nereids_show_resources.test_nereids_show_resources": {},
   "nereids_p0.show.test_nereids_show_table_creation.test_nereids_show_table_creation": {
     "rpc": [
       "BackendService.submit_tasks",
@@ -41133,7 +41103,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
@@ -41360,8 +41329,7 @@
     "rpc": [
       "BackendService.get_stream_load_record",
       "BackendService.submit_tasks",
-      "FrontendService.finishTask",
-      "FrontendService.reportExecStatus"
+      "FrontendService.finishTask"
     ],
     "task": [
       "DROP"
@@ -42074,7 +42042,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -42785,7 +42752,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -44824,7 +44790,6 @@
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
-      "FrontendService.reportExecStatus",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
@@ -51389,7 +51354,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -52267,7 +52231,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -60010,7 +59973,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -60446,7 +60408,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
@@ -61999,7 +61960,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -62800,7 +62760,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -62859,7 +62818,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -65076,7 +65034,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_flexible_legacy/test_f_2pc_schema_change/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65134,7 +65092,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_flexible_publish/test_auto_inc_replica_consistency/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65333,7 +65291,7 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "http./api/compaction/show",
-      "http./api/meta/header/1793678150382",
+      "http./api/meta/{op}/{tablet_id}",
       "http./api/show_config",
       "http./api/update_config"
     ],
@@ -65381,7 +65339,7 @@
       "PBackendService.fetch_data",
       "PBackendService.tablet_fetch_data",
       "http./api/compaction/show",
-      "http./api/meta/header/1793678150398",
+      "http./api/meta/{op}/{tablet_id}",
       "http./api/show_config",
       "http./api/update_config"
     ],
@@ -65437,7 +65395,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_partial_update_publish/test_partial_update_publish_all_del/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65490,7 +65448,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_partial_update_publish/test_partial_update_publish_seq_map/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65544,7 +65502,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_partial_update/test_p_seq_publish_read_from_old/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65597,7 +65555,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_partial_update/test_partial_update_2pc_schema_change/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -65905,7 +65863,7 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
-      "http./api/regression_test_unique_with_mow_p0_partial_update/test_partial_update_delete_sign_with_conflict/_stream_load_2pc",
+      "http./api/{db}/{table}/_stream_load_2pc",
       "http.stream_load"
     ],
     "sink": [
@@ -67411,7 +67369,6 @@
       "FrontendService.finishTask",
       "FrontendService.loadTxnBegin",
       "FrontendService.loadTxnCommit",
-      "FrontendService.reportExecStatus",
       "FrontendService.streamLoadPut",
       "http.stream_load"
     ],
@@ -68935,7 +68892,6 @@
       "SORT_NODE"
     ],
     "rpc": [
-      "FrontendService.reportExecStatus",
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
