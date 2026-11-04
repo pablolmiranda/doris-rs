@@ -1,0 +1,49 @@
+{
+ "about": "Traffic sent on a clock, not by a suite: whichever suite is running when it happens, it is not that suite's. The checker leaves it out of the suites' replies and traffic corpus and counts it in the traffic manifest. Nothing else may be left out by hand: add an entry here only with the code that sends it.",
+ "harness": {
+  "mysql_connections": [
+   {
+    "source": "regression-test/plugins/plugin_query_timeout_debugger.groovy: every 5 minutes, a new connection looks up the backends",
+    "driver_setup_prefixes": [
+     "/* mysql-connector-java",
+     "SET "
+    ],
+    "statements": [
+     "show backends"
+    ]
+   }
+  ],
+  "be_http": [
+   {
+    "source": "regression-test/plugins/plugin_query_timeout_debugger.groovy: polls each BE every minute",
+    "path": "/api/running_pipeline_tasks/180"
+   },
+   {
+    "source": "the reference image's health check (/opt/doris-ci/health_check.sh), every few seconds",
+    "path": "/api/health"
+   }
+  ]
+ },
+ "cluster_rpcs": [
+  {
+   "method": "heartbeat",
+   "source": "FE HeartbeatMgr (fe-core org/apache/doris/system/HeartbeatMgr.java)"
+  },
+  {
+   "method": "report",
+   "source": "BE agent report workers (be/src/agent/task_worker_pool.cpp): tasks, disks, tablets"
+  },
+  {
+   "method": "publish_topic_info",
+   "source": "FE TopicPublisherThread (fe-core org/apache/doris/common/publish/TopicPublisherThread.java)"
+  },
+  {
+   "method": "get_dictionary_status",
+   "source": "FE DictionaryManager (fe-core org/apache/doris/dictionary/DictionaryManager.java)"
+  },
+  {
+   "method": "get_tablet_stat",
+   "source": "FE TabletStatMgr (fe-core org/apache/doris/catalog/TabletStatMgr.java)"
+  }
+ ]
+}

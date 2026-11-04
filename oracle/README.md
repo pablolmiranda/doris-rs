@@ -63,6 +63,112 @@ Exit status 0 means no suite that passed on the reference failed or went missing
 classification is in `results/rust/latest/compare.json`. Suites that are flaky on the reference
 belong in `suites/ignore.txt` with a reason; nothing else does.
 
+## Epic 1 checker
+
+Epic 1 (#4) replaces the BE first, so its checker grades a candidate on the upstream p0 suites
+that exercise the BE, with two gates. Design: `docs/superpowers/specs/2026-11-02-epic-1-reporting-design.md`.
+
+- **`.out` gate:** each suite still passes, as upstream judges it.
+- **Strict gate:** every MySQL reply is byte-equal to the reference's, except where the reference
+  itself varied. A tap between the framework and the FE records each connection. There are three
+  relaxations, and nothing else is relaxed by hand:
+  - **Probe marks**, derived from the reference runs: a reply that varied is compared unordered,
+    with columns or fields masked, or by pattern. A suite whose replies varied in a way no mark
+    describes (a different kind of reply, error code, or row count) is unstable and not compared.
+  - **Deployment facts:** values that depend on the deployment (host, ports, BE cores and memory)
+    are substituted from `clusters/*.facts.json`; cores and memory are read from `SHOW BACKENDS`
+    at run time.
+  - **Background traffic:** traffic sent on a clock rather than by a suite is declared, each
+    entry with the code that sends it, in `background_traffic.json`, and left out of replies and
+    the corpus. It covers the harness (the framework plugin's `show backends` lookup and BE
+    polling, the image's health check) and the cluster's periodic RPCs (heartbeats, reports,
+    topic publishing, dictionary and tablet-stat polling).
+
+```
+make epic-baseline                  # 5 reference runs (3 on cluster A, 2 on split cluster B) → epic1/
+make epic-check TARGET=rust         # one run, both gates, grade.json in results/rust/latest/
+make epic-grade RUN=results/<target>/<run-id>
+```
+
+`oracle/epic1/` is the committed reference, derived by `checker/derive.py`:
+
+| File | Content |
+|---|---|
+| `suites.txt` | The gate: in-scope suites that passed in every reference run |
+| `flaky.txt` | In-scope suites that failed in some reference run, with the runs |
+| `replies/`, `marks.json` | Reference replies per suite and the probe marks |
+| `traffic/` | Per-suite FE↔BE corpus (Thrift, gRPC, BE HTTP); `manifest.json` lists background and harness traffic, capture holes and unnamed gRPC frames |
+| `reaches_be.txt` | Gate suites that sent work to the BE |
+| `needs.json`, `ranking.json` | Features each suite needs; features ranked by suites they block |
+
+Ratchets (`scores/epic1-out.txt`, `scores/epic1-strict.txt`) are empty until doris-rs passes
+suites; `scores/epic1-supported.json` lists the features doris-rs supports.
+
+**Reference numbers (4.1.5, 2026-11-03).**
+
+- **Scope:** 1712 of 2739 p0 suites are in scope. The rest are excluded by feature; counts in
+  brackets are suites excluded for that reason alone:
+  - complex types: 385 (194)
+  - text index: 358 (191)
+  - aggregate key: 200 (85)
+  - variant: 186 (53)
+  - agg types: 157 (45)
+  - debug points: 94 (50)
+  - Arrow Flight: 64 (44)
+  - external catalog: 12 (12)
+  - vector: 2 (1)
+- **Gate:** 1622 suites; 8 flaky; 1454 send the BE a request. Of the other 168, 166 send the BE
+  nothing, and 2 only receive late `reportExecStatus` calls for the previous suite's queries.
+- **Strict:**
+  - 1498 suites compared (stable);
+  - 41 suites not compared because they are unstable: their exchanges differed in number or
+    command, or a reply varied in a way no mark describes;
+  - 83 suites not compared because they have no replies: they pass without a statement of their
+    own, mostly suites that return early off a cloud or multi-FE deployment (34 in `load_p0`);
+- **Traffic corpus:** 42 MB.
+  - Every checked message re-encodes to its bytes in `cargo test`: 494,384 messages in 1456
+    suites, of which 4,592 match up to set order. 18,936 are not checked (HTTP, and gRPC methods
+    without a prost type).
+  - HTTP bodies over 64 KiB are kept as length and SHA-256.
+  - 11 gRPC frames with no method are listed but not kept, from tshark misframing compressed streams.
+- **Self-check:** a sixth run on a fresh cluster A, graded against the reference:
+  - `.out` gate: 1622 of 1622;
+  - strict gate: 1489 of 1622, or 1489 of the 1498 compared. The other 9 show a difference.
+  - 1492 exchanges fell outside every suite (threads still running after their suite ended)
+    and were not compared.
+
+  The 9 differences are rare nondeterminism in Doris itself, and each held steady in all five
+  reference runs:
+  - which row overflows first;
+  - last-digit float rounding;
+  - random-bucket tablet counts;
+  - a task counter in `show backends`.
+
+  A candidate can fail these by chance; treat a strict failure in one of them as noise.
+
+Top of the ranking (`alone` = suites blocked by this feature only, `total` = suites needing it):
+
+| Feature | Alone | Total |
+|---|---|---|
+| rpc:BackendService.check_storage_format | 1 | 1 |
+| type:VARCHAR | 0 | 1396 |
+| expr:SLOT_REF | 0 | 1378 |
+| type:BIGINT | 0 | 1357 |
+| rpc:PBackendService.cancel_plan_fragment | 0 | 1355 |
+| sink:RESULT_SINK | 0 | 1334 |
+| rpc:PBackendService.fetch_data | 0 | 1331 |
+| type:BOOLEAN | 0 | 1269 |
+| plan_node:OLAP_SCAN_NODE | 0 | 1263 |
+| type:TINYINT | 0 | 1263 |
+| type:INT | 0 | 1256 |
+| type:STRING | 0 | 1245 |
+| type:DATETIMEV2 | 0 | 1224 |
+| plan_node:EXCHANGE_NODE | 0 | 1202 |
+| rpc:PBackendService.exec_plan_fragment_prepare | 0 | 1202 |
+
+Nearly every suite needs many features at once, so `alone` stays near zero until doris-rs
+supports the common ones; `total` is the better guide to order early on.
+
 ## Design notes
 
 - **Pinning.** The suites must match the server they test, so `DORIS_SRC_TAG` and `DORIS_IMAGE`

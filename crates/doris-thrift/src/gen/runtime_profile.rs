@@ -145,7 +145,7 @@ pub struct TRuntimeProfileNode {
   pub counters: Vec<TCounter>,
   pub metadata: i64,
   pub indent: bool,
-  pub info_strings: BTreeMap<String, String>,
+  pub info_strings: BTreeMap<String, Vec<u8>>,
   pub info_strings_display_order: Vec<String>,
   pub child_counters_map: BTreeMap<String, BTreeSet<String>>,
   pub timestamp: i64,
@@ -153,7 +153,7 @@ pub struct TRuntimeProfileNode {
 }
 
 impl TRuntimeProfileNode {
-  pub fn new<F10>(name: String, num_children: i32, counters: Vec<TCounter>, metadata: i64, indent: bool, info_strings: BTreeMap<String, String>, info_strings_display_order: Vec<String>, child_counters_map: BTreeMap<String, BTreeSet<String>>, timestamp: i64, deprecated_is_sink: F10) -> TRuntimeProfileNode where F10: Into<Option<bool>> {
+  pub fn new<F10>(name: String, num_children: i32, counters: Vec<TCounter>, metadata: i64, indent: bool, info_strings: BTreeMap<String, Vec<u8>>, info_strings_display_order: Vec<String>, child_counters_map: BTreeMap<String, BTreeSet<String>>, timestamp: i64, deprecated_is_sink: F10) -> TRuntimeProfileNode where F10: Into<Option<bool>> {
     TRuntimeProfileNode {
       name,
       num_children,
@@ -177,7 +177,7 @@ impl TSerializable for TRuntimeProfileNode {
     let mut f_3: Option<Vec<TCounter>> = None;
     let mut f_4: Option<i64> = None;
     let mut f_5: Option<bool> = None;
-    let mut f_6: Option<BTreeMap<String, String>> = None;
+    let mut f_6: Option<BTreeMap<String, Vec<u8>>> = None;
     let mut f_7: Option<Vec<String>> = None;
     let mut f_8: Option<BTreeMap<String, BTreeSet<String>>> = None;
     let mut f_9: Option<i64> = None;
@@ -217,10 +217,10 @@ impl TSerializable for TRuntimeProfileNode {
         },
         6 => {
           let map_ident = i_prot.read_map_begin()?;
-          let mut val: BTreeMap<String, String> = BTreeMap::new();
+          let mut val: BTreeMap<String, Vec<u8>> = BTreeMap::new();
           for _ in 0..map_ident.size {
             let map_key_1 = i_prot.read_string()?;
-            let map_val_2 = i_prot.read_string()?;
+            let map_val_2 = i_prot.read_bytes()?;
             val.insert(map_key_1, map_val_2);
           }
           i_prot.read_map_end()?;
@@ -317,7 +317,7 @@ impl TSerializable for TRuntimeProfileNode {
     o_prot.write_map_begin(&TMapIdentifier::new(TType::String, TType::String, self.info_strings.len() as i32))?;
     for (k, v) in &self.info_strings {
       o_prot.write_string(k)?;
-      o_prot.write_string(v)?;
+      o_prot.write_bytes(v)?;
     }
     o_prot.write_map_end()?;
     o_prot.write_field_end()?;

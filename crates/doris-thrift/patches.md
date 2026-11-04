@@ -12,6 +12,10 @@ checks the shape it expects and stops regeneration if the compiler output differ
 3. **Per-method structs.** Each service method's `<Service><Method>Args` and
    `<Service><Method>Result` structs, their fields and their inherent methods are private; they
    become `pub` so `gen::methods` (and callers) can decode and encode call and reply bodies.
+4. **`runtime_profile.rs`, `TRuntimeProfileNode.info_strings`.** Its values are `Vec<u8>`, not
+   `String`: the BE writes raw key bytes into profile info strings (a scan's key range reads
+   `ScanKeys:ScanKey=[null : \xff]`), and the generated `String` rejects bytes that are not
+   UTF-8. Found by the Epic 1 traffic corpus; no other string field carried such bytes there.
 
 `postprocess.py` also writes `src/gen/mod.rs` (one `pub mod` per IDL file, generated-code lints
 allowed) and `src/gen/methods.rs`, the table of every method: the wire name each processor

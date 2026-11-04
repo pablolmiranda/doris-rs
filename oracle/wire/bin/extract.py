@@ -40,18 +40,40 @@ class Gap(Exception):
     """Bytes are missing from a reassembled stream."""
 
 
+def until_gap(pieces):
+    """pieces: (offset, length) of one direction's segments, sorted by offset. Returns (uses,
+    gap, after): uses lists (index, skip) for each piece that adds bytes, skip being how many of
+    its leading bytes are already covered; gap is the first (start, end) range never captured,
+    or None; after counts the captured bytes past it."""
+    uses, end = [], 0
+    for i, (off, n) in enumerate(pieces):
+        if off > end:
+            return uses, (end, off), sum(length for _, length in pieces[i:])
+        if off + n > end:
+            uses.append((i, end - off))
+            end = off + n
+    return uses, None, 0
+
+
+def _pieces(segments, start_seq):
+    return sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
+
+
 def reassemble(segments, start_seq):
     """Concatenate (seq_raw, payload) segments of one direction starting at `start_seq`
     (the ISN + 1), modulo 2^32, keeping each byte once and failing on a hole."""
-    pieces = sorted(((seq - start_seq) % 2**32, payload) for seq, payload in segments)
-    out = bytearray()
-    for off, payload in pieces:
-        if off > len(out):
-            raise Gap(f"bytes {len(out)}..{off} missing")
-        end = off + len(payload)
-        if end > len(out):
-            out += payload[len(out) - off:]
-    return bytes(out)
+    data, gap, _ = reassemble_until_gap(segments, start_seq)
+    if gap:
+        raise Gap(f"bytes {gap[0]}..{gap[1]} missing")
+    return data
+
+
+def reassemble_until_gap(segments, start_seq):
+    """(bytes up to the first hole, (hole start, hole end) or None, captured bytes after it).
+    Unframed Thrift cannot be split again after a hole, so a direction keeps its prefix only."""
+    pieces = _pieces(segments, start_seq)
+    uses, gap, after = until_gap([(off, len(p)) for off, p in pieces])
+    return b"".join(pieces[i][1][skip:] for i, skip in uses), gap, after
 
 
 def split_grpc(stream):
@@ -66,6 +88,46 @@ def split_grpc(stream):
         out.append((flag != 0, stream[pos + 5:pos + 5 + length]))
         pos += 5 + length
     return out
+
+
+def json_array_items(chunks, object_pairs_hook=None):
+    """Yield the items of a JSON array read as byte chunks, each as soon as it is complete, so a
+    capture's dissection never has to fit in memory at once."""
+    decoder = json.JSONDecoder(object_pairs_hook=object_pairs_hook)
+    buf, started = "", False
+    for chunk in chunks:
+        buf += chunk.decode("utf-8", "replace")
+        pos = 0
+        while True:
+            while pos < len(buf) and buf[pos] in " \t\r\n,":
+                pos += 1
+            if not started and pos < len(buf):
+                if buf[pos] != "[":
+                    raise ValueError("expected a JSON array")
+                started, pos = True, pos + 1
+                continue
+            if pos >= len(buf) or buf[pos] == "]":
+                break
+            try:
+                item, end = decoder.raw_decode(buf, pos)
+            except json.JSONDecodeError:
+                break
+            yield item
+            pos = end
+        buf = buf[pos:]
+
+
+def tshark_packets(pcap, args):
+    """tshark -T json output, one packet at a time."""
+    d, f = os.path.dirname(os.path.abspath(pcap)), os.path.basename(pcap)
+    cmd = ["docker", "run", "--rm", "-v", f"{d}:/c:ro", TSHARK_IMAGE, "tshark", "-r", f"/c/{f}", *args, "-T", "json"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    try:
+        yield from json_array_items(iter(lambda: proc.stdout.read(1 << 20), b""), object_pairs_hook=lambda p: p)
+    finally:
+        proc.stdout.close()
+        if proc.wait() != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
 def tshark(pcap, args):
@@ -90,10 +152,17 @@ def syn_streams(pcap):
     return {s: v for s, v in streams.items() if "server_isn" in v}
 
 
-def segments(pcap):
-    """Every TCP segment carrying payload on a captured port, in capture order:
+def frame_times(pcap, ports=CAPTURED_PORTS):
+    """{frame number: epoch milliseconds} for every payload-carrying segment on the ports."""
+    plist = ", ".join(str(p) for p in ports)
+    return {int(f): round(float(t) * 1000) for f, t in
+            fields(pcap, f"tcp.len > 0 && tcp.port in {{{plist}}}", ["frame.number", "frame.time_epoch"])}
+
+
+def segments(pcap, ports=CAPTURED_PORTS):
+    """Every TCP segment carrying payload on the given ports, in capture order:
     (frame, tcp_stream, src_port, dst_port, seq_raw, payload)."""
-    ports = ", ".join(str(p) for p in CAPTURED_PORTS)
+    ports = ", ".join(str(p) for p in ports)
     rows = fields(pcap, f"tcp.len > 0 && tcp.port in {{{ports}}}",
                   ["frame.number", "tcp.stream", "tcp.srcport", "tcp.dstport", "tcp.seq_raw", "tcp.payload"])
     return [(int(f), int(s), int(sp), int(dp), int(seq), bytes.fromhex(p)) for f, s, sp, dp, seq, p in rows]
@@ -117,12 +186,15 @@ def thrift_messages(segs, streams):
     for (s, to_server), items in sorted(by_direction.items()):
         info = streams[s]
         start = (info["client_isn"] if to_server else info["server_isn"]) + 1
-        data = reassemble([(seq, p) for seq, p, _ in items], start)
+        data, gap, after = reassemble_until_gap([(seq, p) for seq, p, _ in items], start)
         frames = sorted(((seq - start) % 2**32, frame) for seq, _, frame in items)
         msgs = thrift_split.split_messages(data)
-        left = len(data) - (msgs[-1].end if msgs else 0)
-        if left:
-            dropped.append({"tcp_stream": s, "from": "client" if to_server else "server", "bytes": left})
+        left = len(data) - (msgs[-1].end if msgs else 0) + after
+        if left or gap:
+            entry = {"tcp_stream": s, "from": "client" if to_server else "server", "bytes": left}
+            if gap:
+                entry["gap"] = list(gap)
+            dropped.append(entry)
         for m in msgs:
             first_frame = max(f for off, f in frames if off <= m.start) if frames else 0
             out.append({
@@ -167,8 +239,7 @@ def _pairs(obj, key):
 
 
 def grpc_messages(pcap, streams):
-    text = tshark(pcap, ["-d", f"tcp.port=={GRPC_PORT},http2", "-Y", "http2.type == 0", "-T", "json"])
-    packets = json.loads(text, object_pairs_hook=lambda p: p) if text.strip() else []
+    packets = tshark_packets(pcap, ["-d", f"tcp.port=={GRPC_PORT},http2", "-Y", "http2.type == 0"])
     flows, uris, first_frame = {}, {}, {}
     for pkt in packets:
         layers = dict(dict(pkt)["_source"])["layers"]

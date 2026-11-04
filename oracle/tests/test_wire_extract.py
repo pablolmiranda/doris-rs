@@ -44,6 +44,19 @@ class ThriftAccountingTests(unittest.TestCase):
                          [("report", "call", call), ("report", "reply", reply)])
         self.assertEqual(dropped, [{"tcp_stream": 5, "from": "client", "bytes": 5}])
 
+    def test_hole_in_a_stream_keeps_the_messages_before_it_and_is_reported(self):
+        first, second, third = message("report", 1, 0), message("report", 1, 0), message("report", 1, 0)
+        streams = {5: stream(50000, 9020)}
+        segs = [
+            (10, 5, 50000, 9020, 1001, first),
+            # `second` was never captured
+            (12, 5, 50000, 9020, 1001 + len(first) + len(second), third),
+        ]
+        messages, dropped = extract.thrift_messages(segs, streams)
+        self.assertEqual([m["data"] for m in messages], [first])
+        self.assertEqual(dropped, [{"tcp_stream": 5, "from": "client", "bytes": len(third),
+                                    "gap": [len(first), len(first) + len(second)]}])
+
     def test_streams_on_other_ports_are_left_to_their_own_extractor(self):
         streams = {7: stream(50001, 8060)}
         segs = [(20, 7, 50001, 8060, 1001, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")]

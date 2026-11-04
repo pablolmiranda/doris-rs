@@ -5,7 +5,7 @@
 #   make src                         pin the upstream source worktree (.cache/doris-src)
 #   make image                       build the reference all-in-one image for DORIS_VERSION
 #   make runner                      build the JDK 17 + Maven runner image
-#   make up / make down              start / stop the reference cluster (PROFILE=single|multi)
+#   make up / make down              start / stop the reference cluster (PROFILE=single|split|multi)
 #   make baseline SUITES=...         run suites against the reference (PROFILE), store baselines/<id>.json
 #   make check TARGET=rust SUITES=.. run suites against a target and gate against the baseline
 #   make compare BASE=.. CAND=..     compare two results files
@@ -14,6 +14,9 @@
 #   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 #   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
 #   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
+#   make epic-baseline               Epic 1 reference: 5 serial runs on clusters A and B, derived into epic1/
+#   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
+#   make epic-grade RUN=..           grade an already recorded run again
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -28,11 +31,12 @@ SUITE_PARALLEL ?= 1
 UPSTREAM  ?= $(abspath ../../doris)
 SRC       := $(abspath ../.cache/doris-src)
 COMPOSE   := docker compose -f compose/reference-$(PROFILE).yml
+FE_CONTAINER := $(if $(filter split,$(PROFILE)),doris-oracle-split-fe-1,$(if $(filter multi,$(PROFILE)),doris-oracle-fe-1-1,doris-oracle-doris-1))
 BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,17p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,20p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -55,6 +59,7 @@ runner:
 
 up:
 	$(COMPOSE) up --wait
+	bin/cluster_setup.sh $(FE_CONTAINER)
 	@echo "FE mysql: 127.0.0.1:$${FE_PORT:-9030}  FE http: 127.0.0.1:$${FE_HTTP_PORT:-8030}  (inside network: doris)"
 
 down:
@@ -103,10 +108,27 @@ wire-capture:
 wire-extract:
 	python3 wire/bin/extract.py $(PCAP)
 
+EPIC_SUITES ?= suites/epic1.txt
+EPIC_REF    ?= epic1
+
+epic-baseline: src
+	bin/epic_baseline.sh $(EPIC_SUITES)
+
+epic-check: src
+	@test -f $(EPIC_REF)/marks.json || { echo "no Epic 1 reference in $(EPIC_REF); run: make epic-baseline"; exit 1; }
+	PROXY=1 SERIAL=1 bin/run_suites.sh "$(TARGET)" "$(EPIC_SUITES)"
+	-cat suites/ignore.txt $(EPIC_REF)/flaky.txt > results/$(TARGET)/latest/ignore.txt
+	-python3 bin/compare.py $(EPIC_REF)/baseline.json results/$(TARGET)/latest/results.json --ignore results/$(TARGET)/latest/ignore.txt
+	python3 checker/grade.py results/$(TARGET)/latest $(EPIC_REF) scores --json results/$(TARGET)/latest/grade.json
+
+epic-grade:
+	@test -n "$(RUN)" || { echo "usage: make epic-grade RUN=results/<target>/<run-id>"; exit 1; }
+	python3 checker/grade.py $(RUN) $(EPIC_REF) scores --json $(RUN)/grade.json
+
 triage:
 	python3 bin/triage.py "$(or $(RESULTS),results/reference-$(PROFILE)/latest/results.json)"
 
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract epic-baseline epic-check epic-grade

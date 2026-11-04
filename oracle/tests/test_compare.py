@@ -47,5 +47,16 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(compare.gate(self.report, {"b_regress", "c_missing"}, False), [])
 
 
+class IgnoreFileTests(unittest.TestCase):
+    def test_inline_comments_after_a_name_are_allowed(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            base, cand, ign = (os.path.join(d, n) for n in ("b.json", "c.json", "i.txt"))
+            json.dump({"suites": {"a": s("passed")}}, open(base, "w"))
+            json.dump({"suites": {"a": s("failed")}}, open(cand, "w"))
+            open(ign, "w").write("a  # flaky on reference: failed in run2\n")
+            self.assertEqual(compare.main(["compare", base, cand, "--ignore", ign]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

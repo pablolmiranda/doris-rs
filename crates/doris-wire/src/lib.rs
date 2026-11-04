@@ -4,6 +4,9 @@
 use std::path::{Path, PathBuf};
 
 pub mod canonical;
+pub mod needs;
+pub mod roundtrip;
+pub mod suites;
 
 use serde::Deserialize;
 
