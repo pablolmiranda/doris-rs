@@ -2,9 +2,11 @@
 
 pub mod agent;
 pub mod backend_service;
+pub mod brpc;
 pub mod config;
 pub mod fe_client;
 pub mod heartbeat;
+pub mod http;
 pub mod master;
 pub mod report;
 pub mod status;
