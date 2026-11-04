@@ -68,7 +68,11 @@ def grade(run_dir, reference_dir, scores_dir):
     eligible = [k for k in gate if not blocked[k]]
     return {
         "eligible": {"suites": eligible,
-                     "failing": {g: [k for k in eligible if k not in passing[g]] for g in GATES}},
+                     "failing": {"out": [k for k in eligible if k not in out_passing],
+                                 # a suite the strict gate never compares (unstable or without
+                                 # replies on the reference) cannot fail it
+                                 "strict": [k for k in eligible if k not in strict_passing
+                                            and marks.get(k, {}).get("status") == "stable"]}},
         "out": {"passing": out_passing, "numbers": numbers(out_passing, gate, reaches_be)},
         "strict": {"passing": strict_passing, "differences": differences, "not_compared": not_compared,
                    "unattributed": len(actual.get(replies.UNATTRIBUTED, [])),

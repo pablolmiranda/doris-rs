@@ -322,6 +322,15 @@ class EligibleTests(GradeTestCase):
         self.assertEqual(verdict["eligible"]["failing"]["strict"], [S])
         self.assertIn("eligible: 1; failing out-gate: 1; failing strict: 1", grade.report(verdict))
 
+    def test_suites_the_strict_gate_does_not_compare_do_not_fail_it(self):
+        # T sends no statement of its own on the reference: no replies, never compared
+        ref = self.dir("reference-quiet")
+        derive.derive([write_run(self.dir("ref-quiet"), self.W, [[(150, q("q", [["1"]]))]])], ref)
+        self.write_needs(ref, {}, [])
+        verdict = self.grade(ref, self.W, [[(150, q("q", [["1"]]))]])
+        self.assertEqual(verdict["eligible"]["suites"], [S, self.T])
+        self.assertEqual(verdict["eligible"]["failing"], {"out": [], "strict": []})
+
     def test_suites_without_needs_are_eligible(self):
         self.write_needs(self.ref, {self.T: {"rpc": ["X.y"]}}, [])
         verdict = self.grade(self.ref, self.W, [[(150, q("q", [["1"]]))], [(350, q("r", [["2"]]))]])
