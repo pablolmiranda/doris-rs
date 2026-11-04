@@ -5,14 +5,14 @@ and returns the suite's marks; relax applies an exchange's mark to an expected a
 exchange before they are compared. Marks are never written by hand.
 
 Per exchange (index into the suite's exchanges):
-  skip                the whole reply varied (kind, error code, row count): not compared
   statement_pattern   regex the statement text must fully match (generated labels, names)
   unordered           rows compare as a multiset
   masked_columns      [j]: column j's values are not compared
   masked_column_meta  [[j, field]]: that column-definition field is not compared
   message_pattern     regex the error message must fully match
   masked_fields       scalar reply fields not compared (affected_rows, info, warnings, ...)
-A suite whose runs have different exchange counts or commands is "unstable" and not compared.
+A suite whose runs have different exchange counts or commands, or a reply that varied in a way
+no mark describes (its kind, error code, column or row count), is "unstable" and not compared.
 """
 import difflib
 import json
@@ -57,11 +57,11 @@ def mask_rows(rows, columns):
 
 
 def reply_mark(anchor, others):
-    """Mark for one exchange's reply, or {"skip": True} when it cannot be relaxed precisely."""
+    """Mark for one exchange's reply, or None when no mark describes how it varied."""
     if all(o == anchor for o in others):
         return {}
     if any(not isinstance(o, dict) or o.get("type") != (anchor or {}).get("type") for o in others):
-        return {"skip": True} if anchor != others[0] or len(set(map(json.dumps, others))) > 1 else {}
+        return None
     mark = {}
     kind = anchor.get("type")
     fields = sorted({f for o in others for f in SCALAR_FIELDS if o.get(f) != anchor.get(f)})
@@ -69,14 +69,14 @@ def reply_mark(anchor, others):
         mark["masked_fields"] = fields
     if kind == "err":
         if any((o.get("code"), o.get("sqlstate")) != (anchor.get("code"), anchor.get("sqlstate")) for o in others):
-            return {"skip": True}
+            return None
         if any(o.get("message") != anchor.get("message") for o in others):
             mark["message_pattern"] = pattern(anchor["message"], [o["message"] for o in others])
     elif kind == "resultset":
         cols = anchor.get("columns", [])
         if any(len(o.get("columns", [])) != len(cols) or len(o.get("rows", [])) != len(anchor.get("rows", []))
                for o in others):
-            return {"skip": True}
+            return None
         meta = sorted({(j, k) for o in others for j, c in enumerate(o["columns"]) for k in c if c[k] != cols[j].get(k)})
         if meta:
             mark["masked_column_meta"] = [list(x) for x in meta]
@@ -95,10 +95,10 @@ def reply_mark(anchor, others):
                 if sorted(map(rowkey, o_rows)) == sorted(map(rowkey, a_rows)):
                     mark["unordered"] = True
                 else:
-                    return {"skip": True}
+                    return None
     elif any({k: v for k, v in o.items() if k not in SCALAR_FIELDS} != {k: v for k, v in anchor.items() if k not in SCALAR_FIELDS}
              for o in others):
-        return {"skip": True}
+        return None
     return mark
 
 
@@ -115,17 +115,18 @@ def derive_marks(runs):
         mark = {}
         if any(v["statement"] != ex["statement"] for v in variants):
             mark["statement_pattern"] = pattern(ex["statement"] or "", [v["statement"] or "" for v in variants])
-        mark.update(reply_mark(ex["reply"], [v["reply"] for v in variants]))
+        relaxed = reply_mark(ex["reply"], [v["reply"] for v in variants])
+        if relaxed is None:
+            return {"status": "unstable", "reason": f"exchange {i}: reply varied beyond a mark", "exchanges": {}}
+        mark.update(relaxed)
         if mark:
             exchanges[str(i)] = mark
     return {"status": "stable", "reason": None, "exchanges": exchanges}
 
 
 def relax(mark, want, got):
-    """(want, got) with the mark applied, ready for an exact comparison; None when the exchange
-    is skipped. Pattern fields that match are made equal; ones that do not are left to differ."""
-    if mark.get("skip"):
-        return None
+    """(want, got) with the mark applied, ready for an exact comparison. Pattern fields that
+    match are made equal; ones that do not are left to differ."""
     want, got = json.loads(json.dumps(want)), json.loads(json.dumps(got))
     if "statement_pattern" in mark and re.fullmatch(mark["statement_pattern"], got.get("statement") or "", re.S):
         got["statement"] = want["statement"]

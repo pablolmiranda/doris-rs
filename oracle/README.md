@@ -71,8 +71,10 @@ that exercise the BE, with two gates. Design: `docs/superpowers/specs/2026-11-02
 - **`.out` gate:** each suite still passes, as upstream judges it.
 - **Strict gate:** every MySQL reply is byte-equal to the reference's, except where the reference
   itself varied. A tap between the framework and the FE records each connection. Probe marks,
-  derived from the reference runs, are the only relaxations: a statement whose reply varied is
-  skipped, unordered, masked or matched by pattern. Values that depend on the deployment (host,
+  derived from the reference runs, are the only relaxations: a reply that varied is compared
+  unordered, with columns or fields masked, or by pattern. A suite whose replies varied in a way
+  no mark describes (a different kind of reply, error code, or row count) is unstable and not
+  compared. Values that depend on the deployment (host,
   ports, BE cores and memory) are substituted from `clusters/*.facts.json`; cores and memory are
   read from `SHOW BACKENDS` at run time.
 
@@ -109,14 +111,14 @@ suites; `scores/epic1-supported.json` lists the features doris-rs supports.
   - Arrow Flight: 64 (44)
   - external catalog: 12 (12)
   - vector: 2 (1)
-- **Gate:** 1622 suites; 8 flaky; 1453 reach the BE, and 166 send it no work.
+- **Gate:** 1622 suites; 8 flaky; 1453 reach the BE. Of the other 169, 166 send the BE nothing;
+  3 carry only `reportExecStatus` or `check_storage_format` calls, which do not count as work.
 - **Strict:**
-  - 1531 suites compared (stable);
-  - 8 suites not compared because they are unstable: their exchanges differed in number or
-    shape between reference runs;
+  - 1498 suites compared (stable);
+  - 41 suites not compared because they are unstable: their exchanges differed in number or
+    command, or a reply varied in a way no mark describes;
   - 83 suites not compared because they have no replies: they pass without a statement of their
     own, mostly suites that return early off a cloud or multi-FE deployment (34 in `load_p0`);
-  - 520 statements in 33 suites are skipped whole, because their reply varied.
 - **Traffic corpus:** 48 MB.
   - Every message re-encodes to its bytes in `cargo test`: 494,496 messages, of which 4,592 match
     up to set order.
@@ -124,16 +126,14 @@ suites; `scores/epic1-supported.json` lists the features doris-rs supports.
   - 11 gRPC frames with no method are listed but not kept, from tshark misframing compressed streams.
 - **Self-check:** a sixth run on a fresh cluster A, graded against the reference:
   - `.out` gate: 1622 of 1622;
-  - strict gate: 1519 of 1622, or 1519 of the 1531 compared. The other 12 show a difference.
+  - strict gate: 1489 of 1622, or 1489 of the 1498 compared. The other 9 show a difference.
 
-  The 12 differences are rare nondeterminism in Doris itself, and each held steady in all five
+  The 9 differences are rare nondeterminism in Doris itself, and each held steady in all five
   reference runs:
   - which row overflows first;
   - last-digit float rounding;
   - random-bucket tablet counts;
-  - a task counter in `show backends`;
-  - plan node IDs in `explain`;
-  - row order of `view_dependency`.
+  - a task counter in `show backends`.
 
   A candidate can fail these by chance; treat a strict failure in one of them as noise.
 

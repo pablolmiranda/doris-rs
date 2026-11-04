@@ -49,7 +49,9 @@ bytes, the doris-wire round-trip, live runs):
   their content, not their time. Commands with no reply (`COM_QUIT`, `COM_STMT_CLOSE`,
   `COM_STMT_SEND_LONG_DATA`) and the framework plugin's `show backends` lookup are dropped.
 - **Codec patch 4:** profile info strings are bytes, not strings (the BE writes raw key bytes).
-- **Self-check result:** `.out` 1622/1622, strict 1519/1531 compared; the 12 are rare Doris
+- **No per-statement skip:** a reply that varied beyond any mark makes its suite unstable, as
+  the spec says (41 unstable suites).
+- **Self-check result:** `.out` 1622/1622, strict 1489/1498 compared; the 9 are rare Doris
   nondeterminism, listed in `oracle/README.md`.
 
 ## Global Constraints

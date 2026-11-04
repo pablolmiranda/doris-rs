@@ -215,10 +215,7 @@ def compare(expected, marks, actual):
     """None when actual equals expected under the suite's marks, else the first difference as
     {"index", "statement", "field", "expected", "actual"}."""
     for i, (want, got) in enumerate(zip(expected, actual)):
-        relaxed = probe_marks.relax(marks.get("exchanges", {}).get(str(i), {}), want, got)
-        if relaxed is None:
-            continue
-        want, got = relaxed
+        want, got = probe_marks.relax(marks.get("exchanges", {}).get(str(i), {}), want, got)
         for key in ("command", "statement", "params", "conn"):
             if want.get(key) != got.get(key):
                 return {"index": i, "statement": want.get("statement"), "field": key,

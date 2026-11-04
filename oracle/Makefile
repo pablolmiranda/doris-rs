@@ -14,7 +14,7 @@
 #   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 #   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
 #   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
-#   make epic-baseline               Epic 1 reference: 4 serial runs on clusters A and B, derived into epic1/
+#   make epic-baseline               Epic 1 reference: 5 serial runs on clusters A and B, derived into epic1/
 #   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
 #   make epic-grade RUN=..           grade an already recorded run again
 

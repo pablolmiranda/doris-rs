@@ -161,14 +161,6 @@ class NothingToCompareTests(GradeTestCase):
         self.assertEqual(verdict["strict"]["passing"], [])
         self.assertEqual(verdict["strict"]["not_compared"], {"no_replies": [S]})
 
-    def test_skipped_statements_are_reported_apart(self):
-        def run(first):
-            return [[(150, first), (160, q("select 2", [["2"]]))]]
-        ref = self.reference((self.W, run(q("select 1", [["1"]]))), (self.W, run(e("select 1", 1105, "timeout"))))
-        verdict = self.grade(ref, self.W, run(q("select 1", [["7"]])))
-        self.assertEqual(verdict["strict"]["skipped_statements"], {S: 1})
-
-
 class DeploymentFactTests(GradeTestCase):
     def backends(self, host, port, error_host=None):
         return [[(150, q("show backends", [[host, port, "19050"]])),
@@ -249,12 +241,18 @@ class ProbeMarkTests(GradeTestCase):
         self.assertEqual(verdict["strict"]["not_compared"], {"unstable": [S]})
         self.assertEqual((verdict["strict"]["passing"], verdict["strict"]["differences"]), ([], {}))
 
-    def test_reply_whose_kind_varied_is_skipped_and_the_rest_compared(self):
+    def test_suite_where_a_reply_varied_beyond_a_mark_is_unstable_not_compared(self):
         def run(first):
             return [[(150, first), (160, q("select 2", [["2"]]))]]
         ref = self.reference((self.W, run(q("select 1", [["1"]]))), (self.W, run(e("select 1", 1105, "timeout"))))
-        self.assertEqual(self.grade(ref, self.W, run(q("select 1", [["7"]])))["strict"]["passing"], [S])
-        self.assertIn(S, self.grade(ref, self.W, [[(150, q("select 1", [["1"]])), (160, q("select 2", [["3"]]))]])["strict"]["differences"])
+        self.assertEqual(self.reference_status(ref), "unstable")
+        verdict = self.grade(ref, self.W, run(q("select 1", [["1"]])))
+        self.assertEqual(verdict["strict"]["not_compared"], {"unstable": [S]})
+        self.assertEqual((verdict["strict"]["passing"], verdict["strict"]["differences"]), ([], {}))
+
+    def test_suite_where_a_row_count_varied_is_unstable(self):
+        ref = self.reference((self.W, one("q", [["1"]])), (self.W, one("q", [["1"], ["2"]])))
+        self.assertEqual(self.reference_status(ref), "unstable")
 
 
 class RatchetTests(GradeTestCase):
