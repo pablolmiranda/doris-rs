@@ -14,6 +14,7 @@
 #   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 #   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
 #   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
+#   make be-fixtures                 capture the M2 BE fixtures (crates/doris-be/tests/fixtures/m2)
 #   make epic-baseline               Epic 1 reference: 5 serial runs on clusters A and B, derived into epic1/
 #   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
 #   make epic-grade RUN=..           grade an already recorded run again
@@ -36,7 +37,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,20p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,21p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -108,6 +109,12 @@ wire-capture:
 wire-extract:
 	python3 wire/bin/extract.py $(PCAP)
 
+BE_FIXTURES := ../crates/doris-be/tests/fixtures/m2
+
+be-fixtures:
+	pcap="$$(SCENARIO=wire/scenarios/m2.sh OUT=$(BE_FIXTURES) wire/bin/capture.sh)" && \
+	  python3 wire/bin/be_fixtures.py "$$pcap" $(BE_FIXTURES)
+
 EPIC_SUITES ?= suites/epic1.txt
 EPIC_REF    ?= epic1
 
@@ -131,4 +138,4 @@ triage:
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract epic-baseline epic-check epic-grade
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract be-fixtures epic-baseline epic-check epic-grade
