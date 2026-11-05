@@ -111,6 +111,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "doris-exec"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "doris-fixtures",
+ "doris-proto",
+ "doris-segment",
+ "doris-storage",
+ "doris-thrift",
+ "prost",
+ "tempfile",
+ "thiserror",
+ "thrift",
+]
+
+[[package]]
 name = "doris-fixtures"
 version = "0.1.0"
 dependencies = [
