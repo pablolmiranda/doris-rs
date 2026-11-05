@@ -24,6 +24,7 @@ doris-storage = { path = "crates/doris-storage" }
 doris-be = { path = "crates/doris-be" }
 doris-fixtures = { path = "crates/doris-fixtures" }
 doris-rocks = { path = "crates/doris-rocks" }
+doris-segment = { path = "crates/doris-segment" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"
@@ -34,7 +35,7 @@ serde_json = "1"
 lz4_flex = "0.14"
 snap = "1"
 rustix = { version = "1", features = ["fs"] }
-zstd = "0.14"
+ruzstd = "0.9"
 thrift = "0.25"
 flate2 = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util"] }

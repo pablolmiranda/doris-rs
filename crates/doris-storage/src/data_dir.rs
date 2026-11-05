@@ -41,7 +41,8 @@ pub struct DataDir {
 
 impl DataDir {
     /// Opens a root as `DataDir::init` and `DataDir::load` do. First, reading only: a root with
-    /// legacy headers or with tablet data is refused, untouched. Then the start folders, the
+    /// legacy headers, with keys of features doris-rs lacks, or with data no valid header
+    /// names is refused, untouched. Then the start folders, the
     /// metadata store (M2's temporary header store moved into it), headers whose rowsets lack
     /// their schema saved again, and half-created tablets cleared (a header without its
     /// directory, a directory without its header). Headers the C++ BE would fail to load are
@@ -59,7 +60,9 @@ impl DataDir {
         }
         let (headers, skipped) = contents.headers();
         let data_root = |tablet_id| StorageError::DataRoot { root: root.to_path_buf(), tablet_id: Some(tablet_id), key: None };
-        if let Some(m) = headers.iter().chain(skipped.iter().filter_map(|s| s.meta.as_ref())).find(|m| holds_data(m)) {
+        // a header the C++ BE would skip may still name segments: refuse rather than let the
+        // cleanup below send its directory to trash
+        if let Some(m) = skipped.iter().filter_map(|s| s.meta.as_ref()).find(|m| holds_data(m)) {
             return Err(data_root(m.tablet_id()));
         }
         // a tablet directory with files and no valid header may hold segments (a lost or damaged

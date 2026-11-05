@@ -6,20 +6,22 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use doris_proto::doris::TabletMetaPb;
+use doris_proto::doris::{PUniqueId, RowsetMetaPb, TabletMetaPb};
 use doris_rocks::db::{Batch, CfOptions, Db, DbOptions};
 use prost::Message;
 
 use crate::error::StorageError;
+use crate::rowset::{rowset_meta_key, ROWSET_PREFIX};
 
 /// `META_COLUMN_FAMILY` and its siblings (`olap_define.h:146-148`).
 const CF: &str = "meta";
 const HEADER_PREFIX: &str = "tabletmeta_";
 /// `OLD_HEADER_PREFIX`: a header format the BE no longer reads.
 const LEGACY_PREFIX: &str = "hdr_";
-/// Keys that exist only once a tablet holds data (rowsets of committed transactions, pending
-/// publishes, delete bitmaps, binlogs, partial updates, remote-data GC).
-const DATA_PREFIXES: [&str; 7] = ["rst_", "ppi_", "dlb_", "binlog_", "pui_", "gc_", "tgc_"];
+/// Keys of features doris-rs does not support yet (pending publishes of merge-on-write tables,
+/// delete bitmaps, binlogs, partial updates, remote-data GC): a root holding one is refused.
+/// Rowsets (`rst_`) are read.
+const DATA_PREFIXES: [&str; 6] = ["ppi_", "dlb_", "binlog_", "pui_", "gc_", "tgc_"];
 
 pub fn tablet_meta_key(tablet_id: i64, schema_hash: i32) -> String {
     format!("{HEADER_PREFIX}{tablet_id}_{schema_hash}")
@@ -150,6 +152,42 @@ impl OlapMeta {
     pub fn tablet_metas(&self) -> Result<Vec<TabletMetaPb>, StorageError> {
         let keys = self.db.scan_prefix(CF, HEADER_PREFIX.as_bytes()).into_iter().map(|(k, v)| (k.to_vec(), v.to_vec())).collect();
         Ok(Contents { keys }.headers().0)
+    }
+
+    /// Saves a rowset under `rst_<tablet_uid>_<rowset_id>` (`RowsetMetaManager::save`).
+    pub fn save_rowset_meta(&mut self, tablet_uid: &PUniqueId, meta: &RowsetMetaPb, sync: bool) -> Result<(), StorageError> {
+        let mut b = Batch::default();
+        b.put(CF, rowset_meta_key(tablet_uid, meta.rowset_id_v2()).as_bytes(), &meta.encode_to_vec());
+        Ok(self.db.write(b, sync)?)
+    }
+
+    pub fn remove_rowset_meta(&mut self, tablet_uid: &PUniqueId, rowset_id: &str, sync: bool) -> Result<(), StorageError> {
+        let mut b = Batch::default();
+        b.delete(CF, rowset_meta_key(tablet_uid, rowset_id).as_bytes());
+        Ok(self.db.write(b, sync)?)
+    }
+
+    /// A header saved and a rowset key deleted in one write (a publish folding a rowset into
+    /// its tablet's header).
+    pub fn save_tablet_meta_dropping_rowset(&mut self, meta: &TabletMetaPb, rowset_id: &str, sync: bool) -> Result<(), StorageError> {
+        let mut b = Batch::default();
+        b.put(CF, tablet_meta_key(meta.tablet_id(), meta.schema_hash()).as_bytes(), &meta.encode_to_vec());
+        if let Some(uid) = &meta.tablet_uid {
+            b.delete(CF, rowset_meta_key(uid, rowset_id).as_bytes());
+        }
+        Ok(self.db.write(b, sync)?)
+    }
+
+    /// Every rowset key's value that parses (`RowsetMetaManager::traverse_rowset_metas` skips
+    /// the others).
+    pub fn rowset_metas(&self) -> Result<Vec<RowsetMetaPb>, StorageError> {
+        Ok(self
+            .db
+            .scan_prefix(CF, ROWSET_PREFIX.as_bytes())
+            .into_iter()
+            .take_while(|(k, _)| k.starts_with(ROWSET_PREFIX.as_bytes()))
+            .filter_map(|(_, v)| RowsetMetaPb::decode(v).ok())
+            .collect())
     }
 
     pub fn close(self) -> Result<(), StorageError> {

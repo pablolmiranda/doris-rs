@@ -7,7 +7,7 @@ pub enum StorageError {
     #[error("storage root {root} does not exist")]
     MissingRoot { root: PathBuf },
     #[error(
-        "storage root {root} holds a C++ BE's tablet data ({}); doris-rs can hold tablets with data from milestone 4",
+        "storage root {root} holds data doris-rs cannot keep yet ({}): merge-on-write, binlog or remote-storage keys, or a tablet directory with files and no valid header",
         match (tablet_id, key) { (Some(t), _) => format!("tablet {t}"), (_, Some(k)) => format!("key {k}"), _ => "rowsets".into() }
     )]
     DataRoot { root: PathBuf, tablet_id: Option<i64>, key: Option<String> },
@@ -25,6 +25,9 @@ pub enum StorageError {
     /// `TabletManager::_drop_tablet`'s `Status::Aborted`.
     #[error("replica_id not match({current} vs {requested})")]
     ReplicaMismatch { current: i64, requested: i64 },
+    /// `TabletMeta::add_rs_meta`: another rowset already holds the version.
+    #[error("tablet {tablet_id} already has a rowset at version {version}")]
+    VersionExists { tablet_id: i64, version: i64 },
     #[error("doris-rs does not support {what} yet")]
     Unsupported { what: String },
     #[error("no storage root is configured")]
