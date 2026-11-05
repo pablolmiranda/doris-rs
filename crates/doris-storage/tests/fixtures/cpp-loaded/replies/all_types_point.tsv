@@ -1,0 +1,4 @@
+k1	k2	k3	c_bigint	c_string
+1	10	100	NULL	NULL
+1	10	100	1000	a longer string value
+1	10	100	1001	second row with key (1,10,100)
