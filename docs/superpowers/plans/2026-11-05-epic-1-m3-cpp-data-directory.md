@@ -10,6 +10,40 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-05-epic-1-m3-cpp-data-directory-design.md` (parent: `docs/superpowers/specs/2026-11-02-epic-1-reporting-design.md` §6 row 3; ADR 0003).
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **One address without a container.** Host networking holds on OrbStack: the C++ BE takes the
+  FE's `backend_ip` without a locality check, and its path hash uses the VM address
+  `priority_networks` picks, which doris-rs gets as `host`. No containerized doris-rs. The C++ BE
+  runs with `docker run` from `oracle/swap/lib.sh`, not a compose file (the image's entrypoint
+  registers its own IP; `start_be.sh` does not exec `doris_be`, so it stops through
+  `stop_be.sh --grace`).
+- **What the C++ BE actually does, found in the source and the fixtures:**
+  - A dropped tablet's SHUTDOWN header is deleted soon after the BE's next start: the trash
+    sweeper sweeps before its first wait, then every `min_garbage_sweep_interval`. It never uses
+    the interval it computes from disk usage. doris-rs's sweeper does the same, and the plan's
+    usage-based interval is dropped.
+  - A sweep first expires `snapshot/` and `trash/` entries, then saves each shut-down tablet's
+    `<tablet_id>.hdr` (`FileHeader<TabletMetaPB>`) before moving it to trash. doris-rs does both.
+  - Headers that fail to load (wrong key, zero `tablet_uid`, a running tablet without versions)
+    are skipped, not fatal (`ignore_load_tablet_failure`, default true). doris-rs lists them in
+    `DataDir::skipped_headers`.
+  - Booleans in `be.conf` are exactly `true` or `false`.
+- **Interfaces:**
+  - `read_table` returns `Table { entries, compressed_blocks }`, and `read_properties` is added.
+  - `Db::read_only` lets the refusal checks leave a root untouched.
+  - A doc-hidden `inject_write_failure(on)` stands in for a full disk in tests.
+  - `DataDir::meta()` and `meta_mut()`.
+  - `TabletManager::start_trash_sweep(SweepOptions)` runs the whole sweep; `sweep_shutdown` is the
+    tablet part.
+  - The compare script is `oracle/swap/swap_compare.py`.
+- **The swap check is stronger than planned.** It also requires the FE's tablet report diff after
+  each swap to count every tablet on the backend. It lists tables from FE metadata only
+  (`information_schema` needs a BE that runs queries). It polls for DROP tasks, which the FE sends
+  from report handling, up to 26 s after the DDL in one run.
+
 ## Global Constraints
 
 - No RocksDB or other C or C++ dependency in `doris-rocks`, `doris-storage` or their tests (`snap`, `crc32c`, `lz4_flex` are pure Rust).
