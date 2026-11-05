@@ -9,12 +9,15 @@ pub mod column;
 pub mod corpus;
 pub mod error;
 pub mod footer;
+pub mod key_coder;
 pub mod ordinal;
 pub mod page;
 pub mod rle;
+pub mod sort;
 pub mod short_key;
 pub mod values;
 pub mod varint;
+pub mod writer;
 pub mod zone_map;
 
 /// Protobuf types generated from the pinned Doris `.proto` files, from the `doris-proto` crate.

@@ -154,17 +154,34 @@ pub(crate) fn read_binary_column(
     meta: &ColumnMetaPb,
 ) -> Result<ColumnValues, Error> {
     let unique_id = meta.unique_id.unwrap_or(0);
-    if meta.encoding() != EncodingTypePb::DictEncoding {
-        return Err(Error::UnsupportedEncoding {
-            column: unique_id,
-            encoding: meta.encoding.unwrap_or(0),
-        });
-    }
+    let plain = match meta.encoding() {
+        EncodingTypePb::DictEncoding => false,
+        EncodingTypePb::PlainEncoding => true,
+        _ => {
+            return Err(Error::UnsupportedEncoding {
+                column: unique_id,
+                encoding: meta.encoding.unwrap_or(0),
+            })
+        }
+    };
     let is_char = meta.r#type == Some(field_type::CHAR);
-    let dict = read_dictionary(file, meta)?;
+    let dict = if plain { Vec::new() } else { read_dictionary(file, meta)? };
     let mut out = Vec::new();
     for page in read_data_pages(file, meta)? {
-        let (_, values) = decode_dict_data_page(&page.values, page.non_null(), &dict)?;
+        let values = if plain {
+            // BinaryPlainPageDecoder (V1): the page is the values, offsets and count
+            let v: Vec<Vec<u8>> = decode_plain_v1(&page.values)?.into_iter().map(<[u8]>::to_vec).collect();
+            if v.len() != page.non_null() {
+                return Err(Error::Corrupt(format!(
+                    "plain page holds {} values but the null bitmap implies {}",
+                    v.len(),
+                    page.non_null()
+                )));
+            }
+            v
+        } else {
+            decode_dict_data_page(&page.values, page.non_null(), &dict)?.1
+        };
         let mut values = values.into_iter();
         for &is_null in &page.nulls {
             if is_null {
