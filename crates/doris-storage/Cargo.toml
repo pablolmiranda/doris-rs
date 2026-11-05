@@ -13,6 +13,7 @@ unsafe_code = "forbid"
 doris-proto = { workspace = true }
 doris-thrift = { workspace = true }
 doris-rocks = { workspace = true }
+doris-segment = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 fs4 = { workspace = true }

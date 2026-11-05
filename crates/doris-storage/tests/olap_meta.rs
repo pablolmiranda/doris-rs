@@ -133,8 +133,8 @@ fn moves_the_temporary_store() {
 }
 
 #[test]
-fn refuses_a_root_with_data() {
-    // a header whose rowset has a segment
+fn a_root_with_data_opens() {
+    // a header whose rowset has a segment, and a rowset key: the BE holds loaded tablets
     let tmp = tempfile::tempdir().unwrap();
     cpp_root("cpp-wal", tmp.path());
     let mut h = headers("cpp-wal")[3].clone();
@@ -143,33 +143,31 @@ fn refuses_a_root_with_data() {
         let mut db = meta_db(tmp.path());
         let mut b = Batch::default();
         b.put("meta", format!("tabletmeta_{}_{}", h.tablet_id(), h.schema_hash()).as_bytes(), &h.encode_to_vec());
+        // a value that does not parse is skipped, as RowsetMetaManager::traverse_rowset_metas does
+        b.put("meta", b"rst_0000000000000001-0000000000000002_0200000000000001", b"x");
         db.write(b, true).unwrap();
         db.close().unwrap();
     }
-    let before = listing(tmp.path());
-    match open(tmp.path()) {
-        Err(StorageError::DataRoot { root, tablet_id, .. }) => {
-            assert_eq!(root, tmp.path());
-            assert_eq!(tablet_id, Some(h.tablet_id()));
-        }
-        other => panic!("{other:?}"),
-    }
-    assert_eq!(listing(tmp.path()), before);
+    let mgr = open(tmp.path()).unwrap();
+    assert_eq!(mgr.tablet(h.tablet_id()).unwrap().rs_metas[0].num_segments(), 1);
+}
 
-    // a committed rowset's key
+#[test]
+fn a_root_with_unsupported_keys_is_refused() {
+    // a delete bitmap (merge-on-write) key: doris-rs cannot keep it, so the root stays untouched
     let tmp = tempfile::tempdir().unwrap();
     cpp_root("cpp-wal", tmp.path());
     {
         let mut db = meta_db(tmp.path());
         let mut b = Batch::default();
-        b.put("meta", b"rst_0000000000000001-0000000000000002_0200000000000001", b"x");
+        b.put("meta", b"dlb_0000000000000001-0000000000000002_0200000000000001", b"x");
         db.write(b, true).unwrap();
         db.close().unwrap();
     }
     let before = listing(tmp.path());
     let err = open(tmp.path()).unwrap_err();
-    assert!(matches!(&err, StorageError::DataRoot { key: Some(k), .. } if k.starts_with("rst_")), "{err:?}");
-    assert!(err.to_string().contains("milestone 4"), "{err}");
+    assert!(matches!(&err, StorageError::DataRoot { key: Some(k), .. } if k.starts_with("dlb_")), "{err:?}");
+    assert!(err.to_string().contains("merge-on-write"), "{err}");
     assert_eq!(listing(tmp.path()), before);
 }
 

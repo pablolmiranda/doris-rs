@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::hash::{BuildHasher, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use doris_proto::doris::{PUniqueId, TabletMetaPb, TabletStatePb};
+use doris_proto::doris::{PUniqueId, RowsetMetaPb, RowsetStatePb, TabletMetaPb, TabletStatePb};
 use doris_rocks::db::{CfOptions, Db, DbOptions};
 use doris_thrift::gen::agent_service::{TCreateTabletReq, TDropTabletReq};
 use doris_thrift::gen::backend_service::TTabletStat;
@@ -85,6 +85,16 @@ impl TabletManager {
                 partitions.insert(meta.partition_id(), 0);
                 tablets.insert(meta.tablet_id(), Tablet { meta, dir: i });
             }
+            // DataDir::load: VISIBLE rowsets under rst_ keys join their tablet; one whose tablet or
+            // tablet_uid does not match is ignored
+            for rs in dir.meta().rowset_metas()? {
+                let Some(t) = tablets.get_mut(&rs.tablet_id()).filter(|t| t.dir == i && t.meta.tablet_uid == rs.tablet_uid) else {
+                    continue;
+                };
+                if rs.rowset_state() == RowsetStatePb::Visible && !t.meta.rs_metas.iter().any(|r| r.rowset_id_v2 == rs.rowset_id_v2) {
+                    t.meta.rs_metas.push(rs);
+                }
+            }
         }
         let stream_load = match dirs.first() {
             Some(d) => {
@@ -107,6 +117,43 @@ impl TabletManager {
             next_rowset: 1,
             stat_cache: Vec::new(),
         })
+    }
+
+    /// A running tablet's header as held in memory (rowsets included).
+    pub fn tablet(&self, tablet_id: i64) -> Option<&TabletMetaPb> {
+        self.tablets.get(&tablet_id).map(|t| &t.meta)
+    }
+
+    /// `<root>/data/<shard>/<tablet_id>/<schema_hash>` of a running tablet.
+    pub fn tablet_path(&self, tablet_id: i64) -> Option<std::path::PathBuf> {
+        let t = self.tablets.get(&tablet_id)?;
+        Some(self.dirs[t.dir].tablet_dir(t.meta.shard_id() as u64, tablet_id, t.meta.schema_hash()))
+    }
+
+    /// The running tablets of a partition, by id.
+    pub fn tablets_of_partition(&self, partition_id: i64) -> Vec<i64> {
+        self.tablets.values().filter(|t| t.meta.partition_id() == partition_id).map(|t| t.meta.tablet_id()).collect()
+    }
+
+    /// Adds a VISIBLE rowset to its tablet: the header is saved with it and its `rst_` key, if
+    /// any, deleted in the same write (the C++ BE's tablet-meta checkpoint, done at once).
+    pub fn add_visible_rowset(&mut self, tablet_id: i64, rowset: RowsetMetaPb) -> Result<(), StorageError> {
+        let t = self.tablets.get(&tablet_id).ok_or(StorageError::TabletNotFound { tablet_id })?;
+        let (start, end) = (rowset.start_version(), rowset.end_version());
+        if let Some(other) = t.meta.rs_metas.iter().find(|r| r.start_version() <= end && start <= r.end_version()) {
+            if other.rowset_id_v2 == rowset.rowset_id_v2 {
+                return Ok(());
+            }
+            return Err(StorageError::VersionExists { tablet_id, version: start });
+        }
+        let mut meta = t.meta.clone();
+        let id = rowset.rowset_id_v2().to_string();
+        meta.rs_metas.push(rowset);
+        let sync = self.opts.sync_tablet_meta;
+        let dir = t.dir;
+        self.dirs[dir].meta_mut().save_tablet_meta_dropping_rowset(&meta, &id, sync)?;
+        self.tablets.get_mut(&tablet_id).expect("present").meta = meta;
+        Ok(())
     }
 
     /// Fault injection for tests: while on, every header write on every root fails.
@@ -193,7 +240,7 @@ impl TabletManager {
     }
 
     /// `RowsetId::init(2, ...)`: version 2 in the top byte, a counter, then the backend uid.
-    fn next_rowset_id(&mut self) -> String {
+    pub fn next_rowset_id(&mut self) -> String {
         let hi = (2u64 << 56) | (self.next_rowset & ((1 << 56) - 1));
         self.next_rowset += 1;
         format!("{hi:016x}{:016x}{:016x}", self.backend_uid.0, self.backend_uid.1)
@@ -302,17 +349,32 @@ impl TabletManager {
         self.partitions.clone()
     }
 
-    /// `build_all_report_tablets_info`: one `TTablet` per tablet with its report info
-    /// (`Tablet::build_tablet_report_info`), for tablets holding only their initial rowset.
+    /// `build_all_report_tablets_info`: one `TTablet` per tablet with its report info.
     pub fn tablet_infos(&self) -> BTreeMap<i64, TTablet> {
         self.tablets.iter().map(|(id, t)| (*id, TTablet { tablet_infos: vec![self.report_info(t)] })).collect()
     }
 
+    /// `Tablet::build_tablet_report_info`.
     fn report_info(&self, t: &Tablet) -> TTabletInfo {
-        let version = t.meta.rs_metas.iter().map(|r| r.end_version()).max().unwrap_or(0);
-        let versions = t.meta.rs_metas.len() as i64;
-        let rows: i64 = t.meta.rs_metas.iter().map(|r| r.num_rows()).sum();
-        let size: i64 = t.meta.rs_metas.iter().map(|r| r.total_disk_size()).sum();
+        let rs = &t.meta.rs_metas;
+        // the max version continuous from 0
+        let mut ranges: Vec<(i64, i64)> = rs.iter().map(|r| (r.start_version(), r.end_version())).collect();
+        ranges.sort_unstable();
+        let mut version = -1;
+        for (start, end) in ranges {
+            if start > version + 1 {
+                break;
+            }
+            version = version.max(end);
+        }
+        let versions = rs.len() as i64;
+        // rowsets within [0, the partition's visible version], once UPDATE_VISIBLE_VERSION set one
+        let visible = match self.partitions.get(&t.meta.partition_id()).copied().unwrap_or(0) {
+            0 => versions,
+            v => rs.iter().filter(|r| r.end_version() <= v).count() as i64,
+        };
+        let sum = |f: fn(&RowsetMetaPb) -> i64| rs.iter().map(f).sum::<i64>();
+        let size = sum(|r| r.total_disk_size());
         TTabletInfo {
             storage_medium: Some(storage_medium()),
             total_version_count: Some(versions),
@@ -321,12 +383,12 @@ impl TabletManager {
             is_in_memory: Some(false),
             replica_id: Some(t.meta.replica_id()),
             remote_data_size: Some(0),
-            visible_version_count: Some(versions),
-            local_index_size: Some(0),
-            local_segment_size: Some(size),
+            visible_version_count: Some(visible),
+            local_index_size: Some(sum(|r| r.index_disk_size())),
+            local_segment_size: Some(sum(|r| r.data_disk_size())),
             remote_index_size: Some(0),
             remote_segment_size: Some(0),
-            ..tablet_info(t.meta.tablet_id(), t.meta.schema_hash(), version, rows, size)
+            ..tablet_info(t.meta.tablet_id(), t.meta.schema_hash(), version.max(0), sum(|r| r.num_rows()), size)
         }
     }
 

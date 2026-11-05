@@ -6,6 +6,7 @@ mod error;
 mod file_header;
 mod olap_meta;
 mod path_hash;
+pub mod rowset;
 mod tablet;
 mod tablet_manager;
 
