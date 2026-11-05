@@ -96,6 +96,7 @@ dependencies = [
  "bytes",
  "doris-fixtures",
  "doris-proto",
+ "doris-segment",
  "doris-storage",
  "doris-thrift",
  "http",
@@ -113,7 +114,9 @@ dependencies = [
 name = "doris-fixtures"
 version = "0.1.0"
 dependencies = [
+ "doris-proto",
  "doris-thrift",
+ "prost",
  "serde",
  "serde_json",
  "thrift",

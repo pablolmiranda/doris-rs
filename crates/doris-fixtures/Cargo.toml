@@ -11,6 +11,8 @@ publish = false
 unsafe_code = "forbid"
 
 [dependencies]
+doris-proto = { workspace = true }
+prost = { workspace = true }
 doris-thrift = { workspace = true }
 thrift = { workspace = true }
 serde = { workspace = true }
