@@ -4,6 +4,7 @@ members = [
     "crates/doris-be",
     "crates/doris-fixtures",
     "crates/doris-proto",
+    "crates/doris-rocks",
     "crates/doris-rs",
     "crates/doris-segment",
     "crates/doris-storage",
@@ -22,6 +23,7 @@ doris-thrift = { path = "crates/doris-thrift" }
 doris-storage = { path = "crates/doris-storage" }
 doris-be = { path = "crates/doris-be" }
 doris-fixtures = { path = "crates/doris-fixtures" }
+doris-rocks = { path = "crates/doris-rocks" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"
@@ -30,6 +32,7 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 lz4_flex = "0.14"
+snap = "1"
 zstd = "0.14"
 thrift = "0.25"
 flate2 = "1"

@@ -1,0 +1,19 @@
+[package]
+name = "doris-rocks"
+version = "0.1.0"
+description = "The subset of RocksDB 5.14.2's on-disk format the Doris BE uses, in pure Rust"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+crc32c = { workspace = true }
+snap = { workspace = true }
+lz4_flex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
