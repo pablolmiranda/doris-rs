@@ -8,7 +8,7 @@
 #   5. doris-rs creates a table and drops one the C++ BE created (leaving SHUTDOWN headers);
 #      snapshot S4
 #   6. doris-rs stops, the C++ BE starts on its root; snapshot S5; S4 == S5, and the C++ BE
-#      sweeps doris-rs's SHUTDOWN tablets into trash
+#      sweeps the tablets doris-rs shut down
 # A snapshot is SHOW TABLETS for every table, SHOW BACKENDS, and the incoming BE's log (no DROP or
 # CLONE may arrive to repair anything). The last line is "swap check: PASS" or
 # "swap check: FAIL (<first reason>)".
@@ -163,15 +163,22 @@ dropped m3.by_cpp rs
 snapshot S4 rs
 
 stop_rs
+# doris-rs left the dropped tablets' directories for a later sweep (min_garbage_sweep_interval)
+for id in $(cat "${SWAP_LOGS}/drop-m3.by_cpp.ids"); do
+  ls -d "${SWAP_ROOT}"/data/*/"${id}" >/dev/null 2>&1 || fail "harness: doris-rs already swept tablet ${id}"
+done
 mark_fe_log
 start_cpp
 sleep "${REPORTS}"
 snapshot S5 cpp
 reported cpp
 compare S4 S5
-# the C++ BE's sweep runs at its start: doris-rs's SHUTDOWN tablets go to its trash
+# the C++ BE's sweep runs at its start: it reads doris-rs's SHUTDOWN headers and removes those
+# tablets (deleted directly, as trash_file_expire_time_sec is 0)
 for id in $(cat "${SWAP_LOGS}/drop-m3.by_cpp.ids"); do
-  ls -d "${SWAP_ROOT}"/trash/*/"${id}" >/dev/null 2>&1 || fail "the C++ BE did not sweep tablet ${id}, which doris-rs dropped"
+  incoming_log cpp | grep -q "successfully move tablet to trash. tablet_id=${id}," \
+    || fail "the C++ BE did not sweep tablet ${id}, which doris-rs dropped"
+  ! ls -d "${SWAP_ROOT}"/data/*/"${id}" >/dev/null 2>&1 || fail "tablet ${id} is still in data/ after the C++ sweep"
 done
 say "cpp swept the $(wc -l < "${SWAP_LOGS}/drop-m3.by_cpp.ids" | tr -d ' ') tablets doris-rs had shut down"
 stop_cpp

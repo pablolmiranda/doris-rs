@@ -143,6 +143,8 @@ fn trash_labels(root: &Path) -> Vec<std::path::PathBuf> {
 }
 
 const EXPIRES: SweepOptions = SweepOptions { trash_expire_secs: 0, snapshot_expire_secs: 172_800 };
+/// A positive trash_file_expire_time_sec (4.1.5's default is 0): swept tablets go to trash/.
+const KEEP_TRASH: i64 = 259_200;
 
 #[test]
 fn a_drop_marks_the_tablet_shut_down() {
@@ -167,7 +169,7 @@ fn the_sweep_moves_shut_down_tablets_to_trash() {
     let mut mgr = manager(tmp.path());
     mgr.create_tablet(req).unwrap();
     mgr.drop_tablet(&drop_req(req)).unwrap();
-    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
+    assert_eq!(mgr.sweep_shutdown(KEEP_TRASH).unwrap(), 1);
     assert!(!in_data(tmp.path(), req.tablet_id));
     assert!(mgr.data_dirs()[0].meta().tablet_metas().unwrap().is_empty());
     assert!(mgr.shutdown_tablets().is_empty());
@@ -191,14 +193,14 @@ fn shut_down_tablets_are_swept_after_a_restart() {
     drop(mgr);
     let mut mgr = manager(tmp.path());
     assert!(mgr.tablet_infos().is_empty());
-    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
+    assert_eq!(mgr.sweep_shutdown(0).unwrap(), 1);
     assert!(!in_data(tmp.path(), req.tablet_id));
 }
 
 #[test]
 fn a_sweep_empties_expired_trash_first() {
     // StorageEngine::start_trash_sweep: snapshot/ and trash/ entries past their expiry go, then
-    // shut-down tablets move in (and stay until the next sweep)
+    // shut-down tablets move in (and stay until they expire)
     let fx = Fixtures::m2();
     let req = &fx.create_requests()[0];
     let tmp = tempfile::tempdir().unwrap();
@@ -208,15 +210,33 @@ fn a_sweep_empties_expired_trash_first() {
     }
     mgr.create_tablet(req).unwrap();
     mgr.drop_tablet(&drop_req(req)).unwrap();
-    assert_eq!(mgr.start_trash_sweep(EXPIRES).unwrap(), 1);
+    let keep = SweepOptions { trash_expire_secs: KEEP_TRASH, ..EXPIRES };
+    assert_eq!(mgr.start_trash_sweep(keep).unwrap(), 1);
     let labels: Vec<String> = trash_labels(tmp.path()).iter().map(|p| p.file_name().unwrap().to_str().unwrap().to_string()).collect();
     assert_eq!(labels.len(), 1, "{labels:?}");
     assert_ne!(labels[0], "20240101000000.7");
     assert!(!tmp.path().join("snapshot/20240101000000.1").exists());
     assert!(tmp.path().join("snapshot/29990101000000.2").exists());
-    // the next sweep empties trash
+    // a sweep with no trash expiry empties trash
     assert_eq!(mgr.start_trash_sweep(EXPIRES).unwrap(), 0);
     assert!(trash_labels(tmp.path()).is_empty());
+}
+
+#[test]
+fn with_no_trash_expiry_the_sweep_deletes_the_tablet() {
+    // DataDir::move_to_trash: trash_file_expire_time_sec <= 0 (4.1.5's default) deletes the
+    // tablet directory and its emptied parent directly; nothing goes to trash/
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    mgr.create_tablet(req).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
+    assert_eq!(mgr.start_trash_sweep(EXPIRES).unwrap(), 1);
+    assert!(!in_data(tmp.path(), req.tablet_id));
+    assert!(trash_labels(tmp.path()).is_empty(), "{:?}", trash_labels(tmp.path()));
+    assert!(mgr.data_dirs()[0].meta().tablet_metas().unwrap().is_empty());
+    assert!(mgr.shutdown_tablets().is_empty());
 }
 
 #[test]
@@ -282,14 +302,14 @@ fn a_sweep_that_fails_on_disk_keeps_the_key() {
     let trash = tmp.path().join("trash");
     std::fs::create_dir_all(&trash).unwrap();
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o555)).unwrap();
-    let result = mgr.sweep_shutdown();
+    let result = mgr.sweep_shutdown(KEEP_TRASH);
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
     // _move_tablet_to_trash fails: the tablet stays queued, its key and directory remain
     assert_eq!(result.unwrap(), 0);
     assert_eq!(mgr.shutdown_tablets(), vec![req.tablet_id]);
     assert!(in_data(tmp.path(), req.tablet_id));
     assert_eq!(stored_header(&mgr, req.tablet_id).tablet_state(), TabletStatePb::PbShutdown);
-    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
+    assert_eq!(mgr.sweep_shutdown(KEEP_TRASH).unwrap(), 1);
 }
 
 #[test]

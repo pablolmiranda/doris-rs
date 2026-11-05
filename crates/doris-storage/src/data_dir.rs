@@ -147,8 +147,22 @@ impl DataDir {
         self.root.join("data").join(shard.to_string()).join(tablet_id.to_string()).join(schema_hash.to_string())
     }
 
-    /// `DataDir::move_to_trash`: `trash/<YYYYmmddHHMMSS>.<n>/<tablet_id>/<schema_hash>`, then the
-    /// emptied `<tablet_id>` parent is removed.
+    /// `DataDir::move_to_trash` for a swept tablet: with `trash_file_expire_time_sec` <= 0 (the
+    /// default) the directory is deleted at once, as the C++ BE does; otherwise it goes to trash.
+    pub fn remove_tablet_dir(&self, dir: &Path, trash_expire_secs: i64) -> Result<(), StorageError> {
+        if trash_expire_secs > 0 {
+            return self.move_to_trash(dir);
+        }
+        fs::remove_dir_all(dir).at(dir)?;
+        let parent = dir.parent().unwrap_or(dir);
+        if fs::read_dir(parent).at(parent)?.next().is_none() {
+            fs::remove_dir(parent).at(parent)?;
+        }
+        Ok(())
+    }
+
+    /// `trash/<YYYYmmddHHMMSS>.<n>/<tablet_id>/<schema_hash>`, then the emptied `<tablet_id>`
+    /// parent is removed.
     pub fn move_to_trash(&self, dir: &Path) -> Result<(), StorageError> {
         let schema_hash = dir.file_name().unwrap_or_default();
         let parent = dir.parent().unwrap_or(dir);

@@ -26,7 +26,10 @@ The tasks below are the plan as written. Implementation changed these:
     the interval it computes from disk usage. doris-rs's sweeper does the same, and the plan's
     usage-based interval is dropped.
   - A sweep first expires `snapshot/` and `trash/` entries, then saves each shut-down tablet's
-    `<tablet_id>.hdr` (`FileHeader<TabletMetaPB>`) before moving it to trash. doris-rs does both.
+    `<tablet_id>.hdr` (`FileHeader<TabletMetaPB>`) before moving it to trash. With
+    `trash_file_expire_time_sec` <= 0 (the default) the tablet's directory is deleted at once
+    instead (`DataDir::move_to_trash`). doris-rs does all three; the direct delete was found by
+    the swap check's sixth step after the final review.
   - Headers that fail to load (wrong key, zero `tablet_uid`, a running tablet without versions)
     are skipped, not fatal (`ignore_load_tablet_failure`, default true). doris-rs lists them in
     `DataDir::skipped_headers`.
@@ -42,7 +45,11 @@ The tasks below are the plan as written. Implementation changed these:
 - **The swap check is stronger than planned.** It also requires the FE's tablet report diff after
   each swap to count every tablet on the backend. It lists tables from FE metadata only
   (`information_schema` needs a BE that runs queries). It polls for DROP tasks, which the FE sends
-  from report handling, up to 26 s after the DDL in one run.
+  from report handling, up to 26 s after the DDL in one run. After the final review it reads only
+  FE log lines from after each swap, and a sixth step starts the C++ BE on the SHUTDOWN headers
+  doris-rs left and checks that its log shows each of those tablets swept and their directories gone.
+- **The M2 gates hold.** `m3-full-1` grades the same as `m2-full-2`: 155 eligible suites, none
+  failing either gate (out: 250 of 1622 epic suites pass; strict: 81).
 
 ## Global Constraints
 

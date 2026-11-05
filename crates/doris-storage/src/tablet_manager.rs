@@ -231,16 +231,16 @@ impl TabletManager {
         for d in &self.dirs {
             d.sweep_expired(opts.trash_expire_secs, opts.snapshot_expire_secs)?;
         }
-        self.sweep_shutdown()
+        self.sweep_shutdown(opts.trash_expire_secs)
     }
 
     /// `TabletManager::start_trash_sweep`: each shut-down tablet whose move succeeds leaves the
     /// queue; one that fails stays for the next sweep. Returns how many left.
-    pub fn sweep_shutdown(&mut self) -> Result<usize, StorageError> {
+    pub fn sweep_shutdown(&mut self, trash_expire_secs: i64) -> Result<usize, StorageError> {
         let queue = std::mem::take(&mut self.shutdown);
         let mut swept = 0;
         for t in queue {
-            if self.move_tablet_to_trash(&t).unwrap_or(false) {
+            if self.move_tablet_to_trash(&t, trash_expire_secs).unwrap_or(false) {
                 swept += 1;
             } else {
                 self.shutdown.push(t);
@@ -250,7 +250,7 @@ impl TabletManager {
     }
 
     /// `TabletManager::_move_tablet_to_trash`; `Ok(true)` when the tablet can leave the queue.
-    fn move_tablet_to_trash(&mut self, t: &Tablet) -> Result<bool, StorageError> {
+    fn move_tablet_to_trash(&mut self, t: &Tablet, trash_expire_secs: i64) -> Result<bool, StorageError> {
         let (id, hash) = (t.meta.tablet_id(), t.meta.schema_hash());
         let path = self.dirs[t.dir].tablet_dir(t.meta.shard_id() as u64, id, hash);
         // a tablet created again with the same id: only an old directory elsewhere goes
@@ -258,7 +258,7 @@ impl TabletManager {
             if live.meta.schema_hash() == hash && live.dir == t.dir {
                 let live_path = self.dirs[t.dir].tablet_dir(live.meta.shard_id() as u64, id, hash);
                 if live_path != path && path.is_dir() {
-                    self.dirs[t.dir].move_to_trash(&path)?;
+                    self.dirs[t.dir].remove_tablet_dir(&path, trash_expire_secs)?;
                 }
                 return Ok(true);
             }
@@ -273,7 +273,7 @@ impl TabletManager {
                 if path.is_dir() {
                     let hdr = path.join(format!("{id}.hdr"));
                     std::fs::write(&hdr, encode_file_header(&t.meta)).at(&hdr)?;
-                    dir.move_to_trash(&path)?;
+                    dir.remove_tablet_dir(&path, trash_expire_secs)?;
                 }
                 dir.meta_mut().remove_tablet_meta(id, hash, sync)?;
                 Ok(true)
