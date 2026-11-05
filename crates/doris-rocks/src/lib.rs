@@ -6,6 +6,7 @@
 pub mod coding;
 pub mod error;
 pub mod log;
+pub mod table;
 pub mod version_edit;
 pub mod write_batch;
 
