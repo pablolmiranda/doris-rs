@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use doris_storage::{DataDir, StorageError, TabletManager};
+use doris_storage::{DataDir, StorageError, TabletManager, TabletOptions};
 use doris_thrift::gen::backend_service::BackendServiceSyncProcessor;
 use doris_thrift::gen::heartbeat_service::HeartbeatServiceSyncProcessor;
 use thrift::protocol::{TBinaryInputProtocol, TBinaryOutputProtocol};
@@ -45,7 +45,7 @@ impl Be {
     pub fn start(cfg: BeConfig) -> Result<Be, BeError> {
         let host = cfg.host_or_default();
         let dirs = cfg.storage_root_paths.iter().map(|root| DataDir::open(root, &host)).collect::<Result<Vec<_>, _>>()?;
-        let tablets = Arc::new(Mutex::new(TabletManager::open(dirs)?));
+        let tablets = Arc::new(Mutex::new(TabletManager::open(dirs, TabletOptions { sync_tablet_meta: cfg.sync_tablet_meta })?));
         let master = MasterInfo::new(&host);
         let fe = Arc::new(ThriftFeClient::new(master.clone()));
         let agent = AgentService::new(&cfg, tablets.clone(), master.clone(), fe.clone());

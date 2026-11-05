@@ -160,6 +160,7 @@ version = "0.1.0"
 dependencies = [
  "doris-be",
  "doris-fixtures",
+ "doris-rocks",
  "doris-thrift",
  "tempfile",
  "thrift",
@@ -185,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "doris-fixtures",
  "doris-proto",
+ "doris-rocks",
  "doris-thrift",
  "fs4",
  "prost",

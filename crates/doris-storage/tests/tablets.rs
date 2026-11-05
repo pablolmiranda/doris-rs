@@ -3,16 +3,16 @@ use std::path::Path;
 
 use doris_fixtures::Fixtures;
 use doris_proto::doris::TabletMetaPb;
-use doris_storage::{DataDir, StorageError, TabletManager};
+use doris_storage::{DataDir, StorageError, TabletManager, TabletOptions};
 use doris_thrift::gen::agent_service::TDropTabletReq;
 use doris_thrift::gen::types::TTaskType;
 
 fn manager(root: &Path) -> TabletManager {
-    TabletManager::open(vec![DataDir::open(root, "127.0.0.1").unwrap()]).unwrap()
+    TabletManager::open(vec![DataDir::open(root, "127.0.0.1").unwrap()], TabletOptions::default()).unwrap()
 }
 
 fn stored_header(mgr: &TabletManager, tablet_id: i64) -> TabletMetaPb {
-    mgr.data_dirs()[0].headers().load_all().unwrap().into_iter().find(|m| m.tablet_id() == tablet_id).expect("stored header")
+    mgr.data_dirs()[0].meta().tablet_metas().unwrap().into_iter().find(|m| m.tablet_id() == tablet_id).expect("stored header")
 }
 
 /// Overwrites the fields that depend on time, randomness or creation order with the expected
@@ -108,7 +108,7 @@ fn create_is_idempotent() {
     let second = mgr.create_tablet(req).unwrap();
     assert_eq!(first, second);
     assert_eq!(mgr.tablet_infos().len(), 1);
-    assert_eq!(mgr.data_dirs()[0].headers().load_all().unwrap().len(), 1);
+    assert_eq!(mgr.data_dirs()[0].meta().tablet_metas().unwrap().len(), 1);
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn drop_moves_the_tablet_to_trash() {
     let drop = TDropTabletReq { tablet_id: req.tablet_id, schema_hash: Some(hash), replica_id: req.replica_id, is_drop_table_or_partition: Some(true) };
     mgr.drop_tablet(&drop).unwrap();
     assert!(mgr.tablet_infos().is_empty());
-    assert!(mgr.data_dirs()[0].headers().load_all().unwrap().is_empty());
+    assert!(mgr.data_dirs()[0].meta().tablet_metas().unwrap().is_empty());
     let in_data = (0..1024).any(|s| tmp.path().join(format!("data/{s}/{}", req.tablet_id)).exists());
     assert!(!in_data);
     let label = std::fs::read_dir(tmp.path().join("trash")).unwrap().next().unwrap().unwrap().path();
@@ -214,15 +214,13 @@ fn a_drop_that_fails_on_disk_keeps_the_tablet() {
 
 #[test]
 fn a_create_that_fails_on_disk_leaves_no_directory() {
-    use std::os::unix::fs::PermissionsExt;
     let fx = Fixtures::m2();
     let req = &fx.create_requests()[0];
     let tmp = tempfile::tempdir().unwrap();
     let mut mgr = manager(tmp.path());
-    let meta = tmp.path().join("doris-rs-meta");
-    std::fs::set_permissions(&meta, std::fs::Permissions::from_mode(0o555)).unwrap();
+    mgr.inject_write_failure(true);
     let result = mgr.create_tablet(req);
-    std::fs::set_permissions(&meta, std::fs::Permissions::from_mode(0o755)).unwrap();
+    mgr.inject_write_failure(false);
     assert!(result.is_err());
     assert!(mgr.tablet_infos().is_empty());
     let left = (0..1024).any(|s| tmp.path().join(format!("data/{s}/{}", req.tablet_id)).exists());

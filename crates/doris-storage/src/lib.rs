@@ -3,13 +3,13 @@
 
 mod data_dir;
 mod error;
-mod header_store;
+mod olap_meta;
 mod path_hash;
 mod tablet;
 mod tablet_manager;
 
 pub use data_dir::DataDir;
 pub use error::StorageError;
-pub use header_store::HeaderStore;
+pub use olap_meta::{tablet_meta_key, OlapMeta};
 pub use path_hash::hash_of_path;
-pub use tablet_manager::{tablet_info, TabletManager};
+pub use tablet_manager::{tablet_info, TabletManager, TabletOptions};

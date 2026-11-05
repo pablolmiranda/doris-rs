@@ -2,13 +2,20 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use doris_proto::doris::TabletMetaPb;
-use doris_storage::{hash_of_path, DataDir, StorageError};
+use doris_proto::doris::{PUniqueId, TabletMetaPb};
+use doris_storage::{hash_of_path, DataDir};
 
 const LAYOUT: &str = "../doris-be/tests/fixtures/m2/layout.txt";
 
+/// The smallest header the C++ BE loads: ids, shard, and a nonzero tablet_uid.
 fn meta(tablet_id: i64, schema_hash: i32, shard: i32) -> TabletMetaPb {
-    TabletMetaPb { tablet_id: Some(tablet_id), schema_hash: Some(schema_hash), shard_id: Some(shard), ..Default::default() }
+    TabletMetaPb {
+        tablet_id: Some(tablet_id),
+        schema_hash: Some(schema_hash),
+        shard_id: Some(shard),
+        tablet_uid: Some(PUniqueId { hi: 1, lo: 2 }),
+        ..Default::default()
+    }
 }
 
 fn top_level(root: &Path) -> BTreeSet<String> {
@@ -37,13 +44,11 @@ fn a_new_root_gets_the_cpp_folders() {
     let tmp = tempfile::tempdir().unwrap();
     let _dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
     let mut expected = reference_top_level();
-    expected.remove("meta");
     expected.remove("cluster_id"); // written on the first heartbeat, not at start
-    expected.insert("doris-rs-meta".into());
     let mut got = top_level(tmp.path());
     got.remove("cluster_id");
     assert_eq!(got, expected);
-    assert!(!tmp.path().join("meta").exists());
+    assert!(tmp.path().join("meta/CURRENT").is_file());
     assert!(tmp.path().join("data/0").is_dir() && tmp.path().join("data/1023").is_dir());
 }
 
@@ -54,6 +59,7 @@ fn cluster_id_is_written_once() {
     assert_eq!(dir.cluster_id(), None);
     dir.set_cluster_id(7).unwrap();
     assert_eq!(fs::read_to_string(tmp.path().join("cluster_id")).unwrap(), "7");
+    drop(dir);
     let mut dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
     assert_eq!(dir.cluster_id(), Some(7));
     dir.set_cluster_id(7).unwrap();
@@ -62,44 +68,27 @@ fn cluster_id_is_written_once() {
 }
 
 #[test]
-fn a_root_with_reference_contents_is_refused() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir(tmp.path().join("meta")).unwrap();
-    let err = DataDir::open(tmp.path(), "127.0.0.1").unwrap_err();
-    assert!(matches!(err, StorageError::ForeignRoot { .. }), "{err}");
-    let msg = err.to_string();
-    assert!(msg.contains("C++ BE") && msg.contains(&tmp.path().display().to_string()), "{msg}");
-
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(tmp.path().join("data/0/10001/123")).unwrap();
-    let err = DataDir::open(tmp.path(), "127.0.0.1").unwrap_err();
-    assert!(matches!(err, StorageError::ForeignRoot { .. }), "{err}");
-}
-
-#[test]
 fn headers_survive_reopen() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
+    let mut dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
     fs::create_dir_all(dir.tablet_dir(3, 10001, 55)).unwrap();
-    dir.headers().put(10001, 55, &meta(10001, 55, 3)).unwrap();
+    dir.meta_mut().save_tablet_meta(&meta(10001, 55, 3), false).unwrap();
     drop(dir);
     let dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
-    assert_eq!(dir.headers().load_all().unwrap(), vec![meta(10001, 55, 3)]);
-    assert!(tmp.path().join("doris-rs-meta/tabletmeta_10001_55").is_file());
+    assert_eq!(dir.meta().tablet_metas().unwrap(), vec![meta(10001, 55, 3)]);
 }
 
 #[test]
 fn half_created_tablets_leave_no_trace() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
+    let mut dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
     // a header whose directory was never created
-    dir.headers().put(20001, 1, &meta(20001, 1, 4)).unwrap();
+    dir.meta_mut().save_tablet_meta(&meta(20001, 1, 4), false).unwrap();
     // a directory whose header was never written
     fs::create_dir_all(dir.tablet_dir(5, 20002, 2)).unwrap();
     drop(dir);
     let dir = DataDir::open(tmp.path(), "127.0.0.1").unwrap();
-    assert!(dir.headers().load_all().unwrap().is_empty());
-    assert!(!tmp.path().join("doris-rs-meta/tabletmeta_20001_1").exists());
+    assert!(dir.meta().tablet_metas().unwrap().is_empty());
     assert!(!tmp.path().join("data/5/20002").exists());
     let trash: Vec<_> = fs::read_dir(tmp.path().join("trash")).unwrap().collect();
     assert_eq!(trash.len(), 1);

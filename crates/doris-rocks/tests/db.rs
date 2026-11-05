@@ -199,3 +199,36 @@ fn a_new_database_has_the_cpp_files() {
     assert!(current.starts_with("MANIFEST-") && current.ends_with('\n'), "{current:?}");
     assert_eq!(fs::read_to_string(tmp.path().join("IDENTITY")).unwrap().trim().len(), 36);
 }
+
+fn listing(dir: &Path) -> Vec<(String, u64)> {
+    let mut out: Vec<_> =
+        fs::read_dir(dir).unwrap().flatten().map(|e| (e.file_name().into_string().unwrap(), e.metadata().unwrap().len())).collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn read_only_changes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("cpp-compacted").join("meta"), tmp.path());
+    let before = listing(tmp.path());
+    let cfs = Db::read_only(tmp.path()).unwrap();
+    assert_eq!(listing(tmp.path()), before);
+    assert_eq!(cfs.keys().map(String::as_str).collect::<Vec<_>>(), ["default", "doris", "meta"]);
+    let mut want = lines(fixture("cpp-compacted").join("keys.txt"));
+    want.extend(lines(fixture("cpp-compacted").join("dropped.txt")));
+    let got: BTreeSet<String> = cfs["meta"].keys().map(|k| String::from_utf8(k.clone()).unwrap()).collect();
+    assert_eq!(got, want);
+    assert!(Db::read_only(&tmp.path().join("missing")).unwrap().is_empty());
+}
+
+#[test]
+fn an_injected_write_failure_fails_the_write() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Db::open(tmp.path(), &meta_options()).unwrap();
+    db.inject_write_failure(true);
+    let mut b = Batch::default();
+    b.put("meta", b"k", b"v");
+    assert!(db.write(b, false).is_err());
+    assert_eq!(db.get("meta", b"k"), None);
+}

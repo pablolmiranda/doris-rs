@@ -1,7 +1,8 @@
 //! One storage root, laid out as the C++ BE lays it out (`be/src/storage/olap_define.h`,
 //! `be/src/storage/data_dir.cpp`): `cluster_id`, `data/<shard>/<tablet_id>/<schema_hash>/` with
 //! shards 0..1023 created at start, `trash/<time>.<n>/<tablet_id>/<schema_hash>/` for dropped
-//! tablets, and the other folders the C++ BE creates at start. `meta/` is never written.
+//! tablets, the other folders the C++ BE creates at start, and the tablet metadata store
+//! `meta/` (`OlapMeta`).
 
 use std::collections::HashSet;
 use std::fs;
@@ -9,8 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use doris_proto::doris::TabletMetaPb;
+use prost::Message;
+
 use crate::error::{IoContext, StorageError};
-use crate::header_store::{HeaderStore, HEADER_DIR};
+use crate::olap_meta::{Contents, OlapMeta};
 use crate::path_hash::hash_of_path;
 
 /// `DataDir::MAX_SHARD_NUM`.
@@ -19,6 +23,8 @@ const CLUSTER_ID: &str = "cluster_id";
 /// Folders the C++ BE creates at start (taken from the reference's layout fixture).
 const START_DIRS: [&str; 8] = ["data", "error_log", "spill", "spill_gc", "stream_load", "tmp", "wal", "wal/tmp"];
 const DEPLOY_MODE: &str = "deploy_mode";
+/// M2's temporary header store, moved into `meta/` on first start.
+const OLD_HEADER_DIR: &str = "doris-rs-meta";
 
 /// `delete_counter` in `DataDir::move_to_trash`: process-wide, so two moves in one second differ.
 static TRASH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -29,17 +35,32 @@ pub struct DataDir {
     path_hash: i64,
     cluster_id: Option<i32>,
     next_shard: u64,
-    headers: HeaderStore,
+    meta: OlapMeta,
+    skipped: Vec<String>,
 }
 
 impl DataDir {
-    /// Opens a root: refuses one holding a C++ BE's data, creates the start folders, and clears
-    /// half-created tablets (a header without its directory, a directory without its header).
+    /// Opens a root as `DataDir::init` and `DataDir::load` do. First, reading only: a root with
+    /// legacy headers or with tablet data is refused, untouched. Then the start folders, the
+    /// metadata store (M2's temporary header store moved into it), headers whose rowsets lack
+    /// their schema saved again, and half-created tablets cleared (a header without its
+    /// directory, a directory without its header). Headers the C++ BE would fail to load are
+    /// skipped (`ignore_load_tablet_failure`, default true) and listed in `skipped_headers`.
     pub fn open(root: &Path, host: &str) -> Result<DataDir, StorageError> {
         if !root.is_dir() {
             return Err(StorageError::MissingRoot { root: root.to_path_buf() });
         }
-        refuse_foreign(root)?;
+        let contents = Contents::read(root)?;
+        if contents.has_legacy_header() {
+            return Err(StorageError::LegacyHeader { root: root.to_path_buf() });
+        }
+        if let Some(key) = contents.first_data_key() {
+            return Err(StorageError::DataRoot { root: root.to_path_buf(), tablet_id: None, key: Some(key) });
+        }
+        let (headers, skipped) = contents.headers();
+        if let Some(m) = headers.iter().find(|m| holds_data(m)) {
+            return Err(StorageError::DataRoot { root: root.to_path_buf(), tablet_id: Some(m.tablet_id()), key: None });
+        }
         for d in START_DIRS {
             let p = root.join(d);
             fs::create_dir_all(&p).at(&p)?;
@@ -54,12 +75,27 @@ impl DataDir {
         if !deploy.exists() {
             fs::write(&deploy, "local").at(&deploy)?;
         }
-        let headers = HeaderStore::open(root)?;
+        let mut meta = OlapMeta::open(root)?;
+        move_old_headers(root, &mut meta)?;
+        for mut m in meta.tablet_metas()? {
+            if m.rs_metas.iter().any(|r| r.tablet_schema.is_none()) {
+                let schema = m.schema.clone();
+                for r in m.rs_metas.iter_mut().filter(|r| r.tablet_schema.is_none()) {
+                    r.tablet_schema.clone_from(&schema);
+                }
+                meta.save_tablet_meta(&m, true)?;
+            }
+        }
         let cluster_id = read_cluster_id(&root.join(CLUSTER_ID))?;
         let path_hash = hash_of_path(host, root.to_str().unwrap_or_default()) as i64;
-        let dir = DataDir { root: root.to_path_buf(), path_hash, cluster_id, next_shard: 0, headers };
+        let mut dir = DataDir { root: root.to_path_buf(), path_hash, cluster_id, next_shard: 0, meta, skipped };
         dir.clear_half_created()?;
         Ok(dir)
+    }
+
+    /// Headers the C++ BE would fail to load, with why.
+    pub fn skipped_headers(&self) -> &[String] {
+        &self.skipped
     }
 
     pub fn root(&self) -> &Path {
@@ -134,18 +170,22 @@ impl DataDir {
         size(&self.root.join("trash")) as i64
     }
 
-    pub fn headers(&self) -> &HeaderStore {
-        &self.headers
+    pub fn meta(&self) -> &OlapMeta {
+        &self.meta
     }
 
-    fn clear_half_created(&self) -> Result<(), StorageError> {
+    pub fn meta_mut(&mut self) -> &mut OlapMeta {
+        &mut self.meta
+    }
+
+    fn clear_half_created(&mut self) -> Result<(), StorageError> {
         let mut known = HashSet::new();
-        for meta in self.headers.load_all()? {
+        for meta in self.meta.tablet_metas()? {
             let (id, hash) = (meta.tablet_id(), meta.schema_hash());
             if self.tablet_dir(meta.shard_id() as u64, id, hash).is_dir() {
                 known.insert((id, hash));
             } else {
-                self.headers.remove(id, hash)?;
+                self.meta.remove_tablet_meta(id, hash, true)?;
             }
         }
         for (tablet_id, schema_hash, path) in tablet_dirs(&self.root)? {
@@ -157,15 +197,28 @@ impl DataDir {
     }
 }
 
-fn refuse_foreign(root: &Path) -> Result<(), StorageError> {
-    let foreign = |reason: &str| StorageError::ForeignRoot { root: root.to_path_buf(), reason: reason.to_string() };
-    if root.join("meta").exists() {
-        return Err(foreign("it has a meta/ directory"));
+/// A tablet holds data when one of its rowsets has a segment.
+fn holds_data(m: &TabletMetaPb) -> bool {
+    m.rs_metas.iter().chain(&m.inc_rs_metas).chain(&m.stale_rs_metas).any(|r| r.num_segments() > 0)
+}
+
+/// Moves M2's `doris-rs-meta/tabletmeta_<id>_<hash>` files into `meta/`, then removes the folder.
+fn move_old_headers(root: &Path, meta: &mut OlapMeta) -> Result<(), StorageError> {
+    let old = root.join(OLD_HEADER_DIR);
+    if !old.is_dir() {
+        return Ok(());
     }
-    if !root.join(HEADER_DIR).exists() && !tablet_dirs(root)?.is_empty() {
-        return Err(foreign("it has tablet directories under data/ that doris-rs did not write"));
+    for entry in fs::read_dir(&old).at(&old)? {
+        let path = entry.at(&old)?.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        if !name.starts_with("tabletmeta_") || name.ends_with(".tmp") {
+            continue;
+        }
+        let bytes = fs::read(&path).at(&path)?;
+        let m = TabletMetaPb::decode(bytes.as_slice()).map_err(|source| StorageError::BadHeader { path: path.clone(), source })?;
+        meta.save_tablet_meta(&m, true)?;
     }
-    Ok(())
+    fs::remove_dir_all(&old).at(&old)
 }
 
 /// Every `data/<shard>/<tablet_id>/<schema_hash>` directory.

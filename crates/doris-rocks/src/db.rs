@@ -59,6 +59,9 @@ impl Default for DbOptions {
     }
 }
 
+/// A column family's live keys and values, in key order.
+pub type KeySet = BTreeMap<Vec<u8>, Vec<u8>>;
+
 /// Puts and deletes by column family name, applied atomically.
 #[derive(Debug, Clone, Default)]
 pub struct Batch {
@@ -97,6 +100,7 @@ pub struct Db {
     next_file: u64,
     log: LogWriter,
     log_number: u64,
+    fail_writes: bool,
     _lock: File,
 }
 
@@ -136,6 +140,19 @@ fn sync_dir(dir: &Path) -> Result<(), RocksError> {
 }
 
 impl Db {
+    /// Every column family's live key set, read without writing anything (no lock, no flush):
+    /// for checks that must leave a database untouched. A missing database reads as empty.
+    pub fn read_only(dir: &Path) -> Result<BTreeMap<String, KeySet>, RocksError> {
+        let r = recover(dir)?;
+        Ok(r.states
+            .iter()
+            .map(|(id, s)| {
+                let data = r.data.get(id).map(live).unwrap_or_default();
+                (s.name.clone(), data)
+            })
+            .collect())
+    }
+
     pub fn open(dir: &Path, opts: &DbOptions) -> Result<Db, RocksError> {
         fs::create_dir_all(dir).at(dir)?;
         let lock_path = dir.join("LOCK");
@@ -159,90 +176,7 @@ impl Db {
             fs::write(&identity, id).at(&identity)?;
         }
 
-        let mut states: BTreeMap<u32, CfState> = BTreeMap::new();
-        let mut last_sequence = 0;
-        let mut next_file = 2;
-        let mut max_column_family = 0;
-        let current = dir.join("CURRENT");
-        if current.exists() {
-            let name = fs::read_to_string(&current).at(&current)?;
-            let manifest = dir.join(name.trim_end_matches('\n'));
-            for record in read_records(&manifest)? {
-                let e = VersionEdit::decode(&record).map_err(|what| RocksError::Corrupt { path: manifest.clone(), what })?;
-                if let Some(c) = &e.comparator {
-                    if c != COMPARATOR {
-                        return Err(RocksError::Unsupported { path: manifest.clone(), what: format!("comparator {c}") });
-                    }
-                }
-                if let Some(name) = &e.column_family_add {
-                    states.insert(e.column_family, CfState { name: name.clone(), ..CfState::default() });
-                }
-                if e.column_family == 0 && !states.contains_key(&0) {
-                    states.insert(0, CfState { name: "default".into(), ..CfState::default() });
-                }
-                if e.column_family_drop {
-                    states.remove(&e.column_family);
-                    continue;
-                }
-                if let Some(s) = states.get_mut(&e.column_family) {
-                    if let Some(n) = e.log_number {
-                        s.log_number = n;
-                    }
-                    for (_, number) in &e.deleted_files {
-                        s.files.remove(number);
-                    }
-                    for f in e.new_files {
-                        s.files.insert(f.number, f);
-                    }
-                }
-                last_sequence = e.last_sequence.unwrap_or(last_sequence);
-                next_file = e.next_file_number.unwrap_or(next_file);
-                max_column_family = e.max_column_family.unwrap_or(max_column_family);
-            }
-        }
-
-        let mut recovered: BTreeMap<u32, Recovered> = BTreeMap::new();
-        for (id, s) in &states {
-            let map = recovered.entry(*id).or_default();
-            // oldest first: deeper levels, then level 0 by file number
-            let mut files: Vec<&NewFile> = s.files.values().collect();
-            files.sort_by_key(|f| (std::cmp::Reverse(f.level), f.number));
-            for f in files {
-                let path = dir.join(format!("{:06}.sst", f.number));
-                for (k, v) in read_table(&path)?.entries {
-                    let value = (k.kind == ValueKind::Value).then_some(v);
-                    apply(map, k.user_key, k.sequence, value);
-                }
-            }
-        }
-        if let Some(min_log) = states.values().map(|s| s.log_number).min() {
-            let mut logs: Vec<u64> = fs::read_dir(dir)
-                .at(dir)?
-                .flatten()
-                .filter_map(|e| file_number(e.file_name().to_str()?, "", ".log"))
-                .filter(|n| *n >= min_log)
-                .collect();
-            logs.sort_unstable();
-            for number in logs {
-                let path = dir.join(format!("{number:06}.log"));
-                for record in read_records(&path)? {
-                    let batch = WriteBatch::decode(&record).map_err(|what| RocksError::Corrupt { path: path.clone(), what })?;
-                    for (i, op) in batch.ops.into_iter().enumerate() {
-                        let sequence = batch.sequence + i as u64;
-                        last_sequence = last_sequence.max(sequence);
-                        let Some(s) = states.get(&op.cf()) else { continue };
-                        if number < s.log_number {
-                            continue;
-                        }
-                        let map = recovered.entry(op.cf()).or_default();
-                        match op {
-                            BatchOp::Put { key, value, .. } => apply(map, key, sequence, Some(value)),
-                            BatchOp::Delete { key, .. } => apply(map, key, sequence, None),
-                        }
-                    }
-                }
-            }
-        }
+        let Recovery { states, data: mut recovered, last_sequence, next_file, mut max_column_family } = recover(dir)?;
 
         let mut cfs = Vec::new();
         for o in &opts.column_families {
@@ -255,12 +189,7 @@ impl Db {
                     max_column_family
                 }
             };
-            let data = recovered
-                .remove(&id)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|(k, (_, v))| v.map(|v| (k, v)))
-                .collect();
+            let data = recovered.remove(&id).as_ref().map(live).unwrap_or_default();
             cfs.push(Cf { id, name: o.name.clone(), fixed_prefix_len: o.fixed_prefix_len, data });
         }
         if let Some(s) = states.values().find(|s| !opts.column_families.iter().any(|o| o.name == s.name)) {
@@ -283,6 +212,7 @@ impl Db {
             next_file,
             log: LogWriter::new(placeholder, 0),
             log_number: 0,
+            fail_writes: false,
             _lock: lock,
         };
         db.flush()?;
@@ -307,10 +237,19 @@ impl Db {
             .collect()
     }
 
+    /// Fault injection for tests: while on, every write fails as a full disk would.
+    #[doc(hidden)]
+    pub fn inject_write_failure(&mut self, on: bool) {
+        self.fail_writes = on;
+    }
+
     /// Appends the batch to the log (synced when `sync`), then applies it.
     pub fn write(&mut self, batch: Batch, sync: bool) -> Result<(), RocksError> {
         if batch.is_empty() {
             return Ok(());
+        }
+        if self.fail_writes {
+            return Err(RocksError::Io { path: self.log_path(), source: std::io::Error::other("injected write failure") });
         }
         let mut ops = Vec::with_capacity(batch.ops.len());
         let mut targets = Vec::with_capacity(batch.ops.len());
@@ -493,6 +432,109 @@ impl Db {
         let p = self.log_path();
         self.log.sync().at(&p)
     }
+}
+
+/// What a database's files say: column families, their newest values, and the numbers.
+struct Recovery {
+    states: BTreeMap<u32, CfState>,
+    data: BTreeMap<u32, Recovered>,
+    last_sequence: u64,
+    next_file: u64,
+    max_column_family: u32,
+}
+
+fn live(map: &Recovered) -> BTreeMap<Vec<u8>, Vec<u8>> {
+    map.iter().filter_map(|(k, (_, v))| v.clone().map(|v| (k.clone(), v))).collect()
+}
+
+/// Reads `CURRENT`, the manifest, the live tables and the logs (`DBImpl::Recover`).
+fn recover(dir: &Path) -> Result<Recovery, RocksError> {
+        let mut states: BTreeMap<u32, CfState> = BTreeMap::new();
+        let mut last_sequence = 0;
+        let mut next_file = 2;
+        let mut max_column_family = 0;
+        let current = dir.join("CURRENT");
+        if current.exists() {
+            let name = fs::read_to_string(&current).at(&current)?;
+            let manifest = dir.join(name.trim_end_matches('\n'));
+            for record in read_records(&manifest)? {
+                let e = VersionEdit::decode(&record).map_err(|what| RocksError::Corrupt { path: manifest.clone(), what })?;
+                if let Some(c) = &e.comparator {
+                    if c != COMPARATOR {
+                        return Err(RocksError::Unsupported { path: manifest.clone(), what: format!("comparator {c}") });
+                    }
+                }
+                if let Some(name) = &e.column_family_add {
+                    states.insert(e.column_family, CfState { name: name.clone(), ..CfState::default() });
+                }
+                if e.column_family == 0 && !states.contains_key(&0) {
+                    states.insert(0, CfState { name: "default".into(), ..CfState::default() });
+                }
+                if e.column_family_drop {
+                    states.remove(&e.column_family);
+                    continue;
+                }
+                if let Some(s) = states.get_mut(&e.column_family) {
+                    if let Some(n) = e.log_number {
+                        s.log_number = n;
+                    }
+                    for (_, number) in &e.deleted_files {
+                        s.files.remove(number);
+                    }
+                    for f in e.new_files {
+                        s.files.insert(f.number, f);
+                    }
+                }
+                last_sequence = e.last_sequence.unwrap_or(last_sequence);
+                next_file = e.next_file_number.unwrap_or(next_file);
+                max_column_family = e.max_column_family.unwrap_or(max_column_family);
+            }
+        }
+
+        let mut recovered: BTreeMap<u32, Recovered> = BTreeMap::new();
+        for (id, s) in &states {
+            let map = recovered.entry(*id).or_default();
+            // oldest first: deeper levels, then level 0 by file number
+            let mut files: Vec<&NewFile> = s.files.values().collect();
+            files.sort_by_key(|f| (std::cmp::Reverse(f.level), f.number));
+            for f in files {
+                let path = dir.join(format!("{:06}.sst", f.number));
+                for (k, v) in read_table(&path)?.entries {
+                    let value = (k.kind == ValueKind::Value).then_some(v);
+                    apply(map, k.user_key, k.sequence, value);
+                }
+            }
+        }
+        if let Some(min_log) = states.values().map(|s| s.log_number).min() {
+            let mut logs: Vec<u64> = fs::read_dir(dir)
+                .at(dir)?
+                .flatten()
+                .filter_map(|e| file_number(e.file_name().to_str()?, "", ".log"))
+                .filter(|n| *n >= min_log)
+                .collect();
+            logs.sort_unstable();
+            for number in logs {
+                let path = dir.join(format!("{number:06}.log"));
+                for record in read_records(&path)? {
+                    let batch = WriteBatch::decode(&record).map_err(|what| RocksError::Corrupt { path: path.clone(), what })?;
+                    for (i, op) in batch.ops.into_iter().enumerate() {
+                        let sequence = batch.sequence + i as u64;
+                        last_sequence = last_sequence.max(sequence);
+                        let Some(s) = states.get(&op.cf()) else { continue };
+                        if number < s.log_number {
+                            continue;
+                        }
+                        let map = recovered.entry(op.cf()).or_default();
+                        match op {
+                            BatchOp::Put { key, value, .. } => apply(map, key, sequence, Some(value)),
+                            BatchOp::Delete { key, .. } => apply(map, key, sequence, None),
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Recovery { states, data: recovered, last_sequence, next_file, max_column_family })
 }
 
 /// An unlinked scratch file in `dir`, standing in for the log before the first flush.

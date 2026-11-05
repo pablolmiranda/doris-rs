@@ -7,10 +7,13 @@ pub enum StorageError {
     #[error("storage root {root} does not exist")]
     MissingRoot { root: PathBuf },
     #[error(
-        "storage root {root} holds a C++ BE's data ({reason}); doris-rs cannot use it until it \
-         reads the C++ BE's tablet metadata store (the meta store milestone)"
+        "storage root {root} holds a C++ BE's tablet data ({}); doris-rs can hold tablets with data from milestone 4",
+        match (tablet_id, key) { (Some(t), _) => format!("tablet {t}"), (_, Some(k)) => format!("key {k}"), _ => "rowsets".into() }
     )]
-    ForeignRoot { root: PathBuf, reason: String },
+    DataRoot { root: PathBuf, tablet_id: Option<i64>, key: Option<String> },
+    /// `DataDir::_check_incompatible_old_format_tablet`.
+    #[error("storage root {root} holds tablet headers in the old hdr_ format, which the BE no longer reads")]
+    LegacyHeader { root: PathBuf },
     /// The C++ BE's message for this case (`DataDir::set_cluster_id`).
     #[error("going to set cluster id to already assigned store")]
     ClusterIdAssigned { current: i32, new: i32 },
@@ -28,6 +31,8 @@ pub enum StorageError {
     NoDataDir,
     #[error("{path}: bad tablet header: {source}")]
     BadHeader { path: PathBuf, source: prost::DecodeError },
+    #[error(transparent)]
+    Rocks(#[from] doris_rocks::RocksError),
 }
 
 pub(crate) trait IoContext<T> {

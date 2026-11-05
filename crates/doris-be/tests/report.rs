@@ -9,7 +9,7 @@ use doris_be::master::MasterInfo;
 use doris_be::report::Reporter;
 use doris_be::testing::FakeFe;
 use doris_fixtures::{decode, Fixtures};
-use doris_storage::{DataDir, TabletManager};
+use doris_storage::{DataDir, TabletManager, TabletOptions};
 use doris_thrift::gen::backend_service::{
     BackendServiceGetDictionaryStatusArgs, BackendServiceGetDictionaryStatusResult, BackendServiceGetTabletStatResult,
     BackendServicePublishTopicInfoArgs, BackendServicePublishTopicInfoResult, BackendServiceSubmitTasksArgs,
@@ -29,7 +29,7 @@ struct Be {
 
 fn be() -> Be {
     let tmp = tempfile::tempdir().unwrap();
-    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()]).unwrap()));
+    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap()));
     let master = MasterInfo::new("127.0.0.1");
     let fe = Arc::new(FakeFe::default());
     let cfg = BeConfig::default();

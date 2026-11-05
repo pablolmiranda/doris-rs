@@ -26,6 +26,15 @@ fn defaults_are_the_cpp_be_defaults() {
     assert_eq!(cfg.report_tablet_interval_seconds, 60);
     assert_eq!(cfg.host, None);
     assert_eq!(cfg.priority_networks, None);
+    assert!(!cfg.sync_tablet_meta);
+}
+
+#[test]
+fn sync_tablet_meta_is_read() {
+    // config.cpp: DEFINE_mBool(sync_tablet_meta, "false"); strtox takes exactly true or false
+    assert!(BeConfig::parse("sync_tablet_meta = true").unwrap().sync_tablet_meta);
+    assert!(!BeConfig::parse("sync_tablet_meta = false").unwrap().sync_tablet_meta);
+    assert!(BeConfig::parse("sync_tablet_meta = 1").is_err());
 }
 
 #[test]

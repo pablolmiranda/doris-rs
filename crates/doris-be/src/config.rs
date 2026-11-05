@@ -20,6 +20,8 @@ pub struct BeConfig {
     /// The address this BE registers as (a doris-rs key; the C++ BE derives it from
     /// `priority_networks`). Unset: see [`BeConfig::host_or_default`].
     pub host: Option<String>,
+    /// `sync_tablet_meta`: sync the metadata store's log on every header change.
+    pub sync_tablet_meta: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +49,7 @@ impl Default for BeConfig {
             report_disk_state_interval_seconds: 30,
             report_tablet_interval_seconds: 60,
             host: None,
+            sync_tablet_meta: false,
         }
     }
 }
@@ -80,6 +83,12 @@ impl BeConfig {
                     expected: "a number of seconds",
                 })
             };
+            // strtox(bool): exactly "true" or "false"
+            let boolean = |key: &str| match value {
+                "true" => Ok(true),
+                "false" => Ok(false),
+                _ => Err(ConfigError::BadValue { line, key: key.to_string(), value: value.to_string(), expected: "true or false" }),
+            };
             match key {
                 "be_port" => cfg.be_port = port(key)?,
                 "heartbeat_service_port" => cfg.heartbeat_service_port = port(key)?,
@@ -91,6 +100,7 @@ impl BeConfig {
                 "report_disk_state_interval_seconds" => cfg.report_disk_state_interval_seconds = secs(key)?,
                 "report_tablet_interval_seconds" => cfg.report_tablet_interval_seconds = secs(key)?,
                 "host" => cfg.host = Some(value.to_string()).filter(|v| !v.is_empty()),
+                "sync_tablet_meta" => cfg.sync_tablet_meta = boolean(key)?,
                 _ => {}
             }
         }
