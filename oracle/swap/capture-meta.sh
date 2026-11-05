@@ -7,8 +7,8 @@
 #                  the level-0 compaction trigger, so compacted, compressed table files appear
 # Each fixture also holds headers/<tablet>.json (GET /api/meta/header/<id>?byte_to_base64=true)
 # for every tablet the BE holds, and keys.txt: tabletmeta_<id>_<hash> for each, sorted. Tables
-# dropped in the rounds leave SHUTDOWN headers in meta/ until the BE's trash sweep (at least
-# min_garbage_sweep_interval, 180 s, after start); their keys are in dropped.txt.
+# dropped in a round leave SHUTDOWN headers in meta/ until the BE next starts, which deletes them;
+# so only the last round's drop is still there, and its keys are in dropped.txt.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 OUT="${1:-${REPO}/crates/doris-rocks/tests/fixtures}"
@@ -48,7 +48,7 @@ for round in 1 2 3 4; do
   start_cpp
   sql "CREATE TABLE m3.r${round} (k INT NOT NULL) DUPLICATE KEY(k) DISTRIBUTED BY HASH(k) BUCKETS 3 PROPERTIES ('replication_num' = '1');"
   if [[ ${round} -gt 1 ]]; then
-    sql "SHOW TABLETS FROM m3.r$((round - 1))" | awk -F'\t' '{print "tabletmeta_" $1 "_" $4}' >> "${SWAP_LOGS}/dropped.txt"
+    sql "SHOW TABLETS FROM m3.r$((round - 1))" | awk -F'\t' '{print "tabletmeta_" $1 "_" $4}' > "${SWAP_LOGS}/dropped.txt"
     sql "DROP TABLE m3.r$((round - 1)) FORCE;"
   fi
   sleep 12

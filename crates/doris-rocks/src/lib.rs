@@ -4,6 +4,7 @@
 //! the RocksDB v5.14.2 source (`.cache/rocksdb-5.14.2`).
 
 pub mod coding;
+pub mod db;
 pub mod error;
 pub mod log;
 pub mod table;
