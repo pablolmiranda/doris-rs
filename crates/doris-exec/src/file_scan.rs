@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use doris_thrift::gen::exprs::TExprNodeType;
-use doris_thrift::gen::plan_nodes::{TFileFormatType, TFileScanRangeParams};
+use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType, TFileScanRangeParams};
 
 use crate::expr::{check, eval, Slots};
 use crate::fragment::{tuple_slots, WriteFragment};
@@ -37,8 +37,12 @@ pub fn check_stream(f: &WriteFragment) -> Result<(), ExecError> {
         return Err(ExecError::Unsupported { what: "a WHERE clause on a stream load".into() });
     }
     match params.format_type {
-        Some(TFileFormatType::FORMAT_CSV_PLAIN) | Some(TFileFormatType::FORMAT_JSON) => {}
+        Some(TFileFormatType::FORMAT_CSV_PLAIN) | Some(TFileFormatType::FORMAT_CSV_GZ) | Some(TFileFormatType::FORMAT_JSON) => {}
         other => return Err(ExecError::Unsupported { what: format!("stream load format {other:?}") }),
+    }
+    match params.compress_type {
+        None | Some(TFileCompressType::PLAIN) | Some(TFileCompressType::UNKNOWN) | Some(TFileCompressType::GZ) => {}
+        Some(other) => return Err(ExecError::Unsupported { what: format!("stream load compression {other:?}") }),
     }
     for e in params.expr_of_dest_slot.iter().flat_map(|m| m.values()) {
         check(e)?;
@@ -288,8 +292,23 @@ fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool],
 }
 
 /// The sink's rows of a stream load body, and how many rows the body held.
+/// The body as the reader sees it: gunzipped when the scan is FORMAT_CSV_GZ or compress_type GZ
+/// (`NewPlainTextLineReader` over a `GzipDecompressor`, which reads concatenated members).
+fn decompressed<'a>(params: &TFileScanRangeParams, body: &'a [u8]) -> Result<std::borrow::Cow<'a, [u8]>, ExecError> {
+    let gz = params.format_type == Some(TFileFormatType::FORMAT_CSV_GZ) || params.compress_type == Some(TFileCompressType::GZ);
+    if !gz {
+        return Ok(std::borrow::Cow::Borrowed(body));
+    }
+    let mut out = Vec::new();
+    std::io::Read::read_to_end(&mut flate2::read::MultiGzDecoder::new(body), &mut out)
+        .map_err(|e| ExecError::BadRequest(format!("the body is not gzip: {e}")))?;
+    Ok(std::borrow::Cow::Owned(out))
+}
+
 pub fn stream_rows(f: &WriteFragment, body: &[u8]) -> Result<Vec<Result<Vec<Value>, RowError>>, ExecError> {
     let params = scan_params(f)?;
+    let body = decompressed(&params, body)?;
+    let body = &body[..];
     let src_tuple = params.src_tuple_id.unwrap_or(1);
     let dest_tuple = params.dest_tuple_id.unwrap_or(0);
     let src_slots = tuple_slots(&f.params, src_tuple);

@@ -178,3 +178,99 @@ fn stream_load_records_are_served() {
     assert_eq!(rec.label, s.headers["label"]);
     assert_eq!(rec.status, "Success");
 }
+
+/// A plain CSV load the corpus committed, which runs under M4.
+fn committed_csv() -> StreamLoadSample {
+    stream_loads()
+        .into_iter()
+        .find(|s| {
+            matches!(s.end, LoadEnd::Commit(..))
+                && !noise(s)
+                && s.headers.get("format").is_none_or(|f| f.eq_ignore_ascii_case("csv"))
+                && !s.headers.contains_key("compress_type")
+                && run(s).is_some()
+        })
+        .unwrap()
+}
+
+/// The reply's value for a key, as its JSON text.
+fn reply_value(reply: &str, key: &str) -> String {
+    reply_shape(reply).1.get(key).cloned().unwrap_or_default()
+}
+
+#[test]
+fn a_gzipped_csv_load_loads_what_the_plain_one_does() {
+    // compress_type GZ: the put asks the FE for FORMAT_CSV_GZ, and the body is read through gzip
+    use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType};
+    use std::io::Write;
+    let s = committed_csv();
+    let plain = run(&s).unwrap();
+    let mut gz = s.clone();
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(&s.body).unwrap();
+    gz.body = enc.finish().unwrap();
+    gz.headers.insert("content-length".into(), gz.body.len().to_string());
+    gz.headers.insert("compress_type".into(), "gz".into());
+    // the FE plans the scan as it was asked to
+    let params = gz.put.1.pipeline_params.as_mut().unwrap();
+    for p in params.file_scan_params.iter_mut().flat_map(|m| m.values_mut()) {
+        p.format_type = Some(TFileFormatType::FORMAT_CSV_GZ);
+        p.compress_type = Some(TFileCompressType::GZ);
+    }
+    for r in params.local_params.iter_mut().flatten().flat_map(|l| l.per_node_scan_ranges.values_mut()).flatten() {
+        if let Some(p) = r.scan_range.ext_scan_range.as_mut().and_then(|e| e.file_scan_range.as_mut()).and_then(|f| f.params.as_mut()) {
+            p.format_type = Some(TFileFormatType::FORMAT_CSV_GZ);
+            p.compress_type = Some(TFileCompressType::GZ);
+        }
+    }
+    let r = run(&gz).unwrap();
+    let LoadCall::Put(put) = &r.calls[1] else { panic!("{:?}", r.calls) };
+    assert_eq!((put.format_type, put.compress_type), (TFileFormatType::FORMAT_CSV_GZ, Some(TFileCompressType::GZ)));
+    for key in ["Status", "Message", "NumberTotalRows", "NumberLoadedRows", "NumberFilteredRows"] {
+        assert_eq!(reply_value(&r.reply, key), reply_value(&plain.reply, key), "{key}: {}", r.reply);
+    }
+}
+
+#[test]
+fn a_timeout_that_is_not_a_number_fails_before_the_transaction() {
+    // StreamLoadAction::_on_header: safe_stoi(timeout), before loadTxnBegin
+    let mut s = committed_csv();
+    s.headers.insert("timeout".into(), "abc".into());
+    let r = run(&s).unwrap();
+    assert_eq!(reply_value(&r.reply, "Status"), "\"Fail\"", "{}", r.reply);
+    assert_eq!(reply_value(&r.reply, "Message"), "\"[INVALID_ARGUMENT]Invalid format of 'timeout': 'abc', stoi\"");
+    assert!(r.calls.is_empty(), "{:?}", r.calls);
+}
+
+#[test]
+fn a_negative_skip_lines_fails_and_rolls_back() {
+    // StreamLoadAction::_process_put: safe_stoi(skip_lines), then the sign, after loadTxnBegin
+    let mut s = committed_csv();
+    s.headers.insert("skip_lines".into(), "-3".into());
+    let LoadEnd::Commit(c, _) = &s.end else { unreachable!() };
+    let rollback_req = doris_thrift::gen::frontend_service::TLoadTxnRollbackRequest::new(
+        None, c.user.clone(), c.passwd.clone(), c.db.clone(), c.tbl.clone(), c.user_ip.clone(), c.txn_id, None, None, None, None, None, None, None, None,
+    );
+    let rollback = doris_thrift::gen::frontend_service::TLoadTxnRollbackResult::new(s.begin.1.status.clone());
+    s.end = LoadEnd::Rollback(rollback_req, rollback);
+    let r = run(&s).unwrap();
+    assert_eq!(reply_value(&r.reply, "Message"), "\"[INVALID_ARGUMENT]Invalid 'skip_lines': -3\"", "{}", r.reply);
+    assert!(matches!(r.calls[..], [LoadCall::Begin(_), LoadCall::Rollback(_)]), "{:?}", r.calls);
+}
+
+#[test]
+fn an_fe_error_is_quoted_by_its_code_name() {
+    // Status::create(TStatus): "[<code>]TStatus: <first message>"
+    use doris_thrift::gen::status::TStatusCode;
+    let mut s = committed_csv();
+    s.put.1.status.status_code = TStatusCode::ANALYSIS_ERROR;
+    s.put.1.status.error_msgs = Some(vec!["AnalysisException: no such column".into(), "second".into()]);
+    let LoadEnd::Commit(c, _) = &s.end else { unreachable!() };
+    let rollback_req = doris_thrift::gen::frontend_service::TLoadTxnRollbackRequest::new(
+        None, c.user.clone(), c.passwd.clone(), c.db.clone(), c.tbl.clone(), c.user_ip.clone(), c.txn_id, None, None, None, None, None, None, None, None,
+    );
+    let rollback = doris_thrift::gen::frontend_service::TLoadTxnRollbackResult::new(s.begin.1.status.clone());
+    s.end = LoadEnd::Rollback(rollback_req, rollback);
+    let r = run(&s).unwrap();
+    assert_eq!(reply_value(&r.reply, "Message"), "\"[ANALYSIS_ERROR]TStatus: AnalysisException: no such column\"", "{}", r.reply);
+}

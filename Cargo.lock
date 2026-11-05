@@ -123,6 +123,7 @@ dependencies = [
  "doris-segment",
  "doris-storage",
  "doris-thrift",
+ "flate2",
  "prost",
  "serde_json",
  "tempfile",

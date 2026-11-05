@@ -246,6 +246,10 @@ class Session:
         return bool(self.caps & CLIENT_DEPRECATE_EOF)
 
     def reply_query(self, binary=False):
+        if self.server.peek() is None and self.ci >= len(self.client):
+            # The last command, and the server sent nothing back: it hung until the client
+            # gave up. A reply cut off part way is still a DecodeError.
+            return {"type": "no_reply"}
         parts = [self.reply_part(binary)]
         while parts[-1].get("status", 0) & SERVER_MORE_RESULTS_EXISTS:
             parts.append(self.reply_part(binary))
