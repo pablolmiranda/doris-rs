@@ -69,6 +69,14 @@ The FE reaches doris-rs at the address `host.docker.internal` resolves to inside
 (OrbStack and Docker Desktop on macOS); doris-rs takes that address from the first heartbeat.
 The `rust` deployment facts (`clusters/rust.facts.json`) read the BE's host from `SHOW BACKENDS`.
 
+After Milestone 2 (join the cluster, hold tablets; run `m2-full-2`, 2026-11-05): 155 eligible
+suites, all passing both gates; 250 Epic 1 suites pass the out gate (83 of those that reach the
+BE) and 81 the strict gate (38). Eligible means every need is in `scores/epic1-supported.json`,
+counting `needs_supplement.json`: 63 suites that would otherwise be eligible wait on
+`state:global wait_timeout=31000`, a global variable `test_query_sys_tables` sets partway through
+the run and cannot reach until doris-rs executes queries. A full run takes 80–150 minutes; most
+of the spread is `test_etl_failed` waiting on its broker load.
+
 The older directory-level gate also works against any target:
 
 ```

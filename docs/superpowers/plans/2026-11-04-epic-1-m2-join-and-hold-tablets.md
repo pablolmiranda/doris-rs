@@ -10,6 +10,33 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-04-epic-1-m2-join-and-hold-tablets-design.md` (parent: `docs/superpowers/specs/2026-11-02-epic-1-reporting-design.md`).
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **Review Focus 1 and 3 were wrong about the C++ BE.** It refuses `submit_tasks` before the first
+  heartbeat (CANCELLED "Have not get FE Master heartbeat yet") and answers `DROP` of an unknown
+  tablet with NOT_FOUND "could not find tablet <id>"; doris-rs does the same.
+- **Reports.** Four, not three: an index-policy report every 10 s joins task, disk and tablet.
+  None is sent immediately after a tablet change; all are sent on their intervals and at once
+  when a heartbeat changes the master or epoch. `report_version` is `time(nullptr) * 100000` plus
+  one per change, as in the C++ BE.
+- **Crates.** A dev-only `doris-fixtures` crate reads the captured fixtures for the storage and BE
+  tests. `http::serve` takes only a listener.
+- **Fixtures.** Headers cover the 7 scenario tablets; the FE's own tablets hold audit-log data
+  and are left out of header, tablet-report and tablet-stat comparisons.
+- **Eligibility.** `grade.py` counts eligible suites with derive's needs rule (a suite needs its
+  directory's load suites), plus `oracle/needs_supplement.json`: declared needs the traffic
+  corpus cannot show, each with its evidence. Three kinds so far: a load suite outside the gate,
+  a stream load the corpus lost, and `state:global wait_timeout=31000` (63 suites whose JDBC
+  connect query reads a global variable that `test_query_sys_tables` sets partway through the run
+  and cannot reach on doris-rs yet). Eligible: 155, not ~226.
+- **FE-only cluster.** A separate FE does not get `force_olap_table_replication_num = 1` and
+  `disable_balance = true` from the entrypoint; `fe-only.yml` sets them, as `reference-split.yml`
+  does.
+- **Result.** Run `m2-full-2` (2026-11-05): 155 eligible suites pass both gates; the ratchets
+  hold 250 out-gate and 81 strict-gate suites.
+
 ## Global Constraints
 
 - No C++ or RocksDB dependency, in the binary or in tests. Nothing is ever written to `<root>/meta`.
