@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # The swap check (make swap-check): doris-rs and the reference C++ BE take turns as the one
 # backend of the FE-only cluster, on one storage root, and the FE must notice nothing.
-#   1. doris-rs creates the tables (the M2 scenario's shapes); snapshot S0
+#   1. doris-rs creates the tables (the M2 scenario's shapes) and inserts rows; snapshot S0
 #   2. doris-rs stops, the C++ BE starts on its root; snapshot S1; S0 == S1
-#   3. the C++ BE creates a table and drops one doris-rs created; snapshot S2
+#   3. the C++ BE creates a table, inserts rows, and drops one doris-rs created; snapshot S2
 #   4. the C++ BE stops, doris-rs starts on its root; snapshot S3; S2 == S3
-#   5. doris-rs creates a table and drops one the C++ BE created (leaving SHUTDOWN headers);
+#   5. doris-rs creates a table, inserts rows, and drops one the C++ BE created (leaving SHUTDOWN headers);
 #      snapshot S4
 #   6. doris-rs stops, the C++ BE starts on its root; snapshot S5; S4 == S5, and the C++ BE
 #      sweeps the tablets doris-rs shut down
-# A snapshot is SHOW TABLETS for every table, SHOW BACKENDS, and the incoming BE's log (no DROP or
+# A snapshot is SHOW TABLETS for every table (versions and row counts included), SHOW BACKENDS, and the incoming BE's log (no DROP or
 # CLONE may arrive to repair anything). The last line is "swap check: PASS" or
 # "swap check: FAIL (<first reason>)".
 set -euo pipefail
@@ -24,11 +24,6 @@ cleanup() {
   docker rm -f "${CPP}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-
-# The FE log's length, so checks read only what follows a swap.
-fe_mark=0
-mark_fe_log() { fe_mark="$(docker exec "${FE}" sh -c 'wc -l < /opt/apache-doris/fe/log/fe.log' | tr -d ' ')"; }
-fe_log_since_mark() { docker exec "${FE}" tail -n "+$((fe_mark + 1))" /opt/apache-doris/fe/log/fe.log; }
 
 sql_tsv() { docker exec "${FE}" mysql -uroot -h127.0.0.1 -P9030 --batch -e "$1"; }
 
@@ -49,23 +44,34 @@ incoming_log() {
   esac
 }
 
+# SHOW TABLETS' stat columns (LocalDataSize, RowCount, ...) come from the FE's get_tablet_stat
+# poll (tablet_stat_update_interval_second, 60 s), so they lag a load or a swap: a snapshot waits
+# one poll, then until each tablet's VersionCount equals its Version (no compaction here: one
+# rowset per version from [0-1]).
+STAT_POLL=65
+wait_stats() {
+  local i t stale
+  sleep "${STAT_POLL}"
+  for i in $(seq 1 90); do
+    stale=0
+    for t in $(tables); do
+      stale=$((stale + $(sql "SHOW TABLETS FROM ${t}" | awk -F'\t' '$5 != $16 {n++} END {print n + 0}')))
+    done
+    [[ "${stale}" == 0 ]] && return 0
+    sleep 2
+  done
+  fail "harness: tablet stats did not catch up with the versions"
+}
+
 snapshot() {
   local dir="${SNAP}/$1" incoming="$2" t
+  wait_stats
   rm -rf "${dir}" && mkdir -p "${dir}"
   for t in $(tables); do
     sql_tsv "SHOW TABLETS FROM ${t}" > "${dir}/tablets-${t}.tsv"
   done
   sql_tsv "SHOW BACKENDS" > "${dir}/backends.tsv"
   incoming_log "${incoming}" > "${dir}/tasks.log"
-}
-
-# No tablet may hold data: doris-rs refuses such a root until milestone 4.
-no_data() {
-  local t rows
-  for t in $(tables); do
-    rows="$(sql "SHOW TABLETS FROM ${t}" | awk -F'\t' '{s += $11} END {print s + 0}')"
-    [[ "${rows}" == 0 ]] || fail "harness: ${t} holds ${rows} rows before a swap"
-  done
 }
 
 compare() {
@@ -78,18 +84,6 @@ compare() {
 }
 
 ids() { sql "SHOW TABLETS FROM $1" | cut -f1 | sort -n; }
-
-# The incoming BE loaded every tablet: the FE's last tablet report diff (ReportHandler,
-# LocalTabletInvertedIndex.logTabletReportSummary) counts as many tablets on the backend as in
-# its metadata, and deleted none from its metadata.
-reported() {
-  local line fe be
-  line="$(fe_log_since_mark | grep "finished to do tablet diff" | tail -1)"
-  fe="$(sed -nE 's/.*fe tablet num: ([0-9]+).*/\1/p' <<< "${line}")"
-  be="$(sed -nE 's/.*backend tablet num: ([0-9]+).*/\1/p' <<< "${line}")"
-  [[ -n "${fe}" && "${fe}" == "${be}" && "${line}" == *"metaDel: 0"* ]] || fail "$1: tablet report diff: ${line##*]}"
-  say "$1 reports all ${be} tablets"
-}
 
 # After a DROP TABLE, the incoming BE must receive DROP for each of that table's tablets. The FE
 # sends them from its tablet report handling, so they can take a few report rounds.
@@ -128,8 +122,9 @@ CREATE TABLE m3.ranged (dt DATE NOT NULL, k INT) DUPLICATE KEY(dt)
   DISTRIBUTED BY HASH(k) BUCKETS 1 PROPERTIES ('replication_num' = '1');
 ALTER TABLE m3.ranged ADD PARTITION p3 VALUES LESS THAN ('2026-01-01');
 "
+sql "INSERT INTO m3.dup VALUES (1, 10, 'a', '2024-01-01 00:00:00.123', 1.50), (2, NULL, 'b', NULL, -2.25);
+INSERT INTO m3.ranged VALUES ('2023-05-01', 1), ('2025-05-01', 2);"
 sleep "${REPORTS}"
-no_data
 snapshot S0 rs
 
 stop_rs
@@ -141,10 +136,10 @@ reported cpp
 compare S0 S1
 
 make_table m3.by_cpp
+sql "INSERT INTO m3.by_cpp VALUES (7), (8), (9);"
 drop_table m3.dup
 dropped m3.dup cpp
 [[ -n "$(ids m3.by_cpp)" ]] || fail "m3.by_cpp has no tablets"
-no_data
 snapshot S2 cpp
 
 stop_cpp
@@ -157,6 +152,7 @@ reported rs
 compare S2 S3
 
 make_table m3.by_rs
+sql "INSERT INTO m3.by_rs VALUES (4), (5), (6);"
 drop_table m3.by_cpp
 dropped m3.by_cpp rs
 [[ -n "$(ids m3.by_rs)" ]] || fail "m3.by_rs has no tablets"

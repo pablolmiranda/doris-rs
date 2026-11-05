@@ -241,3 +241,26 @@ fn short_keys_match_the_reference() {
     }
     assert!(checked >= 10, "{checked}");
 }
+
+#[test]
+fn strings_are_dict_encoded_in_plain_mode() {
+    // the C++ BE reads a string column of a query predicate into a dictionary column, which only
+    // its dictionary page decoder can fill (BinaryDictPageDecoder converts it for plain-mode
+    // pages; a PLAIN column fails with "insert_many_continuous_binary_data is not supported"):
+    // strings are DICT_ENCODING, every data page in plain mode, as the C++ BE's own fallback pages
+    use doris_segment::pb::segment_v2::EncodingTypePb;
+    let schema = every_type_schema();
+    let mut rows: Vec<Vec<Datum>> = (0..50).map(every_type_row).collect();
+    sort_rows(&schema, &mut rows);
+    let file = SegmentFile::from_bytes(write_segment(&schema, &rows).unwrap().bytes).unwrap();
+    for m in &file.footer.columns {
+        let is_string = [1, 14, 15].contains(&m.unique_id.unwrap());
+        let want = if is_string { EncodingTypePb::DictEncoding } else { EncodingTypePb::PlainEncoding };
+        assert_eq!(m.encoding(), want, "column {}", m.unique_id.unwrap());
+        assert_eq!(m.dict_page.is_some(), is_string, "column {}", m.unique_id.unwrap());
+    }
+    for (c, spec) in schema.columns.iter().enumerate() {
+        let got = datums(&read_column(&file, spec.unique_id).unwrap());
+        assert_eq!(got, rows.iter().map(|r| stored(spec, &r[c])).collect::<Vec<_>>(), "column {c}");
+    }
+}

@@ -1,6 +1,9 @@
-//! Writes V2 segment files the 4.1.5 C++ BE reads. Every column is PLAIN (`PlainPageBuilder`
-//! for fixed-width types, `BinaryPlainPageBuilder` V1 for strings) with an RLE null map on
-//! pages that hold a NULL, uncompressed. Each column gets an ordinal index (the data page itself
+//! Writes V2 segment files the 4.1.5 C++ BE reads. Fixed-width columns are PLAIN
+//! (`PlainPageBuilder`); strings are DICT_ENCODING with every data page in plain mode (the
+//! `BinaryPlainPageBuilder` V1 pages the C++ writer falls back to once a dictionary fills) and
+//! an empty dictionary page, because the C++ BE reads a predicate's string column into a
+//! dictionary column that only its dictionary page decoder can fill. Pages that hold a NULL get
+//! an RLE null map; nothing is compressed. Each column gets an ordinal index (the data page itself
 //! when there is one, else one leaf index page) and a zone map index whose page and segment zone
 //! maps are `pass_all` (always correct: the reader then scans instead of pruning). Then the short
 //! key page and the footer. Layout, as the C++ writer orders it: data pages column by column,
@@ -14,7 +17,7 @@ use crate::key_coder::encode_key;
 use crate::pb::doris::ColumnPb;
 use crate::pb::segment_v2::{
     index_page_footer_pb, BTreeMetaPb, ColumnIndexMetaPb, ColumnIndexTypePb, ColumnMetaPb,
-    CompressionTypePb, DataPageFooterPb, EncodingTypePb, IndexPageFooterPb, IndexedColumnMetaPb, OrdinalIndexPb,
+    CompressionTypePb, DataPageFooterPb, DictPageFooterPb, EncodingTypePb, IndexPageFooterPb, IndexedColumnMetaPb, OrdinalIndexPb,
     PageFooterPb, PagePointerPb, PageTypePb, SegmentFooterPb, ShortKeyFooterPb, ZoneMapIndexPb, ZoneMapPb,
 };
 use crate::values::{pack_datetimev2, pack_datev2, ColumnValues};
@@ -204,18 +207,21 @@ fn value_bytes(spec: &ColumnSpec, d: &Datum) -> Result<Vec<u8>, Error> {
 
 struct ColumnPages {
     pages: Vec<PagePointerPb>,
+    /// The (empty) dictionary page of a string column.
+    dict: Option<PagePointerPb>,
     /// (first ordinal, has_null, has_not_null) per page
     stats: Vec<(u64, bool, bool)>,
 }
 
 fn write_column(out: &mut Vec<u8>, spec: &ColumnSpec, values: &[&Datum]) -> Result<ColumnPages, Error> {
     let binary = matches!(spec.field_type, CHAR | VARCHAR | STRING);
-    let mut pages = ColumnPages { pages: Vec::new(), stats: Vec::new() };
+    let mut pages = ColumnPages { pages: Vec::new(), dict: None, stats: Vec::new() };
     let mut start = 0usize;
     while start < values.len() {
         let mut nulls = Vec::new();
         let mut encoded: Vec<Vec<u8>> = Vec::new();
-        let mut size = 4usize;
+        // the plain page's count, and a string page's dictionary mode header
+        let mut size = if binary { 8usize } else { 4 };
         let mut end = start;
         while end < values.len() && size < DATA_PAGE_SIZE {
             let d = values[end];
@@ -231,10 +237,13 @@ fn write_column(out: &mut Vec<u8>, spec: &ColumnSpec, values: &[&Datum]) -> Resu
         }
         let mut body = Vec::with_capacity(size);
         if binary {
-            // BinaryPlainPageBuilder (V1): values | u32 offset each | u32 count
+            // BinaryDictPageBuilder in plain mode: the mode, then a BinaryPlainPageBuilder (V1)
+            // page: values | u32 offset each | u32 count
+            body.extend_from_slice(&(EncodingTypePb::PlainEncoding as u32).to_le_bytes());
+            let base = body.len();
             let mut offsets = Vec::with_capacity(encoded.len());
             for b in &encoded {
-                offsets.push(body.len() as u32);
+                offsets.push((body.len() - base) as u32);
                 body.extend_from_slice(b);
             }
             for o in offsets {
@@ -265,6 +274,16 @@ fn write_column(out: &mut Vec<u8>, spec: &ColumnSpec, values: &[&Datum]) -> Resu
         pages.pages.push(write_page(out, &body, &footer));
         pages.stats.push((start as u64, has_null, !encoded.is_empty()));
         start = end;
+    }
+    if binary {
+        // the dictionary page: a BinaryPlainPage of no words
+        let footer = PageFooterPb {
+            r#type: Some(PageTypePb::DictionaryPage as i32),
+            uncompressed_size: Some(4),
+            dict_page_footer: Some(DictPageFooterPb { encoding: Some(EncodingTypePb::PlainEncoding as i32) }),
+            ..Default::default()
+        };
+        pages.dict = Some(write_page(out, &0u32.to_le_bytes(), &footer));
     }
     Ok(pages)
 }
@@ -423,7 +442,8 @@ pub fn write_segment(schema: &SegmentSchema, rows: &[Vec<Datum>]) -> Result<Writ
             unique_id: Some(spec.unique_id),
             r#type: Some(spec.field_type),
             length: Some(spec.length as i32),
-            encoding: Some(EncodingTypePb::PlainEncoding as i32),
+            encoding: Some(if written[i].dict.is_some() { EncodingTypePb::DictEncoding } else { EncodingTypePb::PlainEncoding } as i32),
+            dict_page: written[i].dict,
             compression: Some(CompressionTypePb::NoCompression as i32),
             is_nullable: Some(spec.nullable),
             indexes: vec![
