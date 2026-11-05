@@ -45,7 +45,12 @@ fn first_heartbeat(be: &Be, fx: &Fixtures) {
 fn mask(got: &mut TFinishTaskRequest, expected: &TFinishTaskRequest) {
     // BackendOptions::get_localhost(): deployment fact be-host
     got.backend.host = expected.backend.host.clone();
-    // s_report_version: unix time * 10000 at start, plus changes
+    // s_report_version: time(nullptr) * 100000 at start, plus changes; check the scale, then
+    // take the reference's value
+    if let Some(v) = got.report_version {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        assert!((v / 100_000 - now).abs() <= 60, "report_version {v} is not time(nullptr) * 100000 scale");
+    }
     got.report_version = expected.report_version;
     // DataDir::path_hash(): hash_of_path(host, storage root), deployment fact
     for (g, e) in got.finish_tablet_infos.iter_mut().flatten().zip(expected.finish_tablet_infos.iter().flatten()) {

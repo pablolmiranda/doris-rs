@@ -23,6 +23,9 @@ const BE_NODE_ROLE: &str = "mix";
 pub struct HeartbeatHandler {
     master: MasterInfo,
     tablets: Arc<Mutex<TabletManager>>,
+    /// `_cluster_info->cluster_id`: read from the roots at start (`init_cluster_id`), so a
+    /// heartbeat takes the storage lock only to assign it.
+    cluster_id: Mutex<Option<i32>>,
     be_port: i32,
     http_port: i32,
     brpc_port: i32,
@@ -36,9 +39,11 @@ fn now_ms() -> i64 {
 
 impl HeartbeatHandler {
     pub fn new(cfg: &BeConfig, master: MasterInfo, tablets: Arc<Mutex<TabletManager>>) -> HeartbeatHandler {
+        let cluster_id = tablets.lock().unwrap_or_else(|e| e.into_inner()).cluster_id();
         HeartbeatHandler {
             master,
             tablets,
+            cluster_id: Mutex::new(cluster_id),
             be_port: i32::from(cfg.be_port),
             http_port: i32::from(cfg.webserver_port),
             brpc_port: i32::from(cfg.brpc_port),
@@ -51,9 +56,13 @@ impl HeartbeatHandler {
     /// but keeps what earlier ones set.
     fn apply(&self, info: &TMasterInfo) -> Result<(), String> {
         {
-            let mut tablets = self.tablets.lock().unwrap_or_else(|e| e.into_inner());
-            match tablets.cluster_id() {
-                None => tablets.set_cluster_id(info.cluster_id).map_err(|e| e.to_string())?,
+            let mut cached = self.cluster_id.lock().unwrap_or_else(|e| e.into_inner());
+            match *cached {
+                None => {
+                    let mut tablets = self.tablets.lock().unwrap_or_else(|e| e.into_inner());
+                    tablets.set_cluster_id(info.cluster_id).map_err(|e| e.to_string())?;
+                    *cached = Some(info.cluster_id);
+                }
                 Some(id) if id != info.cluster_id => {
                     let recorded = self.master.with(|s| print_frontend_infos(&s.frontends));
                     return Err(format!(

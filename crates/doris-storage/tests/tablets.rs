@@ -149,11 +149,12 @@ fn tablets_survive_restart() {
         mgr.create_tablet(&req).unwrap();
     }
     let before = mgr.tablet_infos();
-    let version = mgr.report_version();
     drop(mgr);
     let mgr = manager(tmp.path());
     assert_eq!(mgr.tablet_infos(), before);
-    assert!(mgr.report_version() > version);
+    // a restarted BE starts again from time(nullptr) * 100000, as the C++ BE does
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    assert!((mgr.report_version() / 100_000 - now).abs() <= 2);
 }
 
 #[test]
@@ -163,9 +164,14 @@ fn report_version_counts_changes() {
     let mut mgr = manager(tmp.path());
     let start = mgr.report_version();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-    assert!((start / 10_000 - now).abs() <= 2, "report_version starts at unix seconds * 10000");
+    // s_report_version = time(nullptr) * 100000 (task_worker_pool.cpp:116); the reference's
+    // finishTask calls carry 1793832162_00001 and up
+    assert!((start / 100_000 - now).abs() <= 2, "report_version starts at unix seconds * 100000");
     mgr.create_tablet(&fx.create_requests()[0]).unwrap();
     assert_eq!(mgr.report_version(), start + 1);
+    // create_tablet_callback increases it on every OK, a retried CREATE included
+    mgr.create_tablet(&fx.create_requests()[0]).unwrap();
+    assert_eq!(mgr.report_version(), start + 2);
 }
 
 #[test]
@@ -183,4 +189,43 @@ fn visible_versions_follow_the_partitions() {
     mgr.update_visible_version(999, 5);
     assert_eq!(mgr.partitions_version().get(&pid), Some(&3));
     assert_eq!(mgr.partitions_version().get(&999), None);
+}
+
+#[test]
+fn a_drop_that_fails_on_disk_keeps_the_tablet() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    mgr.create_tablet(req).unwrap();
+    let trash = tmp.path().join("trash");
+    std::fs::create_dir_all(&trash).unwrap();
+    std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let drop = TDropTabletReq { tablet_id: req.tablet_id, schema_hash: None, replica_id: None, is_drop_table_or_partition: None };
+    let result = mgr.drop_tablet(&drop);
+    std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err());
+    // memory and disk still agree: the tablet is reported, and a retry can drop it
+    assert!(mgr.tablet_infos().contains_key(&req.tablet_id));
+    mgr.drop_tablet(&drop).unwrap();
+    assert!(mgr.tablet_infos().is_empty());
+}
+
+#[test]
+fn a_create_that_fails_on_disk_leaves_no_directory() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    let meta = tmp.path().join("doris-rs-meta");
+    std::fs::set_permissions(&meta, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let result = mgr.create_tablet(req);
+    std::fs::set_permissions(&meta, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err());
+    assert!(mgr.tablet_infos().is_empty());
+    let left = (0..1024).any(|s| tmp.path().join(format!("data/{s}/{}", req.tablet_id)).exists());
+    assert!(!left, "tablet directory left behind");
+    mgr.create_tablet(req).unwrap();
 }

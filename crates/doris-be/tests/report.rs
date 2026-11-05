@@ -45,7 +45,12 @@ fn be() -> Be {
 fn mask(got: &mut TReportRequest, expected: &TReportRequest) {
     // BackendOptions::get_localhost(): fact be-host
     got.backend.host = expected.backend.host.clone();
-    // s_report_version: unix time * 10000 at start, plus changes
+    // s_report_version: time(nullptr) * 100000 at start, plus changes; check the scale, then
+    // take the reference's value
+    if let Some(v) = got.report_version {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        assert!((v / 100_000 - now).abs() <= 60, "report_version {v} is not time(nullptr) * 100000 scale");
+    }
     got.report_version = expected.report_version;
     // CpuInfo::num_cores() and pipeline_executor_size: facts be-cores
     got.num_cores = expected.num_cores;

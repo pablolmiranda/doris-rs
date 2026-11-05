@@ -62,8 +62,8 @@ impl TabletManager {
             dirs,
             tablets,
             partitions,
-            // `s_report_version`: time(nullptr) * 10000 at start (task_worker_pool.cpp)
-            report_version: now_secs() * 10_000,
+            // `s_report_version`: time(nullptr) * 100000 at start (task_worker_pool.cpp:116)
+            report_version: now_secs() * 100_000,
             backend_uid: (random_u64(), random_u64()),
             next_rowset: 1,
             stat_cache: Vec::new(),
@@ -116,11 +116,19 @@ impl TabletManager {
             let meta = build_tablet_meta(req, &new);
             let path = self.dirs[dir].tablet_dir(new.shard_id as u64, req.tablet_id, req.tablet_schema.schema_hash);
             std::fs::create_dir_all(&path).at(&path)?;
-            self.dirs[dir].headers().put(req.tablet_id, req.tablet_schema.schema_hash, &meta)?;
+            if let Err(e) = self.dirs[dir].headers().put(req.tablet_id, req.tablet_schema.schema_hash, &meta) {
+                // no header, no tablet: take the directory back out (its parent too, if empty)
+                let _ = std::fs::remove_dir_all(&path);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::remove_dir(parent);
+                }
+                return Err(e);
+            }
             self.partitions.entry(meta.partition_id()).or_insert(0);
             self.tablets.insert(req.tablet_id, Tablet { meta, dir });
-            self.increase_report_version();
         }
+        // create_tablet_callback increases it on every OK, an existing tablet's included
+        self.increase_report_version();
         let t = &self.tablets[&req.tablet_id];
         Ok(TTabletInfo {
             path_hash: Some(self.dirs[t.dir].path_hash()),
@@ -146,13 +154,14 @@ impl TabletManager {
         if replica_id != 0 && tablet.meta.replica_id() != replica_id {
             return Err(StorageError::ReplicaMismatch { current: tablet.meta.replica_id(), requested: replica_id });
         }
-        let tablet = self.tablets.remove(&req.tablet_id).expect("present");
+        // disk first: if it fails, the tablet stays known and a retried DROP can finish it
         let dir = &self.dirs[tablet.dir];
         let path = dir.tablet_dir(tablet.meta.shard_id() as u64, tablet.meta.tablet_id(), tablet.meta.schema_hash());
         if path.is_dir() {
             dir.move_to_trash(&path)?;
         }
         dir.headers().remove(tablet.meta.tablet_id(), tablet.meta.schema_hash())?;
+        let tablet = self.tablets.remove(&req.tablet_id).expect("present");
         let pid = tablet.meta.partition_id();
         if !self.tablets.values().any(|t| t.meta.partition_id() == pid) {
             self.partitions.remove(&pid);

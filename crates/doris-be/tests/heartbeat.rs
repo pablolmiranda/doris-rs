@@ -100,3 +100,19 @@ fn a_lower_epoch_from_another_master_is_rejected() {
     assert!(msg.contains("epoch is not greater than local. ignore heartbeat."), "{msg}");
     assert_eq!(master.fe_address(), Some(info.network_address));
 }
+
+#[test]
+fn heartbeats_do_not_wait_for_storage() {
+    // the cluster id is cached, as the C++ BE caches it in ClusterInfo; a heartbeat must answer
+    // while tablet work holds the storage lock
+    let fx = Fixtures::m2();
+    let tmp = tempfile::tempdir().unwrap();
+    let info = first_call(&fx);
+    std::fs::write(tmp.path().join("cluster_id"), info.cluster_id.to_string()).unwrap();
+    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()]).unwrap()));
+    let h = HeartbeatHandler::new(&BeConfig::default(), MasterInfo::new("127.0.0.1"), tablets.clone());
+    let _held = tablets.lock().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || tx.send(h.handle_heartbeat(info).unwrap().status.status_code).unwrap());
+    assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(2)), Ok(TStatusCode::OK));
+}
