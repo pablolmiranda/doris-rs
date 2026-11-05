@@ -25,6 +25,13 @@ pub enum StorageError {
     /// `TabletManager::_drop_tablet`'s `Status::Aborted`.
     #[error("replica_id not match({current} vs {requested})")]
     ReplicaMismatch { current: i64, requested: i64 },
+    /// `TxnManager::commit_txn`: the transaction already committed another rowset for the tablet
+    /// (`PUSH_TRANSACTION_ALREADY_EXIST`).
+    #[error("transaction {txn_id} already committed rowset {existing} for tablet {tablet_id}")]
+    TxnConflict { txn_id: i64, tablet_id: i64, existing: String },
+    /// `TxnManager::commit_txn` rejects ids below 1.
+    #[error("invalid transaction: partition {partition_id}, txn {txn_id}, tablet {tablet_id}")]
+    InvalidTxn { partition_id: i64, txn_id: i64, tablet_id: i64 },
     /// `TabletMeta::add_rs_meta`: another rowset already holds the version.
     #[error("tablet {tablet_id} already has a rowset at version {version}")]
     VersionExists { tablet_id: i64, version: i64 },
