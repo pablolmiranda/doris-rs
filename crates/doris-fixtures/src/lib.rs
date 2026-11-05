@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+pub mod values;
+
 use doris_thrift::gen::agent_service::{TAgentTaskRequest, TCreateTabletReq};
 use doris_thrift::gen::backend_service::BackendServiceSubmitTasksArgs;
 use doris_thrift::gen::frontend_service::FrontendServiceFinishTaskArgs;

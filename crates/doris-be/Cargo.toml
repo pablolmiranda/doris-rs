@@ -24,5 +24,6 @@ bytes = { workspace = true }
 prost = { workspace = true }
 
 [dev-dependencies]
+doris-segment = { workspace = true }
 tempfile = { workspace = true }
 doris-fixtures = { workspace = true }
