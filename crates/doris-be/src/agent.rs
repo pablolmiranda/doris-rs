@@ -70,6 +70,8 @@ impl AgentService {
             if !self.inner.register(task.task_type, task.signature) {
                 continue; // a duplicate: already queued or running
             }
+            // agent_server.cpp: "successfully submit task" with the type and signature
+            eprintln!("doris-rs be: task {} signature={}", task_type_name(task.task_type), task.signature);
             self.inner.enqueue(task);
         }
         agent_result(status::ok())

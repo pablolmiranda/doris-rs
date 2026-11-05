@@ -92,6 +92,7 @@ start_rs() {
   [[ -x "${RS_BIN}" ]] || die "build doris-rs first: cargo build --release -p doris-rs"
   "${RS_BIN}" be --config "${conf}" 2>> "${SWAP_LOGS}/rs.err" &
   echo $! > "${SWAP_LOGS}/rs.pid"
+  disown
   wait_alive true
   wait_disk
 }
