@@ -1,0 +1,2 @@
+{"k1": 4, "k2": 40, "k3": 400, "c_bigint": 4000, "c_largeint": "123456789012345678901234567890", "c_bool": true, "c_float": 4.5, "c_double": 5.5, "c_d32": "9.99", "c_d64": "0.1234", "c_d128": "1.5", "c_date": "2022-07-04", "c_dt": "2022-07-04 07:04:00.700", "c_char": "json", "c_varchar": "from json", "c_string": "line one"}
+{"k1": 5, "k2": 50, "k3": 500, "c_bigint": null, "c_largeint": null, "c_bool": null, "c_float": null, "c_double": null, "c_d32": null, "c_d64": null, "c_d128": null, "c_date": null, "c_dt": null, "c_char": null, "c_varchar": null, "c_string": null}
