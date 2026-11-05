@@ -2,12 +2,394 @@
  "about": "Needs the traffic corpus cannot show, each with its evidence. checker/derive.py merges them into the needs index for the ranking and grade.py's eligible suites. An entry is a need a suite has, never a reason to skip it; remove one when the corpus starts showing it.",
  "suites": {
   "nereids_p0.cte.test_cte_filter_pushdown.test_cte_filter_pushdown": {
-   "needs": ["data:nereids_p0.load.load"],
+   "needs": [
+    "data:nereids_p0.load.load"
+   ],
    "reason": "Its explain shape plan reads nereids_test_query_db.test, which nereids_p0/load.groovy loads; with the table empty the FE plans PhysicalEmptyRelation instead of the expected filter (doris-rs run m2-eligible-1, 2026-11-04). That load suite is outside the gate, so the index has no needs for it."
   },
   "load_p0.stream_load.test_stream_load_illegal_timeout.test_stream_load_illegal_timeout": {
-   "needs": ["rpc:http.stream_load"],
+   "needs": [
+    "rpc:http.stream_load"
+   ],
    "reason": "The suite expects the C++ BE's stream load reply \"[INVALID_ARGUMENT]Invalid format of 'timeout': 'abc', stoi\", so its stream load reaches the BE, but the corpus kept no BE HTTP exchange for it (the reference traffic for this suite holds only Thrift)."
+  },
+  "correctness_p0.test_cast_decimal.test_cast_decimal": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "correctness_p0.test_cast_in.test_cast_in": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "correctness_p0.test_inlineview_error_msg.test_inlineview_error_msg": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "correctness_p0.test_join_should_not_reorder.test_join_should_not_reorder": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "correctness_p0.test_select_decimal.test_select_decimal": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "correctness_p0.test_show_dummy_variables.test_show_dummy_variables": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "datatype_p0.decimalv3.test_show_decimalv3.test_show_decimalv3": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "insert_p0.test_insert_timeout.test_insert_timeout": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "inverted_index_p0.test_index_policy_unsupported_type_error.test_index_policy_unsupported_type_error": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.broker_load.test_domain_connection_and_ak_sk_correction.test_domain_connection_and_ak_sk_correction": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.broker_load.test_show_create_load.test_show_create_load": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.routine_load.test_routine_load_compute_group.test_routine_load_compute_group": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.routine_load.test_routine_load_name.test_routine_load_name": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.routine_load.test_routine_load_property.test_routine_load_property": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.routine_load.test_routine_load_topic_change.test_routine_load_topic_change": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "load_p0.routine_load.test_routine_load_with_user.test_routine_load_with_user": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "mysql_compatibility_p0.header.header": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "mysql_compatibility_p0.metadata.metadata": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.cte.test_cte_with_duplicate_consumer.test_cte_with_duplicate_consumer": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.drop.drop_resource.test_nereids_drop_resource": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.drop.drop_table.test_nereids_drop_table": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.expression.expression_depth_check.expression_depth_check": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.expression.fold_constant.fe_constant_cast_to_date.fe_constant_cast_to_date": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.expression.fold_constant.fe_constant_cast_to_fractional.fe_constant_cast_to_fractional": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.expression.fold_constant.fe_constant_cast_to_int.fe_constant_cast_to_int": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query13.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query14.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query15.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query2.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query23.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query35.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query38.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query41.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query42.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query45.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query59.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query61.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query62.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query8.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.infer_expr_name.query85.nereids_test_create_blocked": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.pkfk.test_pk_fk_drop_table.test_pk_fk_drop_table": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.array_functions.test_array_functions_by_literal.test_array_functions_by_literal": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.json_functions.test_get_json_double.test_get_json_double": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.json_functions.test_json_function.test_json_function": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.search_functions.test_multi_string_position.test_multi_string_position": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.sql_functions.table_function.explode.explode": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.system.test_explain_information_schema.test_explain_information_schema": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.tablesample.test_table_sample": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.test_create_workload_policy_command.test_create_workload_policy_command": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.test_unlock_tables_command.test_unlock_tables_command": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "nereids_p0.test_unsupported_start_transaction_command.test_start_transaction_command": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.aggregate.agg_on_view.agg_on_view": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.cast.test_cast_decimalv3.test_cast_with_decimalv3": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.literal_view.lietral_largeint.literal_largeint": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.session_variable.test_invalid_session.test_invalid_session": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.sql_functions.datetime_functions.test_time_diff.test_time_diff": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.system.test_storage_page_size.test_storage_page_size": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "query_p0.test_row_policy.test_row_policy": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+  },
+  "schema_change_p0.test_light_schema_change_default.test_lsc_default": {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
   }
  }
 }

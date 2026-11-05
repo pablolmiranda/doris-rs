@@ -42,6 +42,9 @@ services:
         max_bucket_num_per_partition = 512
         max_remote_file_system_cache_num = 1000
         force_olap_table_replication_allocation = tag.location.default:1
+        # role "all" gets these from the entrypoint; a separate FE must be told
+        force_olap_table_replication_num = 1
+        disable_balance = true
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

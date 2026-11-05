@@ -38,6 +38,13 @@ class RustClusterSettingsTests(unittest.TestCase):
         for line in block(self.single, "FE_CONFIG_EXTRA"):
             self.assertIn(line, ours, f"fe-only.yml lacks '{line}'")
 
+    def test_fe_only_gets_what_a_separate_fe_is_not_given(self):
+        # role "all" gets these from the image entrypoint; a separate FE (DORIS_ROLE=fe) does
+        # not, so reference-split.yml adds them, and the FE-only cluster must too
+        ours = set(block(os.path.join(COMPOSE, "fe-only.yml"), "FE_CONFIG_EXTRA"))
+        for line in ("force_olap_table_replication_num = 1", "disable_balance = true"):
+            self.assertIn(line, ours, f"fe-only.yml lacks '{line}'")
+
     def test_rust_be_conf_keeps_every_be_setting(self):
         path = os.path.join(COMPOSE, "..", "rust", "be.conf")
         ours = {line.strip() for line in open(path, encoding="utf-8")}
