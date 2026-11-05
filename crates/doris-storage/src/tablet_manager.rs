@@ -18,6 +18,7 @@ use crate::data_dir::DataDir;
 use crate::error::{IoContext, StorageError};
 use crate::file_header::encode_file_header;
 use crate::tablet::{build_tablet_meta, storage_medium, NewTablet};
+use crate::txn::{PublishResult, Txns};
 
 /// Expiries for a trash sweep (`trash_file_expire_time_sec`, `snapshot_expire_time_sec`).
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +57,7 @@ pub struct TabletManager {
     next_rowset: u64,
     /// `_tablet_stat_list_cache`: filled by each tablet report, read by `get_tablet_stat`.
     stat_cache: Vec<TTabletStat>,
+    txns: Txns,
 }
 
 fn now_secs() -> i64 {
@@ -76,6 +78,7 @@ impl TabletManager {
         let mut tablets = BTreeMap::new();
         let mut shutdown = Vec::new();
         let mut partitions = BTreeMap::new();
+        let mut txns = Txns::default();
         for (i, dir) in dirs.iter().enumerate() {
             for meta in dir.meta().tablet_metas()? {
                 if meta.tablet_state() == TabletStatePb::PbShutdown {
@@ -85,14 +88,19 @@ impl TabletManager {
                 partitions.insert(meta.partition_id(), 0);
                 tablets.insert(meta.tablet_id(), Tablet { meta, dir: i });
             }
-            // DataDir::load: VISIBLE rowsets under rst_ keys join their tablet; one whose tablet or
-            // tablet_uid does not match is ignored
+            // DataDir::load: rowsets under rst_ keys join their tablet (VISIBLE) or wait for their
+            // publish again (COMMITTED); one whose tablet or tablet_uid does not match is ignored
             for rs in dir.meta().rowset_metas()? {
                 let Some(t) = tablets.get_mut(&rs.tablet_id()).filter(|t| t.dir == i && t.meta.tablet_uid == rs.tablet_uid) else {
                     continue;
                 };
-                if rs.rowset_state() == RowsetStatePb::Visible && !t.meta.rs_metas.iter().any(|r| r.rowset_id_v2 == rs.rowset_id_v2) {
-                    t.meta.rs_metas.push(rs);
+                match rs.rowset_state() {
+                    RowsetStatePb::Visible if !t.meta.rs_metas.iter().any(|r| r.rowset_id_v2 == rs.rowset_id_v2) => t.meta.rs_metas.push(rs),
+                    RowsetStatePb::Committed => {
+                        let load_id = rs.load_id.unwrap_or_default();
+                        txns.insert(rs.partition_id(), rs.txn_id(), rs.tablet_id(), load_id, rs);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -116,7 +124,94 @@ impl TabletManager {
             backend_uid: (random_u64(), random_u64()),
             next_rowset: 1,
             stat_cache: Vec::new(),
+            txns,
         })
+    }
+
+    /// `TxnManager::commit_txn`: the pending rowset is saved under its `rst_` key (COMMITTED)
+    /// and held for the publish. The same rowset again is a no-op; another one for the same
+    /// transaction and tablet is refused.
+    pub fn commit_txn(&mut self, partition_id: i64, txn_id: i64, tablet_id: i64, load_id: PUniqueId, mut rowset: RowsetMetaPb) -> Result<(), StorageError> {
+        if partition_id < 1 || txn_id < 1 || tablet_id < 1 {
+            return Err(StorageError::InvalidTxn { partition_id, txn_id, tablet_id });
+        }
+        if let Some((_, existing)) = self.txns.get(partition_id, txn_id, tablet_id) {
+            if existing.rowset_id_v2 == rowset.rowset_id_v2 {
+                return Ok(());
+            }
+            return Err(StorageError::TxnConflict { txn_id, tablet_id, existing: existing.rowset_id_v2().to_string() });
+        }
+        let t = self.tablets.get(&tablet_id).ok_or(StorageError::TabletNotFound { tablet_id })?;
+        rowset.partition_id = Some(partition_id);
+        rowset.set_rowset_state(RowsetStatePb::Committed);
+        let uid = t.meta.tablet_uid.unwrap_or_default();
+        let sync = self.opts.sync_tablet_meta;
+        self.dirs[t.dir].meta_mut().save_rowset_meta(&uid, &rowset, sync)?;
+        self.txns.insert(partition_id, txn_id, tablet_id, load_id, rowset);
+        Ok(())
+    }
+
+    /// `EnginePublishVersionTask` for one partition: each pending rowset of the transaction
+    /// becomes visible at `[version, version]`; then every tablet of the partition that holds
+    /// the version succeeds, and the others are error tablets. Publishing again succeeds.
+    pub fn publish_txn(&mut self, partition_id: i64, txn_id: i64, version: i64) -> PublishResult {
+        let mut res = PublishResult::default();
+        for (tablet_id, (load_id, mut rs)) in self.txns.take(partition_id, txn_id) {
+            rs.start_version = Some(version);
+            rs.end_version = Some(version);
+            rs.set_rowset_state(RowsetStatePb::Visible);
+            rs.creation_time = Some(now_secs());
+            let rows = rs.num_rows();
+            match self.add_visible_rowset(tablet_id, rs.clone()) {
+                Ok(()) => {
+                    if rows > 0 {
+                        res.delta_rows.insert(tablet_id, rows);
+                    }
+                }
+                Err(_) => {
+                    // keep it for the FE's retry
+                    rs.set_rowset_state(RowsetStatePb::Committed);
+                    rs.start_version = None;
+                    rs.end_version = None;
+                    self.txns.insert(partition_id, txn_id, tablet_id, load_id, rs);
+                    res.errors.push(tablet_id);
+                }
+            }
+        }
+        for tablet_id in self.tablets_of_partition(partition_id) {
+            if res.errors.contains(&tablet_id) {
+                continue;
+            }
+            let t = &self.tablets[&tablet_id];
+            if t.meta.rs_metas.iter().any(|r| r.start_version() <= version && version <= r.end_version()) {
+                res.succ.push(tablet_id);
+            } else {
+                res.errors.push(tablet_id);
+            }
+        }
+        res
+    }
+
+    /// `StorageEngine::clear_transaction_task`: the transaction's pending rowsets, in the given
+    /// partitions (all of them when empty), lose their `rst_` key and their files.
+    pub fn clear_txn(&mut self, txn_id: i64, partition_ids: &[i64]) -> Result<(), StorageError> {
+        let partitions = if partition_ids.is_empty() { self.txns.partitions(txn_id) } else { partition_ids.to_vec() };
+        let sync = self.opts.sync_tablet_meta;
+        for p in partitions {
+            for (tablet_id, (_, rs)) in self.txns.take(p, txn_id) {
+                let Some(t) = self.tablets.get(&tablet_id) else { continue };
+                let uid = t.meta.tablet_uid.unwrap_or_default();
+                let dir = self.dirs[t.dir].tablet_dir(t.meta.shard_id() as u64, tablet_id, t.meta.schema_hash());
+                self.dirs[t.dir].meta_mut().remove_rowset_meta(&uid, rs.rowset_id_v2(), sync)?;
+                for seg in 0..rs.num_segments() {
+                    let f = dir.join(format!("{}_{seg}.dat", rs.rowset_id_v2()));
+                    if f.exists() {
+                        std::fs::remove_file(&f).at(&f)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// A running tablet's header as held in memory (rowsets included).

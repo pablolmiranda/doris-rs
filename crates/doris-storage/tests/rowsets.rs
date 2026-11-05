@@ -1,53 +1,14 @@
 //! Rowsets: a root the C++ BE loaded opens with its rowsets, a rowset doris-rs writes carries
 //! the C++ BE's fields, and published rowsets survive a restart.
-use std::path::{Path, PathBuf};
+mod common;
+
+use common::{fixture, headers, loaded_root, manager};
 
 use doris_proto::doris::{PUniqueId, RowsetMetaPb, RowsetStatePb, TabletMetaPb};
 use doris_segment::column::read_column;
 use doris_segment::writer::datums;
 use doris_segment::SegmentFile;
 use doris_storage::rowset::{segment_schema, write_rowset};
-use doris_storage::{DataDir, TabletManager, TabletOptions};
-
-fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-loaded")
-}
-
-fn copy_dir(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for e in std::fs::read_dir(from).unwrap() {
-        let e = e.unwrap();
-        let dst = to.join(e.file_name());
-        if e.file_type().unwrap().is_dir() {
-            copy_dir(&e.path(), &dst);
-        } else {
-            std::fs::copy(e.path(), dst).unwrap();
-        }
-    }
-}
-
-/// A root holding a copy of the fixture's databases and tablet directories.
-fn loaded_root() -> tempfile::TempDir {
-    let tmp = tempfile::tempdir().unwrap();
-    for d in ["meta", "stream_load", "data"] {
-        copy_dir(&fixture().join(d), &tmp.path().join(d));
-    }
-    tmp
-}
-
-fn manager(root: &Path) -> TabletManager {
-    TabletManager::open(vec![DataDir::open(root, "127.0.0.1").unwrap()], TabletOptions::default()).unwrap()
-}
-
-/// The fixture's headers as the C++ BE served them (rowsets included).
-fn headers() -> Vec<TabletMetaPb> {
-    let mut out: Vec<TabletMetaPb> = std::fs::read_dir(fixture().join("headers"))
-        .unwrap()
-        .map(|e| serde_json::from_str(&std::fs::read_to_string(e.unwrap().path()).unwrap()).unwrap())
-        .collect();
-    out.sort_by_key(|m| m.tablet_id());
-    out
-}
 
 #[test]
 fn cpp_loaded_root_opens_with_its_rowsets() {
