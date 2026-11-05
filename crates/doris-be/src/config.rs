@@ -22,6 +22,11 @@ pub struct BeConfig {
     pub host: Option<String>,
     /// `sync_tablet_meta`: sync the metadata store's log on every header change.
     pub sync_tablet_meta: bool,
+    /// The trash sweep's interval (`min_garbage_sweep_interval`; `max_garbage_sweep_interval`
+    /// is read by the C++ BE but its computed interval is never used).
+    pub min_garbage_sweep_interval: u64,
+    pub trash_file_expire_time_sec: i64,
+    pub snapshot_expire_time_sec: i64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +55,9 @@ impl Default for BeConfig {
             report_tablet_interval_seconds: 60,
             host: None,
             sync_tablet_meta: false,
+            min_garbage_sweep_interval: 180,
+            trash_file_expire_time_sec: 0,
+            snapshot_expire_time_sec: 172_800,
         }
     }
 }
@@ -101,6 +109,9 @@ impl BeConfig {
                 "report_tablet_interval_seconds" => cfg.report_tablet_interval_seconds = secs(key)?,
                 "host" => cfg.host = Some(value.to_string()).filter(|v| !v.is_empty()),
                 "sync_tablet_meta" => cfg.sync_tablet_meta = boolean(key)?,
+                "min_garbage_sweep_interval" => cfg.min_garbage_sweep_interval = secs(key)?,
+                "trash_file_expire_time_sec" => cfg.trash_file_expire_time_sec = secs(key)? as i64,
+                "snapshot_expire_time_sec" => cfg.snapshot_expire_time_sec = secs(key)? as i64,
                 _ => {}
             }
         }

@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use doris_fixtures::Fixtures;
-use doris_proto::doris::TabletMetaPb;
-use doris_storage::{DataDir, StorageError, TabletManager, TabletOptions};
+use doris_proto::doris::{TabletMetaPb, TabletStatePb};
+use doris_storage::{decode_file_header, DataDir, StorageError, SweepOptions, TabletManager, TabletOptions};
 use doris_thrift::gen::agent_service::TDropTabletReq;
 use doris_thrift::gen::types::TTaskType;
 
@@ -122,22 +122,101 @@ fn dropping_an_unknown_tablet_is_not_found() {
     assert_eq!(err.to_string(), "could not find tablet 42");
 }
 
+fn drop_req(req: &doris_thrift::gen::agent_service::TCreateTabletReq) -> TDropTabletReq {
+    TDropTabletReq {
+        tablet_id: req.tablet_id,
+        schema_hash: Some(req.tablet_schema.schema_hash),
+        replica_id: req.replica_id,
+        is_drop_table_or_partition: Some(true),
+    }
+}
+
+fn in_data(root: &Path, tablet_id: i64) -> bool {
+    (0..1024).any(|s| root.join(format!("data/{s}/{tablet_id}")).exists())
+}
+
+/// Every `trash/<label>/` entry.
+fn trash_labels(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut out: Vec<_> = std::fs::read_dir(root.join("trash")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    out.sort();
+    out
+}
+
+const EXPIRES: SweepOptions = SweepOptions { trash_expire_secs: 0, snapshot_expire_secs: 172_800 };
+
 #[test]
-fn drop_moves_the_tablet_to_trash() {
+fn a_drop_marks_the_tablet_shut_down() {
     let fx = Fixtures::m2();
     let req = &fx.create_requests()[0];
     let tmp = tempfile::tempdir().unwrap();
     let mut mgr = manager(tmp.path());
     mgr.create_tablet(req).unwrap();
-    let hash = req.tablet_schema.schema_hash;
-    let drop = TDropTabletReq { tablet_id: req.tablet_id, schema_hash: Some(hash), replica_id: req.replica_id, is_drop_table_or_partition: Some(true) };
-    mgr.drop_tablet(&drop).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
+    // TabletManager::_drop_tablet: SHUTDOWN saved, out of the tablet map, files untouched
     assert!(mgr.tablet_infos().is_empty());
+    assert_eq!(stored_header(&mgr, req.tablet_id).tablet_state(), TabletStatePb::PbShutdown);
+    assert!(in_data(tmp.path(), req.tablet_id));
+    assert_eq!(mgr.shutdown_tablets(), vec![req.tablet_id]);
+}
+
+#[test]
+fn the_sweep_moves_shut_down_tablets_to_trash() {
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    mgr.create_tablet(req).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
+    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
+    assert!(!in_data(tmp.path(), req.tablet_id));
     assert!(mgr.data_dirs()[0].meta().tablet_metas().unwrap().is_empty());
-    let in_data = (0..1024).any(|s| tmp.path().join(format!("data/{s}/{}", req.tablet_id)).exists());
-    assert!(!in_data);
-    let label = std::fs::read_dir(tmp.path().join("trash")).unwrap().next().unwrap().unwrap().path();
-    assert!(label.join(format!("{}/{hash}", req.tablet_id)).is_dir());
+    assert!(mgr.shutdown_tablets().is_empty());
+    let labels = trash_labels(tmp.path());
+    assert_eq!(labels.len(), 1);
+    let dir = labels[0].join(format!("{}/{}", req.tablet_id, req.tablet_schema.schema_hash));
+    // _move_tablet_to_trash saves <tablet_id>.hdr (FileHeader<TabletMetaPB>) before the move
+    let hdr = std::fs::read(dir.join(format!("{}.hdr", req.tablet_id))).unwrap();
+    let meta = decode_file_header(&hdr).unwrap();
+    assert_eq!((meta.tablet_id(), meta.tablet_state()), (req.tablet_id, TabletStatePb::PbShutdown));
+}
+
+#[test]
+fn shut_down_tablets_are_swept_after_a_restart() {
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    mgr.create_tablet(req).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
+    drop(mgr);
+    let mut mgr = manager(tmp.path());
+    assert!(mgr.tablet_infos().is_empty());
+    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
+    assert!(!in_data(tmp.path(), req.tablet_id));
+}
+
+#[test]
+fn a_sweep_empties_expired_trash_first() {
+    // StorageEngine::start_trash_sweep: snapshot/ and trash/ entries past their expiry go, then
+    // shut-down tablets move in (and stay until the next sweep)
+    let fx = Fixtures::m2();
+    let req = &fx.create_requests()[0];
+    let tmp = tempfile::tempdir().unwrap();
+    let mut mgr = manager(tmp.path());
+    for (dir, label) in [("trash", "20240101000000.7"), ("snapshot", "20240101000000.1"), ("snapshot", "29990101000000.2")] {
+        std::fs::create_dir_all(tmp.path().join(dir).join(label).join("1/2")).unwrap();
+    }
+    mgr.create_tablet(req).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
+    assert_eq!(mgr.start_trash_sweep(EXPIRES).unwrap(), 1);
+    let labels: Vec<String> = trash_labels(tmp.path()).iter().map(|p| p.file_name().unwrap().to_str().unwrap().to_string()).collect();
+    assert_eq!(labels.len(), 1, "{labels:?}");
+    assert_ne!(labels[0], "20240101000000.7");
+    assert!(!tmp.path().join("snapshot/20240101000000.1").exists());
+    assert!(tmp.path().join("snapshot/29990101000000.2").exists());
+    // the next sweep empties trash
+    assert_eq!(mgr.start_trash_sweep(EXPIRES).unwrap(), 0);
+    assert!(trash_labels(tmp.path()).is_empty());
 }
 
 #[test]
@@ -192,24 +271,25 @@ fn visible_versions_follow_the_partitions() {
 }
 
 #[test]
-fn a_drop_that_fails_on_disk_keeps_the_tablet() {
+fn a_sweep_that_fails_on_disk_keeps_the_key() {
     use std::os::unix::fs::PermissionsExt;
     let fx = Fixtures::m2();
     let req = &fx.create_requests()[0];
     let tmp = tempfile::tempdir().unwrap();
     let mut mgr = manager(tmp.path());
     mgr.create_tablet(req).unwrap();
+    mgr.drop_tablet(&drop_req(req)).unwrap();
     let trash = tmp.path().join("trash");
     std::fs::create_dir_all(&trash).unwrap();
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o555)).unwrap();
-    let drop = TDropTabletReq { tablet_id: req.tablet_id, schema_hash: None, replica_id: None, is_drop_table_or_partition: None };
-    let result = mgr.drop_tablet(&drop);
+    let result = mgr.sweep_shutdown();
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(result.is_err());
-    // memory and disk still agree: the tablet is reported, and a retry can drop it
-    assert!(mgr.tablet_infos().contains_key(&req.tablet_id));
-    mgr.drop_tablet(&drop).unwrap();
-    assert!(mgr.tablet_infos().is_empty());
+    // _move_tablet_to_trash fails: the tablet stays queued, its key and directory remain
+    assert_eq!(result.unwrap(), 0);
+    assert_eq!(mgr.shutdown_tablets(), vec![req.tablet_id]);
+    assert!(in_data(tmp.path(), req.tablet_id));
+    assert_eq!(stored_header(&mgr, req.tablet_id).tablet_state(), TabletStatePb::PbShutdown);
+    assert_eq!(mgr.sweep_shutdown().unwrap(), 1);
 }
 
 #[test]

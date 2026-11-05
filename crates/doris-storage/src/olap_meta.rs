@@ -117,6 +117,14 @@ impl OlapMeta {
         Ok(self.db.write(b, sync)?)
     }
 
+    /// One header as stored (`TabletMetaManager::get_meta`); `None` when the key is missing.
+    pub fn get_tablet_meta(&self, tablet_id: i64, schema_hash: i32) -> Result<Option<TabletMetaPb>, String> {
+        match self.db.get(CF, tablet_meta_key(tablet_id, schema_hash).as_bytes()) {
+            None => Ok(None),
+            Some(v) => TabletMetaPb::decode(v).map(Some).map_err(|e| e.to_string()),
+        }
+    }
+
     /// Every valid header, in key order.
     pub fn tablet_metas(&self) -> Result<Vec<TabletMetaPb>, StorageError> {
         let keys = self.db.scan_prefix(CF, HEADER_PREFIX.as_bytes()).into_iter().map(|(k, v)| (k.to_vec(), v.to_vec())).collect();

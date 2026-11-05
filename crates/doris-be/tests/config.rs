@@ -27,6 +27,15 @@ fn defaults_are_the_cpp_be_defaults() {
     assert_eq!(cfg.host, None);
     assert_eq!(cfg.priority_networks, None);
     assert!(!cfg.sync_tablet_meta);
+    assert_eq!(cfg.min_garbage_sweep_interval, 180);
+    assert_eq!(cfg.trash_file_expire_time_sec, 0);
+    assert_eq!(cfg.snapshot_expire_time_sec, 172_800);
+}
+
+#[test]
+fn sweep_settings_are_read() {
+    let cfg = BeConfig::parse("min_garbage_sweep_interval = 5\ntrash_file_expire_time_sec = 60\nsnapshot_expire_time_sec = 7").unwrap();
+    assert_eq!((cfg.min_garbage_sweep_interval, cfg.trash_file_expire_time_sec, cfg.snapshot_expire_time_sec), (5, 60, 7));
 }
 
 #[test]

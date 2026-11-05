@@ -170,6 +170,32 @@ impl DataDir {
         size(&self.root.join("trash")) as i64
     }
 
+    /// `StorageEngine::_do_sweep` on `snapshot/` and `trash/`: deletes each entry whose label
+    /// time (`<YYYYmmddHHMMSS>.<n>[.<timeout>]`) is at least its expiry old; a third label part
+    /// is that entry's own timeout in seconds. Trash expires at once when the disk is above the
+    /// guard (`storage_flood_stage_usage_percent` 90 × 0.9).
+    pub fn sweep_expired(&self, trash_expire_secs: i64, snapshot_expire_secs: i64) -> Result<(), StorageError> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let usage = self.capacity().map(|(t, a)| if t > 0 { (t - a) as f64 / t as f64 } else { 0.0 }).unwrap_or(0.0);
+        let trash_expire = if usage > 0.9 * 0.9 { 0 } else { trash_expire_secs };
+        for (sub, expire) in [("snapshot", snapshot_expire_secs), ("trash", trash_expire)] {
+            let dir = self.root.join(sub);
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            let mut names: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+            names.sort();
+            for path in names {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                let mut parts = name.split('.');
+                let Some(created) = parts.next().and_then(parse_timestamp) else { continue };
+                let expire = parts.nth(1).and_then(|t| t.parse().ok()).unwrap_or(expire);
+                if now - created >= expire {
+                    if path.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.at(&path)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn meta(&self) -> &OlapMeta {
         &self.meta
     }
@@ -274,6 +300,27 @@ fn timestamp() -> String {
     let (days, rem) = (secs / 86_400, secs % 86_400);
     let (y, m, d) = civil_from_days(days as i64);
     format!("{y:04}{m:02}{d:02}{:02}{:02}{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// `%Y%m%d%H%M%S` (UTC, as `timestamp` writes it) to seconds since the epoch.
+fn parse_timestamp(s: &str) -> Option<i64> {
+    if s.len() != 14 || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| s[r].parse::<i64>().ok();
+    let (y, m, d, hh, mm, ss) = (n(0..4)?, n(4..6)?, n(6..8)?, n(8..10)?, n(10..12)?, n(12..14)?);
+    Some(days_from_civil(y, m as u32, d as u32) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// (year, month, day) to days since 1970-01-01, Howard Hinnant's `days_from_civil`.
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = i64::from((m + 9) % 12);
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 /// Days since 1970-01-01 to (year, month, day), Howard Hinnant's `civil_from_days`.
