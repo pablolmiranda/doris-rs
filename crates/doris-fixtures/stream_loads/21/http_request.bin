@@ -1,0 +1,40 @@
+PUT /api/regression_test_load_p0_stream_load/tbl_test_load_json_with_jsonpath2/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 71a79716-d19c-48ad-81d9-353642fab73b
+strip_outer_array: true
+read_json_by_line: 
+format: json
+columns: 
+jsonpaths: ["$.k1", "$.k2", "$.k2", "$.k2", "$.k3", "$.k3", "$.k3","$.k3", "$.k4", "$.k4", "$.k4", "$.k4", "$.k4", "$.k4", "$.k4", "$.k4"]
+json_root: 
+where: 
+fuzzy_parse: 
+column_separator: 
+max_filter_ratio: 1
+Expect: 100-Continue
+Content-Length: 458
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+[
+    {
+        "k1": "7395.231067",
+        "k2": "1000",
+        "k3": "I am a long string here.",
+        "k4": "I am another long string here 2."
+    },
+    {
+        "k1": "7291.703724",
+        "k2": "2000",
+        "k3": "I am a long string here.",
+        "k4": "I am another long string here 3."
+    },
+    {
+        "k1": "22",
+        "k2": "7291",
+        "k3": "I am a long string here.",
+        "k4": "I am another long string here 4."
+    }
+]

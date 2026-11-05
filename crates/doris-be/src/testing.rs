@@ -3,15 +3,41 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
+use doris_thrift::gen::frontend_service::{
+    TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest, TLoadTxnCommitResult, TLoadTxnRollbackRequest,
+    TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult, TStreamLoadPutRequest, TStreamLoadPutResult,
+};
 use doris_thrift::gen::master_service::{TFinishTaskRequest, TMasterResult, TReportRequest};
+use doris_thrift::gen::types::TNetworkAddress;
 
 use crate::fe_client::{FeClient, FeError};
 use crate::status;
 
+/// A call the BE made to the FE for a load.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoadCall {
+    ExecStatus(TNetworkAddress, TReportExecStatusParams),
+    Begin(TLoadTxnBeginRequest),
+    Put(TStreamLoadPutRequest),
+    Commit(TLoadTxnCommitRequest),
+    Rollback(TLoadTxnRollbackRequest),
+}
+
+/// The FE's answers to a stream load's calls.
+#[derive(Debug, Clone, Default)]
+pub struct LoadScript {
+    pub begin: Option<TLoadTxnBeginResult>,
+    pub put: Option<TStreamLoadPutResult>,
+    pub commit: Option<TLoadTxnCommitResult>,
+    pub rollback: Option<TLoadTxnRollbackResult>,
+}
+
 /// A master FE that records what the BE sends and answers OK. It can fail the next calls, or
-/// hold `finishTask` calls until released.
+/// hold `finishTask` calls until released. Load calls get the scripted answers.
 #[derive(Default)]
 pub struct FakeFe {
+    loads: Mutex<Vec<LoadCall>>,
+    script: Mutex<LoadScript>,
     finishes: Mutex<Vec<TFinishTaskRequest>>,
     reports: Mutex<Vec<TReportRequest>>,
     attempts: AtomicUsize,
@@ -21,6 +47,18 @@ pub struct FakeFe {
 }
 
 impl FakeFe {
+    pub fn load_calls(&self) -> Vec<LoadCall> {
+        self.loads.lock().unwrap().clone()
+    }
+
+    pub fn script(&self, script: LoadScript) {
+        *self.script.lock().unwrap() = script;
+    }
+
+    fn load(&self, call: LoadCall) {
+        self.loads.lock().unwrap().push(call);
+    }
+
     pub fn finishes(&self) -> Vec<TFinishTaskRequest> {
         self.finishes.lock().unwrap().clone()
     }
@@ -68,6 +106,35 @@ impl FeClient for FakeFe {
         self.reports.lock().unwrap().push(req);
         Ok(ok())
     }
+
+    fn report_exec_status(&self, coord: &TNetworkAddress, req: TReportExecStatusParams) -> Result<TReportExecStatusResult, FeError> {
+        self.load(LoadCall::ExecStatus(coord.clone(), req));
+        Ok(TReportExecStatusResult::new(status::ok()))
+    }
+
+    fn load_txn_begin(&self, req: TLoadTxnBeginRequest) -> Result<TLoadTxnBeginResult, FeError> {
+        self.load(LoadCall::Begin(req));
+        self.script.lock().unwrap().begin.clone().ok_or_else(unscripted)
+    }
+
+    fn stream_load_put(&self, req: TStreamLoadPutRequest) -> Result<TStreamLoadPutResult, FeError> {
+        self.load(LoadCall::Put(req));
+        self.script.lock().unwrap().put.clone().ok_or_else(unscripted)
+    }
+
+    fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError> {
+        self.load(LoadCall::Commit(req));
+        self.script.lock().unwrap().commit.clone().ok_or_else(unscripted)
+    }
+
+    fn load_txn_rollback(&self, req: TLoadTxnRollbackRequest) -> Result<TLoadTxnRollbackResult, FeError> {
+        self.load(LoadCall::Rollback(req));
+        self.script.lock().unwrap().rollback.clone().ok_or_else(unscripted)
+    }
+}
+
+fn unscripted() -> FeError {
+    FeError::Call { addr: "fake".into(), msg: "no scripted answer".into() }
 }
 
 /// A [`FakeFe`] reachable over the network as the master FE's Thrift port: it answers

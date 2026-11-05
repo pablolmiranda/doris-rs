@@ -4,6 +4,7 @@
 
 pub mod error_log;
 pub mod expr;
+pub mod file_scan;
 pub mod fragment;
 pub mod route;
 pub mod sink;

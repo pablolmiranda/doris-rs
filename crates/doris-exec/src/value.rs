@@ -113,8 +113,11 @@ fn row_err(col: &ColType, what: String) -> RowError {
     RowError::new(format!("column_name[{}], {what}", col.name))
 }
 
-/// The value as the column stores it; a row error when the sink must filter the row.
-pub fn to_datum(v: &Value, col: &ColType) -> Result<Datum, RowError> {
+/// The value as the column stores it; a row error when the sink must filter the row. Not
+/// `strict` (an insert with `enable_insert_strict=false`, a stream load without strict mode),
+/// a CHAR/VARCHAR value longer than its column is first cut to the column's length in
+/// characters, then checked in bytes.
+pub fn to_datum(v: &Value, col: &ColType, strict: bool) -> Result<Datum, RowError> {
     use TPrimitiveType as T;
     if *v == Value::Null {
         if !col.nullable {
@@ -132,6 +135,11 @@ pub fn to_datum(v: &Value, col: &ColType) -> Result<Datum, RowError> {
                 Value::Bool(b) => if *b { b"1".to_vec() } else { b"0".to_vec() },
                 Value::Decimal(s) | Value::Date(s) => s.as_bytes().to_vec(),
                 Value::Null => unreachable!(),
+            };
+            let b = if !strict && matches!(col.ptype, T::CHAR | T::VARCHAR) && col.len >= 0 && b.len() > col.len as usize {
+                String::from_utf8_lossy(&b).chars().take(col.len as usize).collect::<String>().into_bytes()
+            } else {
+                b
             };
             // OlapTableBlockConvertor::_validate_column: CHAR/VARCHAR length in bytes
             if matches!(col.ptype, T::CHAR | T::VARCHAR) && col.len >= 0 && b.len() > col.len as usize {
@@ -288,7 +296,11 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
         }
         T::FLOAT | T::DOUBLE => Value::Float(t.parse().ok()?),
         T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => {
-            parse_decimal(t, col.scale)?;
+            let v = parse_decimal(t, col.scale)?;
+            // a value whose integer digits exceed precision - scale does not cast
+            if col.precision > 0 && v.unsigned_abs() >= 10u128.pow(col.precision.clamp(1, 38) as u32) {
+                return None;
+            }
             Value::Decimal(t.to_string())
         }
         T::DATEV2 => {

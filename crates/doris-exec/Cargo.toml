@@ -18,6 +18,8 @@ thrift = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 crc32fast = { workspace = true }
+# numbers keep their text (a JSON load's 1.79769e+309 is a field, not a parse error)
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }

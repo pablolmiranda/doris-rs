@@ -39,6 +39,7 @@ struct Partition {
 
 pub struct Router {
     dest: Vec<ColType>,
+    strict: bool,
     kind: TPartitionType,
     partition_cols: Vec<usize>,
     distributed_cols: Vec<usize>,
@@ -53,7 +54,7 @@ fn key_datums(nodes: &[TExprNode], cols: &[ColType]) -> Result<Vec<Datum>, ExecE
             let v = eval(&TExpr { nodes: vec![n.clone()] }, &Slots::new()).map_err(|e| ExecError::BadRequest(e.msg))?;
             let mut c = c.clone();
             c.nullable = true;
-            to_datum(&v, &c).map_err(|e| ExecError::BadRequest(e.msg))
+            to_datum(&v, &c, true).map_err(|e| ExecError::BadRequest(e.msg))
         })
         .collect()
 }
@@ -101,7 +102,7 @@ impl Router {
                 indexes: part.indexes.iter().map(|i| (i.index_id, i.tablets.clone())).collect(),
             });
         }
-        Ok(Router { dest, kind: p.partition_type.unwrap_or(TPartitionType::UNPARTITIONED), partition_cols, distributed_cols, partitions })
+        Ok(Router { dest, strict: f.insert_strict, kind: p.partition_type.unwrap_or(TPartitionType::UNPARTITIONED), partition_cols, distributed_cols, partitions })
     }
 
     fn find_partition(&self, row: &[Datum]) -> Option<&Partition> {
@@ -136,14 +137,19 @@ impl Router {
     }
 
     pub fn route(&self, values: &[Value]) -> Result<Routed, RowError> {
-        let row = values.iter().zip(&self.dest).map(|(v, c)| to_datum(v, c)).collect::<Result<Vec<_>, _>>()?;
+        let row = values.iter().zip(&self.dest).map(|(v, c)| to_datum(v, c, self.strict)).collect::<Result<Vec<_>, _>>()?;
         let Some(p) = self.find_partition(&row) else {
+            // VOlapTablePartitionParam: the whole row, each column as "name(type)": "value"
             let shown: Vec<String> = self
-                .partition_cols
+                .dest
                 .iter()
-                .map(|i| format!("{{\"({})\":\"{}\"}}", self.dest[*i].type_name(), render(&row[*i])))
+                .zip(&row)
+                .map(|(c, d)| {
+                    let ty = if c.nullable { format!("Nullable({})", c.type_name()) } else { c.type_name() };
+                    format!("\"{}({ty})\":\"{}\"", c.name, render(c, d))
+                })
                 .collect();
-            return Err(RowError::new(format!("no partition for this tuple. tuple=[{}]", shown.join(", "))));
+            return Err(RowError::new(format!("no partition for this tuple. tuple=[{{{}}}]", shown.join(","))));
         };
         let b = self.bucket(p, &row) as usize;
         let tablets = p.indexes.iter().filter_map(|(idx, t)| t.get(b).map(|t| (*idx, *t))).collect();
@@ -151,11 +157,33 @@ impl Router {
     }
 }
 
-fn render(d: &Datum) -> String {
+/// A stored value as the C++ BE prints it in messages.
+fn render(c: &ColType, d: &Datum) -> String {
+    use doris_segment::values::{unpack_datetimev2, unpack_datev2};
     match d {
         Datum::Null => "NULL".into(),
         Datum::Bool(b) => u8::from(*b).to_string(),
-        Datum::Int(i) => i.to_string(),
+        Datum::Int(i) => match c.ptype {
+            TPrimitiveType::DATEV2 => {
+                let v = unpack_datev2(*i as u32);
+                format!("{:04}-{:02}-{:02}", v.year, v.month, v.day)
+            }
+            TPrimitiveType::DATETIMEV2 => {
+                let t = unpack_datetimev2(*i as u64);
+                let mut s = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.date.year, t.date.month, t.date.day, t.hour, t.minute, t.second);
+                if c.scale > 0 {
+                    s.push_str(&format!(".{:06}", t.microsecond)[..1 + c.scale.min(6) as usize]);
+                }
+                s
+            }
+            TPrimitiveType::DECIMAL32 | TPrimitiveType::DECIMAL64 | TPrimitiveType::DECIMAL128I if c.scale > 0 => {
+                let scale = c.scale as u32;
+                let p = 10i128.pow(scale);
+                let sign = if *i < 0 { "-" } else { "" };
+                format!("{sign}{}.{:0w$}", (i / p).abs(), (i % p).abs(), w = scale as usize)
+            }
+            _ => i.to_string(),
+        },
         Datum::Float(f) => f.to_string(),
         Datum::Double(f) => f.to_string(),
         Datum::Bytes(b) => String::from_utf8_lossy(b).into_owned(),

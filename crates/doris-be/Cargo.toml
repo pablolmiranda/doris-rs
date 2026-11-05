@@ -22,8 +22,11 @@ http-body-util = { workspace = true }
 http = { workspace = true }
 bytes = { workspace = true }
 prost = { workspace = true }
+doris-exec = { workspace = true }
+doris-segment = { workspace = true }
+serde_json = { workspace = true }
+flate2 = { workspace = true }
 
 [dev-dependencies]
-doris-segment = { workspace = true }
 tempfile = { workspace = true }
 doris-fixtures = { workspace = true }

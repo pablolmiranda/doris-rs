@@ -8,6 +8,7 @@ pub mod config;
 pub mod fe_client;
 pub mod heartbeat;
 pub mod http;
+pub mod load;
 pub mod master;
 pub mod report;
 pub mod status;

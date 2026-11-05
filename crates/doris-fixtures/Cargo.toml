@@ -11,6 +11,7 @@ publish = false
 unsafe_code = "forbid"
 
 [dependencies]
+flate2 = { workspace = true }
 doris-proto = { workspace = true }
 prost = { workspace = true }
 doris-thrift = { workspace = true }

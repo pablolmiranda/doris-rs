@@ -125,7 +125,8 @@ pub fn run_sink(
     }
     if let Some(e) = errors.first() {
         out.first_error = Some(format!("{}. Src line: {}", e.msg, e.line));
-        let label = format!("stmt_{:x}_{:x}", f.query_id.hi, f.query_id.lo);
+        // print_id(query_id): the halves as unsigned hex, joined by a dash
+        let label = format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64);
         match write_error_log(error_dir, "insert", &label, (f.instance_id.hi, f.instance_id.lo), &errors) {
             Ok(name) => out.error_log = Some(name),
             Err(e) => eprintln!("doris-rs be: cannot write the load error log: {e}"),

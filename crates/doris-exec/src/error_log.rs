@@ -17,7 +17,7 @@ static NEXT_SHARD: AtomicU64 = AtomicU64::new(0);
 pub fn write_error_log(dir: &Path, db: &str, label: &str, instance: (i64, i64), errors: &[RowError]) -> std::io::Result<String> {
     let shard = format!("__shard_{}", NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % SHARDS);
     std::fs::create_dir_all(dir.join(&shard))?;
-    let name = format!("{shard}/error_log_{db}_{label}_{:x}_{:x}", instance.0, instance.1);
+    let name = format!("{shard}/error_log_{db}_{label}_{:x}_{:x}", instance.0 as u64, instance.1 as u64);
     let mut text = String::new();
     for e in errors.iter().take(MAX_ERROR_ROWS + 1) {
         text.push_str(&format!("Reason: {}. src line [{}]; \n", e.msg, e.line));

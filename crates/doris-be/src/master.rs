@@ -71,4 +71,9 @@ impl MasterInfo {
     pub fn set_fe_address(&self, addr: TNetworkAddress) {
         self.with(|s| s.master = Some(addr));
     }
+
+    /// Sets the backend id directly, as a heartbeat would (tests and tools).
+    pub fn set_backend_id_for_tests(&self, id: i64) {
+        self.with(|s| s.backend_id = Some(id));
+    }
 }
