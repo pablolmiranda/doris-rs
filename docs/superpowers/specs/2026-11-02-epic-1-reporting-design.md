@@ -282,8 +282,9 @@ and the reference self-check green.
 | 1 | The checker (§4) | §4.7's list holds |
 | 2 | Join and hold tablets | doris-rs joins the cluster and its heartbeats and reports match; create-tablet and drop-tablet tasks work; every epic suite whose BE traffic is only those passes on both gates |
 | 3 | C++-compatible data directory | tablet headers live in `<root>/meta` in the C++ BE's RocksDB format, written and read by a pure-Rust store with no RocksDB dependency; the swap check holds (a C++ BE and doris-rs each start on the other's disks and see the same tablets). Design: `2026-11-04-epic-1-m2-join-and-hold-tablets-design.md` §7, ADR 0003 |
-| 4 | Minimum write and read loop | `INSERT … VALUES` and stream load into duplicate-key tables, then scans, filters, projections, `LIMIT` and the result sink; every epic suite needing only these passes on both gates |
-| 5+ | Chosen from the needs index | each starts from the ranking at the end of the previous one; its plan names the features and the suites they unlock |
+| 4 | The write loop | `INSERT … VALUES` and stream load (CSV, JSON) into duplicate-key tables, under FE transactions and publish, as segment files the C++ BE reads; the readback check's first form holds; every epic suite needing only these passes on both gates. Design: `2026-11-05-epic-1-m4-write-loop-design.md` |
+| 5 | The read loop | scans, filters, projections, `LIMIT`, sort, the materialization node and the result sink; every epic suite needing only these and M4 passes on both gates |
+| 6+ | Chosen from the needs index | each starts from the ranking at the end of the previous one; its plan names the features and the suites they unlock |
 
 The readback check (§5.5) is part of the milestone it lands in. The epic is done when every suite
 in `epic1.txt` passes on both gates and the readback check holds.
