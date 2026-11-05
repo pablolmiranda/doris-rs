@@ -309,13 +309,14 @@ impl<'a> StreamLoad<'a> {
 
     fn run(&mut self) {
         let fmt = self.header("format").unwrap_or_else(|| "csv".into()).to_ascii_lowercase();
-        let format = match fmt.as_str() {
-            "csv" => TFileFormatType::FORMAT_CSV_PLAIN,
-            "json" => TFileFormatType::FORMAT_JSON,
-            other => {
-                self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {other} yet"));
-                return;
-            }
+        let Some((format, compress)) = parse_format(&fmt, &self.header("compress_type").unwrap_or_default()) else {
+            self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {fmt} yet"));
+            return;
+        };
+        // _on_header: the timeout is read before the transaction begins
+        let timeout = match self.header("timeout").filter(|t| !t.is_empty()).map(|t| stoi(&t, "timeout")).transpose() {
+            Ok(t) => t,
+            Err(msg) => return self.fail(msg),
         };
         let fe = Arc::clone(&self.inner.fe);
         let t = Instant::now();
@@ -329,7 +330,7 @@ impl<'a> StreamLoad<'a> {
             label: self.label.clone(),
             timestamp: Some(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros() as i64).unwrap_or(0)),
             auth_code: None,
-            timeout: self.header("timeout").and_then(|t| t.parse().ok()),
+            timeout: timeout.map(i64::from),
             request_id: Some(self.load_id.clone()),
             token: self.token.clone(),
             auth_code_uuid: None,
@@ -352,7 +353,14 @@ impl<'a> StreamLoad<'a> {
             return self.rollback();
         }
         let t = Instant::now();
-        let put = fe.stream_load_put(self.put_request(format));
+        let request = match self.put_request(format, compress, timeout) {
+            Ok(r) => r,
+            Err(msg) => {
+                self.fail(msg);
+                return self.rollback();
+            }
+        };
+        let put = fe.stream_load_put(request);
         self.times[1] = t.elapsed().as_millis();
         let put = match put {
             Ok(r) if r.status.status_code == TStatusCode::OK => r,
@@ -448,15 +456,22 @@ impl<'a> StreamLoad<'a> {
     }
 
     /// `StreamLoadAction::_process_put`: the headers as the FE's put request.
-    fn put_request(&self, format: TFileFormatType) -> TStreamLoadPutRequest {
+    fn put_request(&self, format: TFileFormatType, compress: TFileCompressType, timeout: Option<i32>) -> Result<TStreamLoadPutRequest, String> {
         let h = |k: &str| self.header(k);
+        let skip_lines = match h("skip_lines").filter(|v| !v.is_empty()) {
+            None => None,
+            Some(v) => match stoi(&v, "skip_lines")? {
+                n if n < 0 => return Err(format!("[INVALID_ARGUMENT]Invalid 'skip_lines': {n}")),
+                n => Some(n),
+            },
+        };
         let is_true = |k: &str| h(k).is_some_and(|v| v.eq_ignore_ascii_case("true"));
         let (mut read_json_by_line, mut strip_outer_array) = (is_true("read_json_by_line"), is_true("strip_outer_array"));
         if h("read_json_by_line").is_none() && h("strip_outer_array").is_none() {
             read_json_by_line = true;
             strip_outer_array = false;
         }
-        TStreamLoadPutRequest {
+        Ok(TStreamLoadPutRequest {
             cluster: None,
             user: self.user.clone(),
             passwd: self.passwd.clone(),
@@ -474,7 +489,7 @@ impl<'a> StreamLoad<'a> {
             partitions: h("partitions"),
             auth_code: None,
             negative: Some(is_true("negative")),
-            timeout: h("timeout").and_then(|t| t.parse().ok()),
+            timeout,
             strict_mode: h("strict_mode").map(|v| v.eq_ignore_ascii_case("true")),
             timezone: h("timezone").or_else(|| h("time_zone")),
             exec_mem_limit: h("exec_mem_limit").and_then(|v| v.parse().ok()),
@@ -496,10 +511,10 @@ impl<'a> StreamLoad<'a> {
             load_to_single_tablet: h("load_to_single_tablet").map(|v| v.eq_ignore_ascii_case("true")),
             header_type: Some(String::new()),
             hidden_columns: h("hidden_columns"),
-            compress_type: Some(TFileCompressType::PLAIN),
+            compress_type: Some(compress),
             file_size: None,
             trim_double_quotes: h("trim_double_quotes").map(|v| v.eq_ignore_ascii_case("true")),
-            skip_lines: h("skip_lines").and_then(|v| v.parse().ok()),
+            skip_lines,
             enable_profile: h("enable_profile").map(|v| v.eq_ignore_ascii_case("true")),
             partial_update: None,
             table_names: None,
@@ -519,7 +534,7 @@ impl<'a> StreamLoad<'a> {
             cert_based_auth: None,
             cloud_cluster: None,
             table_id: None,
-        }
+        })
     }
 
     /// `StreamLoadExecutor::rollback_txn`.
@@ -621,9 +636,62 @@ impl<'a> StreamLoad<'a> {
     }
 }
 
-/// An FE status as the C++ BE quotes it: `[<code>]<message>`.
+/// An FE status as the C++ BE quotes it (`Status::create(TStatus)`): `[<code>]TStatus: <first
+/// message>`.
 fn fe_message(st: &doris_thrift::gen::status::TStatus) -> String {
-    format!("[{:?}]{}", st.status_code, st.error_msgs.clone().unwrap_or_default().join("; "))
+    let first = st.error_msgs.as_ref().and_then(|m| m.first()).cloned().unwrap_or_default();
+    format!("[{}]TStatus: {first}", crate::status::code_name(st.status_code))
+}
+
+/// `LoadUtil::parse_format` for the formats doris-rs reads: the format the FE plans and the
+/// compression, or None for another format.
+fn parse_format(format: &str, compress: &str) -> Option<(TFileFormatType, TFileCompressType)> {
+    let c = compress.to_ascii_uppercase();
+    let compress_type = match c.as_str() {
+        "GZ" => TFileCompressType::GZ,
+        "LZO" | "LZOP" => TFileCompressType::LZO,
+        "BZ2" => TFileCompressType::BZ2,
+        "ZSTD" => TFileCompressType::ZSTD,
+        "LZ4" | "LZ4FRAME" => TFileCompressType::LZ4FRAME,
+        "LZ4_BLOCK" => TFileCompressType::LZ4BLOCK,
+        "SNAPPY_BLOCK" => TFileCompressType::SNAPPYBLOCK,
+        "DEFLATE" => TFileCompressType::DEFLATE,
+        _ => TFileCompressType::PLAIN,
+    };
+    let format_type = match format {
+        "csv" => match c.as_str() {
+            "" | "ZSTD" => TFileFormatType::FORMAT_CSV_PLAIN,
+            "GZ" => TFileFormatType::FORMAT_CSV_GZ,
+            "LZO" => TFileFormatType::FORMAT_CSV_LZO,
+            "BZ2" => TFileFormatType::FORMAT_CSV_BZ2,
+            "LZ4" | "LZ4FRAME" => TFileFormatType::FORMAT_CSV_LZ4FRAME,
+            "LZ4_BLOCK" => TFileFormatType::FORMAT_CSV_LZ4BLOCK,
+            "LZOP" => TFileFormatType::FORMAT_CSV_LZOP,
+            "SNAPPY_BLOCK" => TFileFormatType::FORMAT_CSV_SNAPPYBLOCK,
+            "DEFLATE" => TFileFormatType::FORMAT_CSV_DEFLATE,
+            _ => return None,
+        },
+        "json" => TFileFormatType::FORMAT_JSON,
+        _ => return None,
+    };
+    Some((format_type, compress_type))
+}
+
+/// `safe_stoi`: `std::stoi` (leading whitespace, a sign, the digits, anything after ignored),
+/// its exceptions as the C++ BE words them.
+fn stoi(input: &str, name: &str) -> Result<i32, String> {
+    let t = input.trim_start_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let (neg, rest) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return Err(format!("[INVALID_ARGUMENT]Invalid format of '{name}': '{input}', stoi"));
+    }
+    let n: i128 = digits.parse().unwrap_or(i128::MAX);
+    i32::try_from(if neg { -n } else { n }).map_err(|_| format!("[INVALID_ARGUMENT]'{name}' value out of range: '{input}', stoi"))
 }
 
 /// A stored record as `TStreamLoadRecord` (`StreamLoadRecorder`, `"N/A"` for empty fields).

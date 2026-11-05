@@ -148,9 +148,12 @@ def load_supplement(path=SUPPLEMENT):
 
 def with_supplement(index, supplement):
     """The needs index plus the declared needs its traffic cannot show (needs_supplement.json:
-    each entry `kind:value` needs with the evidence)."""
+    each entry `kind:value` needs with the evidence; a group gives the same needs and evidence
+    to each of its suites)."""
     out = {k: {kind: list(v) for kind, v in needs.items()} for k, needs in index.items()}
-    for k, entry in supplement.get("suites", {}).items():
+    entries = list(supplement.get("suites", {}).items())
+    entries += [(k, group) for group in supplement.get("groups", []) for k in group["suites"]]
+    for k, entry in entries:
         for need in entry["needs"]:
             kind, value = need.split(":", 1)
             values = out.setdefault(k, {}).setdefault(kind, [])
