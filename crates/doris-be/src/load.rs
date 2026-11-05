@@ -1,0 +1,656 @@
+//! Loads: `INSERT … VALUES` fragments the FE sends over brpc (`exec_plan_fragment`, answered at
+//! once, then run, then one final `reportExecStatus`), and stream loads over HTTP
+//! (`StreamLoadAction` and `StreamLoadExecutor`: loadTxnBegin, streamLoadPut, run the returned
+//! fragment over the body, loadTxnCommit or loadTxnRollback, and the JSON reply).
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasher, Hasher};
+use std::path::PathBuf;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use doris_exec::file_scan::stream_rows;
+use doris_exec::fragment::{decode_fragments, plan_write, WriteFragment, WritePlan};
+use doris_exec::sink::{exec_status, run_sink, SinkOutcome};
+use doris_exec::ExecError;
+use doris_proto::doris::{PCancelPlanFragmentRequest, PCancelPlanFragmentResult, PExecPlanFragmentRequest, PExecPlanFragmentResult, PStatus};
+use doris_storage::TabletManager;
+use doris_thrift::gen::backend_service::TStreamLoadRecord;
+use doris_thrift::gen::frontend_service::{TLoadTxnBeginRequest, TLoadTxnCommitRequest, TLoadTxnRollbackRequest, TStreamLoadPutRequest};
+use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType};
+use doris_thrift::gen::status::TStatusCode;
+use doris_thrift::gen::types::{TFileType, TMergeType, TUniqueId};
+use thrift::OrderedFloat;
+
+use crate::fe_client::FeClient;
+use crate::master::MasterInfo;
+
+/// `config::thrift_rpc_timeout_ms` and `txn_commit_rpc_timeout_ms`.
+const PUT_RPC_TIMEOUT_MS: i32 = 60_000;
+const COMMIT_RPC_TIMEOUT_MS: i32 = 180_000;
+/// `stream_load_record_batch_size` (the oracle's be.conf).
+const RECORD_BATCH: usize = 500;
+const OK: i32 = 0;
+const NOT_IMPLEMENTED_ERROR: i32 = 3;
+const INTERNAL_ERROR: i32 = 6;
+
+/// A stream load as the HTTP layer hands it over.
+#[derive(Debug, Clone)]
+pub struct StreamLoadRequest {
+    pub db: String,
+    pub table: String,
+    /// Header names lower-cased.
+    pub headers: BTreeMap<String, String>,
+    pub body: Vec<u8>,
+    pub client_ip: String,
+}
+
+#[derive(Clone)]
+pub struct LoadService {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    tablets: Arc<Mutex<TabletManager>>,
+    fe: Arc<dyn FeClient>,
+    master: MasterInfo,
+    http_port: u16,
+    error_dir: PathBuf,
+    running: Mutex<usize>,
+    idle: Condvar,
+}
+
+fn random_u64() -> u64 {
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    h.finish()
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+}
+
+fn pstatus(code: i32, msg: Option<String>) -> PStatus {
+    PStatus { status_code: code, error_msgs: msg.into_iter().collect() }
+}
+
+impl LoadService {
+    pub fn new(tablets: Arc<Mutex<TabletManager>>, fe: Arc<dyn FeClient>, master: MasterInfo, http_port: u16) -> LoadService {
+        let error_dir = {
+            let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
+            mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
+        };
+        LoadService {
+            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new() }),
+        }
+    }
+
+    /// `PInternalService::exec_plan_fragment`: a write fragment is accepted (or refused) at
+    /// once and runs in the background; its outcome reaches the FE in `reportExecStatus`.
+    pub fn exec_plan_fragment(&self, req: &PExecPlanFragmentRequest) -> PExecPlanFragmentResult {
+        let received = now_ms();
+        let refuse = |code: i32, msg: String| PExecPlanFragmentResult {
+            status: pstatus(code, Some(msg)),
+            received_time: Some(received),
+            execution_time: Some(now_ms()),
+            execution_done_time: Some(now_ms()),
+        };
+        let planned = decode_fragments(req).and_then(|list| {
+            let params = list.params_list.unwrap_or_default();
+            let [p] = params.as_slice() else {
+                return Err(ExecError::Unsupported { what: format!("a request of {} fragments", params.len()) });
+            };
+            let f = plan_write(p)?;
+            if f.plan != WritePlan::Values {
+                return Err(ExecError::Unsupported { what: "a file scan outside a stream load".into() });
+            }
+            Ok(f)
+        });
+        let f = match planned {
+            Ok(f) => f,
+            Err(e @ ExecError::Unsupported { .. }) => return refuse(NOT_IMPLEMENTED_ERROR, e.to_string()),
+            Err(e) => return refuse(INTERNAL_ERROR, e.to_string()),
+        };
+        let rows = match f.values_rows() {
+            Ok(r) => r,
+            Err(e) => return refuse(NOT_IMPLEMENTED_ERROR, e.to_string()),
+        };
+        *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        let inner = Arc::clone(&self.inner);
+        std::thread::Builder::new()
+            .name("load-insert".into())
+            .spawn(move || {
+                let outcome = run_sink(&f, rows, &inner.tablets, &inner.error_dir);
+                let params = exec_status(&f, &outcome, inner.tracking_url(&outcome));
+                let coord = f.coord.clone().or_else(|| inner.master.fe_address());
+                if let Some(coord) = coord {
+                    // _coordinator_callback: one retry on a transport error
+                    if inner.fe.report_exec_status(&coord, params.clone()).is_err() {
+                        let _ = inner.fe.report_exec_status(&coord, params);
+                    }
+                }
+                inner.done();
+            })
+            .expect("spawn insert");
+        PExecPlanFragmentResult {
+            status: pstatus(OK, None),
+            received_time: Some(received),
+            execution_time: Some(now_ms()),
+            execution_done_time: Some(now_ms()),
+        }
+    }
+
+    /// `PInternalService::cancel_plan_fragment`: a write runs to its end; FINISHED, the FE's
+    /// usual reason after a commit, is a no-op.
+    pub fn cancel_plan_fragment(&self, _req: &PCancelPlanFragmentRequest) -> PCancelPlanFragmentResult {
+        PCancelPlanFragmentResult { status: pstatus(OK, None) }
+    }
+
+    /// Waits until no insert is running; false on timeout.
+    pub fn wait_idle(&self, timeout: Duration) -> bool {
+        let n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
+        let (_g, res) = self.inner.idle.wait_timeout_while(n, timeout, |n| *n > 0).unwrap_or_else(|e| e.into_inner());
+        !res.timed_out()
+    }
+
+    /// `GET /api/_load_error_log?file=<name>`: the file, if it is one of the BE's error logs.
+    pub fn error_log(&self, file: &str) -> Option<Vec<u8>> {
+        if file.contains("..") || file.starts_with('/') {
+            return None;
+        }
+        std::fs::read(self.inner.error_dir.join(file)).ok()
+    }
+
+    /// `BackendService.get_stream_load_record`: records finished after `last_ms`.
+    pub fn stream_load_records(&self, last_ms: i64) -> BTreeMap<String, TStreamLoadRecord> {
+        let mgr = self.inner.tablets.lock().unwrap_or_else(|e| e.into_inner());
+        mgr.stream_load_records(&last_ms.to_string(), RECORD_BATCH)
+            .into_iter()
+            .filter_map(|(k, v)| Some((k, record_from_json(&serde_json::from_str(&v).ok()?))))
+            .collect()
+    }
+
+    /// A stream load, start to end; the reply's JSON.
+    pub fn stream_load(&self, req: StreamLoadRequest) -> String {
+        let mut load = StreamLoad::new(&self.inner, req);
+        load.run();
+        let reply = load.reply_json();
+        load.record(&self.inner);
+        reply
+    }
+}
+
+impl Inner {
+    fn done(&self) {
+        let mut n = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        *n -= 1;
+        self.idle.notify_all();
+    }
+
+    fn tracking_url(&self, o: &SinkOutcome) -> Option<String> {
+        o.error_log.as_ref().map(|f| format!("http://{}:{}/api/_load_error_log?file={f}", self.master.localhost(), self.http_port))
+    }
+}
+
+/// `StreamLoadContext`: what the load learned, for the reply and the record.
+struct StreamLoad<'a> {
+    inner: &'a Inner,
+    req: StreamLoadRequest,
+    label: String,
+    user: String,
+    passwd: String,
+    token: Option<String>,
+    user_ip: Option<String>,
+    load_id: TUniqueId,
+    txn_id: i64,
+    db_id: Option<i64>,
+    started: Instant,
+    start_ms: i64,
+    status: Option<String>,
+    publish_timeout: bool,
+    total: i64,
+    loaded: i64,
+    filtered: i64,
+    unselected: i64,
+    error_url: Option<String>,
+    first_error: Option<String>,
+    times: [u128; 6],
+}
+
+/// `Basic <base64(user:passwd)>`.
+fn basic_auth(h: &str) -> Option<(String, String)> {
+    let b64 = h.strip_prefix("Basic ")?.trim();
+    let mut bits = 0u32;
+    let mut nbits = 0;
+    let mut out = Vec::new();
+    for c in b64.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => continue,
+        };
+        bits = bits << 6 | u32::from(v);
+        nbits += 6;
+        if nbits >= 8 {
+            nbits -= 8;
+            out.push((bits >> nbits) as u8);
+        }
+    }
+    let text = String::from_utf8(out).ok()?;
+    let (u, p) = text.split_once(':')?;
+    Some((u.to_string(), p.to_string()))
+}
+
+fn uuid() -> String {
+    let (a, b) = (random_u64(), random_u64());
+    format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}", a >> 32, (a >> 16) & 0xffff, a & 0xfff | 0x4000, (b >> 48) & 0x3fff | 0x8000, b & 0xffff_ffff_ffff)
+}
+
+impl<'a> StreamLoad<'a> {
+    fn new(inner: &'a Inner, req: StreamLoadRequest) -> StreamLoad<'a> {
+        let h = |k: &str| req.headers.get(k).filter(|v| !v.is_empty()).cloned();
+        let (user, passwd) = h("authorization").and_then(|a| basic_auth(&a)).unwrap_or_default();
+        let token = h("auth-token");
+        let user_ip = if token.is_some() { None } else { Some(req.client_ip.clone()) };
+        StreamLoad {
+            inner,
+            label: h("label").unwrap_or_else(uuid),
+            user,
+            passwd,
+            token,
+            user_ip,
+            load_id: TUniqueId { hi: random_u64() as i64, lo: random_u64() as i64 },
+            txn_id: -1,
+            db_id: None,
+            started: Instant::now(),
+            start_ms: now_ms(),
+            status: None,
+            publish_timeout: false,
+            total: 0,
+            loaded: 0,
+            filtered: 0,
+            unselected: 0,
+            error_url: None,
+            first_error: None,
+            times: [0; 6],
+            req,
+        }
+    }
+
+    fn header(&self, k: &str) -> Option<String> {
+        self.req.headers.get(k).filter(|v| !v.is_empty()).cloned()
+    }
+
+    /// `StreamLoadAction::_can_group_commit`: whether the FE may answer with a group commit
+    /// mode (only then is `use_table_group_commit_mode` set).
+    fn can_group_commit(&self) -> bool {
+        let chunked = self.header("transfer-encoding").is_some_and(|t| t.contains("chunked"));
+        let empty = self.header("content-length").and_then(|l| l.parse::<i64>().ok()).unwrap_or(0) == 0;
+        if empty && !chunked {
+            return false;
+        }
+        let update_mode = self
+            .header("unique_key_update_mode")
+            .is_some_and(|m| m.eq_ignore_ascii_case("UPDATE_FIXED_COLUMNS") || m.eq_ignore_ascii_case("UPDATE_FLEXIBLE_COLUMNS"));
+        !(self.header("partial_columns").is_some_and(|v| v.eq_ignore_ascii_case("true"))
+            || self.header("partitions").is_some()
+            || self.header("temporary_partitions").is_some()
+            || self.header("two_phase_commit").is_some_and(|v| v.eq_ignore_ascii_case("true"))
+            || update_mode)
+    }
+
+    fn fail(&mut self, msg: String) {
+        if self.status.is_none() {
+            self.status = Some(msg);
+        }
+    }
+
+    fn run(&mut self) {
+        let fmt = self.header("format").unwrap_or_else(|| "csv".into()).to_ascii_lowercase();
+        let format = match fmt.as_str() {
+            "csv" => TFileFormatType::FORMAT_CSV_PLAIN,
+            "json" => TFileFormatType::FORMAT_JSON,
+            other => {
+                self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {other} yet"));
+                return;
+            }
+        };
+        let fe = Arc::clone(&self.inner.fe);
+        let t = Instant::now();
+        let begin = TLoadTxnBeginRequest {
+            cluster: None,
+            user: self.user.clone(),
+            passwd: self.passwd.clone(),
+            db: self.req.db.clone(),
+            tbl: self.req.table.clone(),
+            user_ip: self.user_ip.clone(),
+            label: self.label.clone(),
+            timestamp: Some(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros() as i64).unwrap_or(0)),
+            auth_code: None,
+            timeout: self.header("timeout").and_then(|t| t.parse().ok()),
+            request_id: Some(self.load_id.clone()),
+            token: self.token.clone(),
+            auth_code_uuid: None,
+            table_id: None,
+            backend_id: self.inner.master.backend_id(),
+            cert_based_auth: None,
+            use_table_group_commit_mode: self.can_group_commit().then_some(true),
+        };
+        let begun = fe.load_txn_begin(begin);
+        self.times[0] = t.elapsed().as_millis();
+        let begun = match begun {
+            Ok(r) if r.status.status_code == TStatusCode::OK => r,
+            Ok(r) => return self.fail(fe_message(&r.status)),
+            Err(e) => return self.fail(format!("[INTERNAL_ERROR]{e}")),
+        };
+        self.txn_id = begun.txn_id.unwrap_or(-1);
+        self.db_id = begun.db_id;
+        if begun.table_group_commit_mode.as_deref().is_some_and(|m| m.contains("async") || m.contains("sync")) {
+            self.fail("[NOT_IMPLEMENTED_ERROR]doris-rs does not support group commit yet".into());
+            return self.rollback();
+        }
+        let t = Instant::now();
+        let put = fe.stream_load_put(self.put_request(format));
+        self.times[1] = t.elapsed().as_millis();
+        let put = match put {
+            Ok(r) if r.status.status_code == TStatusCode::OK => r,
+            Ok(r) => {
+                self.fail(fe_message(&r.status));
+                return self.rollback();
+            }
+            Err(e) => {
+                self.fail(format!("[INTERNAL_ERROR]{e}"));
+                return self.rollback();
+            }
+        };
+        let planned = put.pipeline_params.ok_or_else(|| ExecError::BadRequest("no plan".into())).and_then(|p| plan_write(&p));
+        let mut f: WriteFragment = match planned {
+            Ok(f) => f,
+            Err(e) => {
+                self.fail(format!("[NOT_IMPLEMENTED_ERROR]{e}"));
+                return self.rollback();
+            }
+        };
+        // StreamLoadAction: enable_insert_strict follows the load's strict mode
+        f.insert_strict = self.header("strict_mode").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        // the stream load plan names no backend: commit infos carry this BE's id
+        if f.backend_id == 0 {
+            f.backend_id = self.inner.master.backend_id().unwrap_or(0);
+        }
+        let t = Instant::now();
+        let rows = match stream_rows(&f, &self.req.body) {
+            Ok(r) => r,
+            Err(e) => {
+                self.fail(format!("[NOT_IMPLEMENTED_ERROR]{e}"));
+                return self.rollback();
+            }
+        };
+        let outcome = run_sink(&f, rows, &self.inner.tablets, &self.inner.error_dir);
+        self.times[3] = t.elapsed().as_millis();
+        self.total = outcome.loaded + outcome.filtered + outcome.unselected;
+        self.loaded = outcome.loaded;
+        self.filtered = outcome.filtered;
+        self.unselected = outcome.unselected;
+        self.error_url = self.inner.tracking_url(&outcome);
+        if outcome.status.status_code != TStatusCode::OK {
+            self.first_error = outcome.first_error.clone();
+            self.fail(format!("[INTERNAL_ERROR]{}", outcome.status.error_msgs.clone().unwrap_or_default().join("; ")));
+            return self.rollback();
+        }
+        // StreamLoadExecutor: the filter ratio over the rows that were not unselected
+        let ratio = self.header("max_filter_ratio").and_then(|r| r.parse::<f64>().ok()).unwrap_or(0.0);
+        let considered = self.total - self.unselected;
+        if considered > 0 && self.filtered as f64 / considered as f64 > ratio {
+            self.first_error = outcome.first_error.clone();
+            self.fail("[DATA_QUALITY_ERROR]too many filtered rows".into());
+            return self.rollback();
+        }
+        let t = Instant::now();
+        let commit = TLoadTxnCommitRequest {
+            cluster: None,
+            user: self.user.clone(),
+            passwd: self.passwd.clone(),
+            db: self.req.db.clone(),
+            tbl: self.req.table.clone(),
+            user_ip: self.user_ip.clone(),
+            txn_id: self.txn_id,
+            sync: true,
+            commit_infos: Some(outcome.commit_infos.clone()),
+            auth_code: None,
+            txn_commit_attachment: None,
+            thrift_rpc_timeout_ms: Some(i64::from(COMMIT_RPC_TIMEOUT_MS)),
+            token: self.token.clone(),
+            db_id: self.db_id,
+            tbls: Some(vec![]),
+            table_id: None,
+            auth_code_uuid: None,
+            group_commit: None,
+            receive_bytes: None,
+            backend_id: None,
+            cert_based_auth: None,
+        };
+        let committed = fe.load_txn_commit(commit);
+        self.times[5] = t.elapsed().as_millis();
+        match committed {
+            Ok(r) if r.status.status_code == TStatusCode::OK => {}
+            Ok(r) if r.status.status_code == TStatusCode::PUBLISH_TIMEOUT => self.publish_timeout = true,
+            Ok(r) => {
+                self.fail(fe_message(&r.status));
+                self.rollback();
+            }
+            Err(e) => {
+                self.fail(format!("[INTERNAL_ERROR]{e}"));
+                self.rollback();
+            }
+        }
+    }
+
+    /// `StreamLoadAction::_process_put`: the headers as the FE's put request.
+    fn put_request(&self, format: TFileFormatType) -> TStreamLoadPutRequest {
+        let h = |k: &str| self.header(k);
+        let is_true = |k: &str| h(k).is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        let (mut read_json_by_line, mut strip_outer_array) = (is_true("read_json_by_line"), is_true("strip_outer_array"));
+        if h("read_json_by_line").is_none() && h("strip_outer_array").is_none() {
+            read_json_by_line = true;
+            strip_outer_array = false;
+        }
+        TStreamLoadPutRequest {
+            cluster: None,
+            user: self.user.clone(),
+            passwd: self.passwd.clone(),
+            db: self.req.db.clone(),
+            tbl: self.req.table.clone(),
+            user_ip: self.user_ip.clone(),
+            load_id: self.load_id.clone(),
+            txn_id: self.txn_id,
+            file_type: TFileType::FILE_STREAM,
+            format_type: format,
+            path: None,
+            columns: h("columns"),
+            where_: h("where"),
+            column_separator: h("column_separator"),
+            partitions: h("partitions"),
+            auth_code: None,
+            negative: Some(is_true("negative")),
+            timeout: h("timeout").and_then(|t| t.parse().ok()),
+            strict_mode: h("strict_mode").map(|v| v.eq_ignore_ascii_case("true")),
+            timezone: h("timezone").or_else(|| h("time_zone")),
+            exec_mem_limit: h("exec_mem_limit").and_then(|v| v.parse().ok()),
+            is_temp_partition: h("partitions").map(|_| false),
+            strip_outer_array: Some(strip_outer_array),
+            jsonpaths: h("jsonpaths"),
+            thrift_rpc_timeout_ms: Some(i64::from(PUT_RPC_TIMEOUT_MS)),
+            json_root: h("json_root"),
+            merge_type: Some(TMergeType::APPEND),
+            delete_condition: None,
+            sequence_col: h("function_column.sequence_col"),
+            num_as_string: Some(is_true("num_as_string")),
+            fuzzy_parse: Some(is_true("fuzzy_parse")),
+            line_delimiter: h("line_delimiter"),
+            read_json_by_line: Some(read_json_by_line),
+            token: self.token.clone(),
+            send_batch_parallelism: h("send_batch_parallelism").and_then(|v| v.parse().ok()),
+            max_filter_ratio: h("max_filter_ratio").map(|v| OrderedFloat(v.parse().unwrap_or(0.0))),
+            load_to_single_tablet: h("load_to_single_tablet").map(|v| v.eq_ignore_ascii_case("true")),
+            header_type: Some(String::new()),
+            hidden_columns: h("hidden_columns"),
+            compress_type: Some(TFileCompressType::PLAIN),
+            file_size: None,
+            trim_double_quotes: h("trim_double_quotes").map(|v| v.eq_ignore_ascii_case("true")),
+            skip_lines: h("skip_lines").and_then(|v| v.parse().ok()),
+            enable_profile: h("enable_profile").map(|v| v.eq_ignore_ascii_case("true")),
+            partial_update: None,
+            table_names: None,
+            load_sql: None,
+            backend_id: self.inner.master.backend_id(),
+            version: None,
+            label: None,
+            enclose: h("enclose").and_then(|v| v.bytes().next()).map(|b| b as i8),
+            escape: h("escape").and_then(|v| v.bytes().next()).map(|b| b as i8),
+            memtable_on_sink_node: h("memtable_on_sink_node").map(|v| v.eq_ignore_ascii_case("true")),
+            group_commit: None,
+            stream_per_node: None,
+            group_commit_mode: None,
+            unique_key_update_mode: None,
+            partial_update_new_key_policy: None,
+            empty_field_as_null: h("empty_field_as_null").map(|v| v.eq_ignore_ascii_case("true")),
+            cert_based_auth: None,
+            cloud_cluster: None,
+            table_id: None,
+        }
+    }
+
+    /// `StreamLoadExecutor::rollback_txn`.
+    fn rollback(&mut self) {
+        let req = TLoadTxnRollbackRequest {
+            cluster: None,
+            user: self.user.clone(),
+            passwd: self.passwd.clone(),
+            db: self.req.db.clone(),
+            tbl: self.req.table.clone(),
+            user_ip: self.user_ip.clone(),
+            txn_id: self.txn_id,
+            reason: self.status.clone(),
+            auth_code: None,
+            txn_commit_attachment: None,
+            token: self.token.clone(),
+            db_id: self.db_id,
+            tbls: Some(vec![]),
+            auth_code_uuid: None,
+            label: Some(self.label.clone()),
+        };
+        let _ = self.inner.fe.load_txn_rollback(req);
+    }
+
+    fn status_word(&self) -> &'static str {
+        if self.status.is_some() {
+            "Fail"
+        } else if self.publish_timeout {
+            "Publish Timeout"
+        } else {
+            "Success"
+        }
+    }
+
+    /// `StreamLoadContext::to_json`: rapidjson's pretty writer (4 spaces), a newline after.
+    fn reply_json(&self) -> String {
+        let s = |v: &str| serde_json::Value::String(v.to_string()).to_string();
+        let ok = self.status.is_none();
+        let mut fields: Vec<(&str, String)> = vec![
+            ("TxnId", self.txn_id.to_string()),
+            ("Label", s(&self.label)),
+            ("Comment", s(&self.header("comment").unwrap_or_default())),
+            ("TwoPhaseCommit", s("false")),
+            ("Status", s(self.status_word())),
+            ("Message", s(self.status.as_deref().unwrap_or("OK"))),
+            ("NumberTotalRows", self.total.to_string()),
+            ("NumberLoadedRows", if ok { self.loaded } else { 0 }.to_string()),
+            ("NumberFilteredRows", self.filtered.to_string()),
+            ("NumberUnselectedRows", self.unselected.to_string()),
+            ("LoadBytes", self.req.body.len().to_string()),
+            ("LoadTimeMs", self.started.elapsed().as_millis().to_string()),
+            ("BeginTxnTimeMs", self.times[0].to_string()),
+            ("StreamLoadPutTimeMs", self.times[1].to_string()),
+            ("ReadDataTimeMs", self.times[2].to_string()),
+            ("WriteDataTimeMs", self.times[3].to_string()),
+            ("ReceiveDataTimeMs", self.times[4].to_string()),
+            ("CommitAndPublishTimeMs", self.times[5].to_string()),
+        ];
+        if let Some(u) = &self.error_url {
+            fields.push(("ErrorURL", s(u)));
+        }
+        if let Some(m) = self.first_error.as_ref().filter(|_| !ok) {
+            fields.push(("FirstErrorMsg", s(m)));
+        }
+        let body: Vec<String> = fields.iter().map(|(k, v)| format!("    \"{k}\": {v}")).collect();
+        format!("{{\n{}\n}}\n", body.join(",\n"))
+    }
+
+    /// `StreamLoadAction::_save_stream_load_record`, unless the client asked to skip it.
+    fn record(&self, inner: &Inner) {
+        if self.req.headers.contains_key("skip_record_to_audit_log_table") {
+            return;
+        }
+        let finish = now_ms();
+        let mut rec: HashMap<&str, serde_json::Value> = HashMap::new();
+        rec.insert("Label", self.label.clone().into());
+        rec.insert("Db", self.req.db.clone().into());
+        rec.insert("Table", self.req.table.clone().into());
+        rec.insert("User", self.user.clone().into());
+        rec.insert("ClientIp", self.user_ip.clone().unwrap_or_default().into());
+        rec.insert("Status", self.status_word().into());
+        rec.insert("Message", self.status.clone().unwrap_or_else(|| "OK".into()).into());
+        rec.insert("ErrorURL", self.error_url.clone().unwrap_or_default().into());
+        rec.insert("FirstErrorMsg", self.first_error.clone().unwrap_or_default().into());
+        rec.insert("NumberTotalRows", self.total.into());
+        rec.insert("NumberLoadedRows", (if self.status.is_none() { self.loaded } else { 0 }).into());
+        rec.insert("NumberFilteredRows", self.filtered.into());
+        rec.insert("NumberUnselectedRows", self.unselected.into());
+        rec.insert("LoadBytes", self.req.body.len().into());
+        rec.insert("StartTime", self.start_ms.into());
+        rec.insert("FinishTime", finish.into());
+        rec.insert("Comment", self.header("comment").unwrap_or_default().into());
+        let value = serde_json::to_string(&rec).unwrap_or_default();
+        let key = format!("{finish}_{}", self.label);
+        let mut mgr = inner.tablets.lock().unwrap_or_else(|e| e.into_inner());
+        if let Err(e) = mgr.put_stream_load_record(&key, &value) {
+            eprintln!("doris-rs be: cannot record stream load {}: {e}", self.label);
+        }
+    }
+}
+
+/// An FE status as the C++ BE quotes it: `[<code>]<message>`.
+fn fe_message(st: &doris_thrift::gen::status::TStatus) -> String {
+    format!("[{:?}]{}", st.status_code, st.error_msgs.clone().unwrap_or_default().join("; "))
+}
+
+/// A stored record as `TStreamLoadRecord` (`StreamLoadRecorder`, `"N/A"` for empty fields).
+fn record_from_json(v: &serde_json::Value) -> TStreamLoadRecord {
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let n = |k: &str| v.get(k).and_then(|x| x.as_i64()).unwrap_or(0);
+    let na = |k: &str| Some(Some(s(k)).filter(|x| !x.is_empty()).unwrap_or_else(|| "N/A".into()));
+    TStreamLoadRecord {
+        cluster: None,
+        user: s("User"),
+        passwd: String::new(),
+        db: s("Db"),
+        tbl: s("Table"),
+        user_ip: Some(s("ClientIp")),
+        label: s("Label"),
+        status: s("Status"),
+        message: s("Message"),
+        url: na("ErrorURL"),
+        auth_code: None,
+        total_rows: n("NumberTotalRows"),
+        loaded_rows: n("NumberLoadedRows"),
+        filtered_rows: n("NumberFilteredRows"),
+        unselected_rows: n("NumberUnselectedRows"),
+        load_bytes: n("LoadBytes"),
+        start_time: n("StartTime"),
+        finish_time: n("FinishTime"),
+        comment: Some(s("Comment")),
+        first_error_msg: na("FirstErrorMsg"),
+    }
+}

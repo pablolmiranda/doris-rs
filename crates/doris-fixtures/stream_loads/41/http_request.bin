@@ -1,0 +1,19 @@
+PUT /api/regression_test_load_p0_stream_load/test_csv_split_line2/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 64a5f5a9-8d48-49bf-b522-1ac95c900233
+column_separator: 114455
+trim_double_quotes: true
+Expect: 100-Continue
+Content-Length: 255
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+10001114455helloword1144551144661144550000011445
+55555114455\N114455144551144557711445777
+66666114455\N114455\N114455113355
+7777711445500114551144558888114455114545
+99999114455114455114455
+33333114455001144551111111445500000
+444441144550011445511111114455

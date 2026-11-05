@@ -48,7 +48,7 @@ pub struct TabletManager {
     shutdown: Vec<Tablet>,
     opts: TabletOptions,
     /// The stream load recorder's database on the first root (`StreamLoadRecorder`).
-    _stream_load: Option<Db>,
+    stream_load: Option<Db>,
     /// Partition id → visible version (`TabletManager::_partitions`; starts at 0, in memory only).
     partitions: BTreeMap<i64, i64>,
     report_version: i64,
@@ -117,7 +117,7 @@ impl TabletManager {
             tablets,
             shutdown,
             opts,
-            _stream_load: stream_load,
+            stream_load,
             partitions,
             // `s_report_version`: time(nullptr) * 100000 at start (task_worker_pool.cpp:116)
             report_version: now_secs() * 100_000,
@@ -212,6 +212,26 @@ impl TabletManager {
             }
         }
         Ok(())
+    }
+
+    /// `StreamLoadRecorder::put`: a finished stream load's record, under
+    /// `<finish millis>_<label>` in the first root's `stream_load` database.
+    pub fn put_stream_load_record(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
+        let Some(db) = self.stream_load.as_mut() else { return Ok(()) };
+        let mut b = doris_rocks::db::Batch::default();
+        b.put("default", key.as_bytes(), value.as_bytes());
+        Ok(db.write(b, false)?)
+    }
+
+    /// `StreamLoadRecorder::get_batch`: up to `limit` records with keys after `start`, in key order.
+    pub fn stream_load_records(&self, start: &str, limit: usize) -> Vec<(String, String)> {
+        let Some(db) = self.stream_load.as_ref() else { return Vec::new() };
+        db.scan_prefix("default", b"")
+            .into_iter()
+            .filter(|(k, _)| *k > start.as_bytes())
+            .take(limit)
+            .map(|(k, v)| (String::from_utf8_lossy(k).into_owned(), String::from_utf8_lossy(v).into_owned()))
+            .collect()
     }
 
     /// A running tablet's header as held in memory (rowsets included).

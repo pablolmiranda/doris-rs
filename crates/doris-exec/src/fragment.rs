@@ -54,6 +54,9 @@ pub struct WriteFragment {
     pub fragment_id: i32,
     pub coord: Option<TNetworkAddress>,
     pub backend_id: i64,
+    /// `enable_insert_strict`: when false, over-long strings are cut instead of filtered. A
+    /// stream load sets it from its strict mode.
+    pub insert_strict: bool,
     dest: Vec<ColType>,
 }
 
@@ -164,7 +167,7 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         .and_then(|l| l.first())
         .map(|l| l.fragment_instance_id.clone())
         .unwrap_or_else(|| params.query_id.clone());
-    Ok(WriteFragment {
+    let wf = WriteFragment {
         params: params.clone(),
         plan,
         query_id: params.query_id.clone(),
@@ -172,9 +175,14 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         fragment_id: params.fragment_id.unwrap_or(0),
         coord: params.coord.clone(),
         backend_id: params.backend_id.unwrap_or(0),
+        insert_strict: params.query_options.as_ref().and_then(|q| q.enable_insert_strict).unwrap_or(true),
         sink,
         dest,
-    })
+    };
+    if wf.plan == WritePlan::Stream {
+        crate::file_scan::check_stream(&wf)?;
+    }
+    Ok(wf)
 }
 
 impl WriteFragment {

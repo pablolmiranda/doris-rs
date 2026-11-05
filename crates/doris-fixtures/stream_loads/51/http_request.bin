@@ -1,0 +1,13 @@
+PUT /api/regression_test_load_p0_stream_load/test_load_block_to_single_tablet/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 0e8de31f-00d1-46f7-b03d-5ce2748d044f
+column_separator: 	
+columns: ddate, dhour, server_time, log_type, source_flag, a, ext_json
+partitions: p202403, p202404
+Expect: 100-Continue
+Content-Length: 5589273
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+

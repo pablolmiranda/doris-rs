@@ -17,6 +17,7 @@ use crate::backend_service::BackendHandler;
 use crate::config::BeConfig;
 use crate::fe_client::ThriftFeClient;
 use crate::heartbeat::HeartbeatHandler;
+use crate::load::LoadService;
 use crate::master::MasterInfo;
 use crate::report::{Reporter, ReporterHandle};
 use crate::sweeper::{self, SweeperHandle};
@@ -51,6 +52,7 @@ impl Be {
         let master = MasterInfo::new(&host);
         let fe = Arc::new(ThriftFeClient::new(master.clone()));
         let agent = AgentService::new(&cfg, tablets.clone(), master.clone(), fe.clone());
+        let load = LoadService::new(tablets.clone(), fe.clone(), master.clone(), cfg.webserver_port);
         let reporter = Reporter::new(&cfg, tablets.clone(), agent.clone(), fe, master.clone());
         let sweeper = sweeper::spawn(tablets.clone(), &cfg);
 
@@ -61,7 +63,7 @@ impl Be {
 
         let stop = Arc::new(AtomicBool::new(false));
         let heartbeat = HeartbeatServiceSyncProcessor::new(HeartbeatHandler::new(&cfg, master.clone(), tablets.clone()));
-        let backend = BackendServiceSyncProcessor::new(BackendHandler::new(agent, tablets, master));
+        let backend = BackendServiceSyncProcessor::new(BackendHandler::new(agent, tablets, master).with_load(load.clone()));
         let thrift = vec![
             serve_thrift("heartbeat service", heartbeat_listener, Arc::new(heartbeat), stop.clone()),
             serve_thrift("backend service", be_listener, Arc::new(backend), stop.clone()),
@@ -71,16 +73,17 @@ impl Be {
         for (name, listener) in [("brpc", &brpc_listener), ("webserver", &http_listener)] {
             eprintln!("doris-rs be: {name} listening on {}", listener.local_addr().map(|a| a.to_string()).unwrap_or_default());
         }
+        let brpc_load = load.clone();
         runtime.spawn(async move {
             brpc_listener.set_nonblocking(true).ok();
             if let Ok(l) = tokio::net::TcpListener::from_std(brpc_listener) {
-                crate::brpc::serve(l).await;
+                crate::brpc::serve(l, Some(brpc_load)).await;
             }
         });
         runtime.spawn(async move {
             http_listener.set_nonblocking(true).ok();
             if let Ok(l) = tokio::net::TcpListener::from_std(http_listener) {
-                crate::http::serve(l).await;
+                crate::http::serve(l, Some(load)).await;
             }
         });
         Ok(Be { stop, thrift, runtime: Some(runtime), _reporter: reporter.spawn(), _sweeper: sweeper })

@@ -1,0 +1,13 @@
+PUT /api/regression_test_datatype_p0_timestamptz_index/timestamptz_bloom_filter/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 49b4f143-365d-4d23-9c12-90f207c01237
+column_separator: |
+strict_mode: true
+max_filter_ratio: 0
+Expect: 100-Continue
+Content-Length: 477890
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+

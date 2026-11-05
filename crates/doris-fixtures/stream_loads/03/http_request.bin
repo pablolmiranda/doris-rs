@@ -1,0 +1,16 @@
+PUT /api/regression_test_load_p0_stream_load_load_json_parse_failed/test/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: ae47d3d9-e5aa-4725-83d0-2fd5b1e60afa
+format: json
+read_json_by_line: true
+Expect: 100-Continue
+Content-Length: 45
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+{
+    "event_id":"a",
+    "time_stamp":"aa"
+}

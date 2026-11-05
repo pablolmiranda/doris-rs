@@ -73,7 +73,6 @@ fn every_other_method_errors_and_names_itself() {
         ("open_scanner", st(h.handle_open_scanner(open), |r| Some(r.status))),
         ("get_next", st(h.handle_get_next(TScanNextBatchParams::default()), |r| Some(r.status))),
         ("close_scanner", st(h.handle_close_scanner(TScanCloseParams::default()), |r| Some(r.status))),
-        ("get_stream_load_record", st(h.handle_get_stream_load_record(0), |_| None)),
         ("check_storage_format", st(h.handle_check_storage_format(), |_| None)),
         ("warm_up_cache_async", st(h.handle_warm_up_cache_async(warm), |r| Some(r.status))),
         (
@@ -96,8 +95,15 @@ fn every_other_method_errors_and_names_itself() {
         ("get_python_envs", st(h.handle_get_python_envs(), |_| None)),
         ("get_python_packages", st(h.handle_get_python_packages(String::new()), |_| None)),
     ];
-    assert_eq!(cases.len(), 22);
+    assert_eq!(cases.len(), 21);
     for (method, (status, error)) in cases {
         names_itself(method, status, error);
     }
+}
+
+#[test]
+fn stream_load_records_start_empty() {
+    // BackendService::get_stream_load_record: an empty map when nothing was loaded
+    let (h, _tmp) = handler();
+    assert!(h.handle_get_stream_load_record(0).unwrap().stream_load_record.is_empty());
 }
