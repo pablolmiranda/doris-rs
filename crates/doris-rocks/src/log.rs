@@ -21,21 +21,49 @@ const LAST: u8 = 4;
 const RECYCLABLE_FULL: u8 = 5;
 const RECYCLABLE_LAST: u8 = 8;
 
+/// Where a log's bytes go: a file, or anything that can also be cut back and synced.
+pub trait LogSink: Write {
+    fn truncate(&mut self, len: u64) -> std::io::Result<()>;
+    fn sync(&mut self) -> std::io::Result<()>;
+}
+
+impl LogSink for File {
+    fn truncate(&mut self, len: u64) -> std::io::Result<()> {
+        self.set_len(len)?;
+        std::io::Seek::seek(self, std::io::SeekFrom::Start(len)).map(|_| ())
+    }
+
+    fn sync(&mut self) -> std::io::Result<()> {
+        self.sync_data()
+    }
+}
+
 /// Appends records to a log file in the legacy (non-recyclable) format, as `log::Writer` does
-/// with `recycle_log_files = false`.
+/// with `recycle_log_files = false`. A record whose append fails is cut back off, so a later
+/// record never follows torn bytes.
 #[derive(Debug)]
-pub struct LogWriter {
-    file: File,
+pub struct LogWriter<F: LogSink = File> {
+    file: F,
     block_offset: usize,
     #[allow(dead_code)]
     log_number: u64,
     bytes: u64,
 }
 
-impl LogWriter {
+impl<F: LogSink> LogWriter<F> {
     /// A writer at the start of `file` (a new, empty log).
-    pub fn new(file: File, log_number: u64) -> LogWriter {
+    pub fn new(file: F, log_number: u64) -> LogWriter<F> {
         LogWriter { file, block_offset: 0, log_number, bytes: 0 }
+    }
+
+    /// Continues a log that already holds `len` bytes.
+    pub fn resume_at(&mut self, len: u64) {
+        self.bytes = len;
+        self.block_offset = (len % BLOCK_SIZE as u64) as usize;
+    }
+
+    pub fn into_inner(self) -> F {
+        self.file
     }
 
     /// Bytes written so far.
@@ -48,6 +76,7 @@ impl LogWriter {
     }
 
     pub fn add_record(&mut self, data: &[u8]) -> std::io::Result<()> {
+        let (start_offset, start_bytes) = (self.block_offset, self.bytes);
         let mut out = Vec::with_capacity(data.len() + HEADER_SIZE * (1 + data.len() / BLOCK_SIZE) + HEADER_SIZE);
         let mut rest = data;
         let mut begin = true;
@@ -78,22 +107,39 @@ impl LogWriter {
                 break;
             }
         }
-        self.file.write_all(&out)?;
+        if let Err(e) = self.file.write_all(&out) {
+            self.block_offset = start_offset;
+            self.bytes = start_bytes;
+            let _ = self.file.truncate(start_bytes);
+            return Err(e);
+        }
         self.bytes += out.len() as u64;
         Ok(())
     }
 
     pub fn sync(&mut self) -> std::io::Result<()> {
-        self.file.sync_data()
+        self.file.sync()
     }
 }
 
-/// Every whole record of a log file. A torn tail (a fragment running past the end of the
-/// file, or zeros where a header should be) ends the log quietly, as 5.14.2's default
-/// point-in-time recovery does; a bad checksum or fragment order before that is corruption.
+/// Every whole record of a manifest. A torn tail (a fragment running past the end of the file,
+/// or zeros where a header should be) ends it quietly; a bad checksum or fragment order before
+/// that is corruption.
 pub fn read_records(path: &Path) -> Result<Vec<Vec<u8>>, RocksError> {
+    read(path, false).map(|(records, _)| records)
+}
+
+/// Every record of a write-ahead log up to the first bad one, and whether one was found
+/// (`kPointInTimeRecovery`, 5.14.2's default `wal_recovery_mode`: replay stops at the first
+/// corruption and the database opens with what came before).
+pub fn read_wal_records(path: &Path) -> Result<(Vec<Vec<u8>>, bool), RocksError> {
+    read(path, true)
+}
+
+fn read(path: &Path, tolerant: bool) -> Result<(Vec<Vec<u8>>, bool), RocksError> {
     let bytes = std::fs::read(path).at(path)?;
     let corrupt = |what: String| RocksError::Corrupt { path: path.to_path_buf(), what };
+    let stop = |out: Vec<Vec<u8>>, e: RocksError| if tolerant { Ok((out, true)) } else { Err(e) };
     let mut out = Vec::new();
     let mut partial: Option<Vec<u8>> = None;
     let mut pos = 0;
@@ -121,29 +167,29 @@ pub fn read_records(path: &Path) -> Result<Vec<Vec<u8>>, RocksError> {
             break;
         }
         if HEADER_SIZE + len > left {
-            return Err(corrupt(format!("a fragment at offset {pos} crosses its block")));
+            return stop(out, corrupt(format!("a fragment at offset {pos} crosses its block")));
         }
         let payload = &bytes[start..start + len];
         let crc = crc32c::crc32c_append(crc32c::crc32c(&[kind]), payload);
         if crc != unmask_crc(masked) {
-            return Err(corrupt(format!("checksum mismatch in the record at offset {pos}")));
+            return stop(out, corrupt(format!("checksum mismatch in the record at offset {pos}")));
         }
         pos = start + len;
         match kind {
             FULL => {
                 if partial.take().is_some() {
-                    return Err(corrupt(format!("a whole record at offset {} inside a fragmented one", start - HEADER_SIZE)));
+                    return stop(out, corrupt(format!("a whole record at offset {} inside a fragmented one", start - HEADER_SIZE)));
                 }
                 out.push(payload.to_vec());
             }
             FIRST => {
                 if partial.replace(payload.to_vec()).is_some() {
-                    return Err(corrupt("two first fragments in a row".into()));
+                    return stop(out, corrupt("two first fragments in a row".into()));
                 }
             }
             MIDDLE | LAST => {
                 let Some(mut p) = partial.take() else {
-                    return Err(corrupt(format!("a fragment without its first part at offset {}", start - HEADER_SIZE)));
+                    return stop(out, corrupt(format!("a fragment without its first part at offset {}", start - HEADER_SIZE)));
                 };
                 p.extend_from_slice(payload);
                 if kind == LAST {
@@ -152,8 +198,8 @@ pub fn read_records(path: &Path) -> Result<Vec<Vec<u8>>, RocksError> {
                     partial = Some(p);
                 }
             }
-            other => return Err(corrupt(format!("unknown record type {other}"))),
+            other => return stop(out, corrupt(format!("unknown record type {other}"))),
         }
     }
-    Ok(out)
+    Ok((out, false))
 }

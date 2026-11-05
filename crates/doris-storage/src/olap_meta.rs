@@ -54,20 +54,41 @@ impl Contents {
             .map(|k| String::from_utf8_lossy(k).into_owned())
     }
 
-    /// Every valid header, and a line for each one the C++ BE would fail to load
+    /// Every valid header, and each one the C++ BE would fail to load
     /// (`TabletManager::load_tablet_from_meta`).
-    pub fn headers(&self) -> (Vec<TabletMetaPb>, Vec<String>) {
+    pub fn headers(&self) -> (Vec<TabletMetaPb>, Vec<Skipped>) {
         let (mut ok, mut skipped) = (Vec::new(), Vec::new());
         for (k, v) in self.keys.range(HEADER_PREFIX.as_bytes().to_vec()..) {
             let Some(rest) = k.strip_prefix(HEADER_PREFIX.as_bytes()) else { break };
             let key = String::from_utf8_lossy(k).into_owned();
             match check(rest, v) {
                 Ok(meta) => ok.push(meta),
-                Err(why) => skipped.push(format!("{key}: {why}")),
+                Err(why) => {
+                    let mut tablets = Vec::new();
+                    if let Some((id, hash)) = std::str::from_utf8(rest).ok().and_then(|r| r.split_once('_')) {
+                        if let (Ok(id), Ok(hash)) = (id.parse(), hash.parse()) {
+                            tablets.push((id, hash));
+                        }
+                    }
+                    let meta = TabletMetaPb::decode(v.as_slice()).ok();
+                    if let Some(m) = &meta {
+                        tablets.push((m.tablet_id(), m.schema_hash()));
+                    }
+                    skipped.push(Skipped { line: format!("{key}: {why}"), tablets, meta });
+                }
             }
         }
         (ok, skipped)
     }
+}
+
+/// A header the C++ BE would fail to load: why, the tablets it may name (by its key and by its
+/// contents), and its contents when they decode.
+#[derive(Debug, Clone)]
+pub(crate) struct Skipped {
+    pub line: String,
+    pub tablets: Vec<(i64, i32)>,
+    pub meta: Option<TabletMetaPb>,
 }
 
 fn check(key_rest: &[u8], value: &[u8]) -> Result<TabletMetaPb, String> {

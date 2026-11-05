@@ -58,9 +58,21 @@ impl DataDir {
             return Err(StorageError::DataRoot { root: root.to_path_buf(), tablet_id: None, key: Some(key) });
         }
         let (headers, skipped) = contents.headers();
-        if let Some(m) = headers.iter().find(|m| holds_data(m)) {
-            return Err(StorageError::DataRoot { root: root.to_path_buf(), tablet_id: Some(m.tablet_id()), key: None });
+        let data_root = |tablet_id| StorageError::DataRoot { root: root.to_path_buf(), tablet_id: Some(tablet_id), key: None };
+        if let Some(m) = headers.iter().chain(skipped.iter().filter_map(|s| s.meta.as_ref())).find(|m| holds_data(m)) {
+            return Err(data_root(m.tablet_id()));
         }
+        // a tablet directory with files and no valid header may hold segments (a lost or damaged
+        // meta/): refuse rather than let the cleanup below send it to trash
+        let known: HashSet<(i64, i32)> = headers.iter().map(|m| (m.tablet_id(), m.schema_hash())).collect();
+        let skipped_tablets: HashSet<(i64, i32)> = skipped.iter().flat_map(|s| s.tablets.iter().copied()).collect();
+        for (tablet_id, schema_hash, path) in tablet_dirs(root)? {
+            let unknown = !known.contains(&(tablet_id, schema_hash)) && !skipped_tablets.contains(&(tablet_id, schema_hash));
+            if unknown && fs::read_dir(&path).at(&path)?.next().is_some() {
+                return Err(data_root(tablet_id));
+            }
+        }
+        let skipped_lines = skipped.iter().map(|s| s.line.clone()).collect();
         for d in START_DIRS {
             let p = root.join(d);
             fs::create_dir_all(&p).at(&p)?;
@@ -88,8 +100,8 @@ impl DataDir {
         }
         let cluster_id = read_cluster_id(&root.join(CLUSTER_ID))?;
         let path_hash = hash_of_path(host, root.to_str().unwrap_or_default()) as i64;
-        let mut dir = DataDir { root: root.to_path_buf(), path_hash, cluster_id, next_shard: 0, meta, skipped };
-        dir.clear_half_created()?;
+        let mut dir = DataDir { root: root.to_path_buf(), path_hash, cluster_id, next_shard: 0, meta, skipped: skipped_lines };
+        dir.clear_half_created(&skipped_tablets)?;
         Ok(dir)
     }
 
@@ -204,8 +216,9 @@ impl DataDir {
         &mut self.meta
     }
 
-    fn clear_half_created(&mut self) -> Result<(), StorageError> {
-        let mut known = HashSet::new();
+    /// Clears tablets half created by a crash; the directories of skipped headers are left alone.
+    fn clear_half_created(&mut self, skipped: &HashSet<(i64, i32)>) -> Result<(), StorageError> {
+        let mut known = skipped.clone();
         for meta in self.meta.tablet_metas()? {
             let (id, hash) = (meta.tablet_id(), meta.schema_hash());
             if self.tablet_dir(meta.shard_id() as u64, id, hash).is_dir() {

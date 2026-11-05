@@ -149,6 +149,7 @@ version = "0.1.0"
 dependencies = [
  "crc32c",
  "lz4_flex",
+ "rustix",
  "snap",
  "tempfile",
  "thiserror",

@@ -174,6 +174,59 @@ fn refuses_a_root_with_data() {
 }
 
 #[test]
+fn a_tablet_directory_with_files_but_no_header_is_refused() {
+    // e.g. a C++ root whose meta/ was lost: its segment files must not go to trash
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("data/7/10001/55");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("020000000000000001_0.dat"), b"segment").unwrap();
+    let before = listing(tmp.path());
+    match open(tmp.path()) {
+        Err(StorageError::DataRoot { tablet_id, .. }) => assert_eq!(tablet_id, Some(10001)),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(listing(tmp.path()), before);
+}
+
+#[test]
+fn a_skipped_header_with_data_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    cpp_root("cpp-wal", tmp.path());
+    let mut h = headers("cpp-wal")[0].clone();
+    h.rs_metas[0].num_segments = Some(1);
+    {
+        let mut db = meta_db(tmp.path());
+        let mut b = Batch::default();
+        b.delete("meta", format!("tabletmeta_{}_{}", h.tablet_id(), h.schema_hash()).as_bytes());
+        b.put("meta", format!("tabletmeta_{}_{}", h.tablet_id() + 1, h.schema_hash()).as_bytes(), &h.encode_to_vec());
+        db.write(b, true).unwrap();
+        db.close().unwrap();
+    }
+    let before = listing(tmp.path());
+    assert!(matches!(open(tmp.path()), Err(StorageError::DataRoot { .. })));
+    assert_eq!(listing(tmp.path()), before);
+}
+
+#[test]
+fn a_skipped_headers_directory_is_left_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    cpp_root("cpp-wal", tmp.path());
+    let h = headers("cpp-wal")[0].clone();
+    {
+        let mut db = meta_db(tmp.path());
+        let mut b = Batch::default();
+        b.delete("meta", format!("tabletmeta_{}_{}", h.tablet_id(), h.schema_hash()).as_bytes());
+        b.put("meta", format!("tabletmeta_{}_{}", h.tablet_id() + 1, h.schema_hash()).as_bytes(), &h.encode_to_vec());
+        db.write(b, true).unwrap();
+        db.close().unwrap();
+    }
+    let dir = tmp.path().join(format!("data/{}/{}/{}", h.shard_id(), h.tablet_id(), h.schema_hash()));
+    let mgr = open(tmp.path()).unwrap();
+    assert!(!mgr.data_dirs()[0].skipped_headers().is_empty());
+    assert!(dir.is_dir(), "the skipped tablet's directory went to trash");
+}
+
+#[test]
 fn refuses_a_legacy_header() {
     let tmp = tempfile::tempdir().unwrap();
     {

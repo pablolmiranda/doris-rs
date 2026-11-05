@@ -18,7 +18,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::error::{IoContext, RocksError};
-use crate::log::{read_records, LogWriter};
+use crate::log::{read_records, read_wal_records, LogWriter};
 use crate::table::{read_table, InternalKey, TableBuilder, TableProps, ValueKind};
 use crate::version_edit::{NewFile, VersionEdit};
 use crate::write_batch::{BatchOp, WriteBatch};
@@ -41,7 +41,7 @@ pub struct DbOptions {
     /// Every column family on disk must be listed (as `DB::Open` requires); listed ones that
     /// are missing are created.
     pub column_families: Vec<CfOptions>,
-    /// Flush once the log passes this many bytes.
+    /// Flush once the log passes this many bytes and the size of the live key set.
     pub flush_log_bytes: u64,
     /// Fault injection for tests: a flush stops after writing its table files, manifest and
     /// options file, before switching `CURRENT`.
@@ -101,7 +101,51 @@ pub struct Db {
     log: LogWriter,
     log_number: u64,
     fail_writes: bool,
-    _lock: File,
+    fail_flushes: bool,
+    /// Bytes of keys and values in the live key set.
+    live: u64,
+    _lock: Lock,
+}
+
+/// The `LOCK` file, held as `PosixEnv::LockFile` holds it: an fcntl write lock on the whole file
+/// (so a C++ BE on the same root is kept out, and keeps doris-rs out), plus a process-wide set,
+/// because fcntl locks belong to the process and closing any descriptor of the file drops them.
+#[derive(Debug)]
+struct Lock {
+    path: PathBuf,
+    file: Option<File>,
+}
+
+static LOCKED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+impl Lock {
+    fn take(path: &Path) -> Result<Lock, RocksError> {
+        let mut locked = LOCKED.lock().unwrap_or_else(|e| e.into_inner());
+        if locked.iter().any(|p| p == path) {
+            return Err(RocksError::Locked { path: path.to_path_buf() });
+        }
+        let file = OpenOptions::new().create(true).truncate(false).read(true).write(true).open(path).at(path)?;
+        match rustix::fs::fcntl_lock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => {}
+            Err(e) if e == rustix::io::Errno::AGAIN || e == rustix::io::Errno::ACCESS => {
+                return Err(RocksError::Locked { path: path.to_path_buf() })
+            }
+            Err(e) => return Err(RocksError::Io { path: path.to_path_buf(), source: e.into() }),
+        }
+        locked.push(path.to_path_buf());
+        Ok(Lock { path: path.to_path_buf(), file: Some(file) })
+    }
+}
+
+impl Drop for Lock {
+    /// Closes the file (releasing the fcntl lock) before the path leaves the set, as
+    /// `PosixEnv::UnlockFile` does, so no other open in this process can lose a fresh lock to
+    /// this close.
+    fn drop(&mut self) {
+        let mut locked = LOCKED.lock().unwrap_or_else(|e| e.into_inner());
+        drop(self.file.take());
+        locked.retain(|p| p != &self.path);
+    }
 }
 
 /// What a manifest says about one column family.
@@ -155,13 +199,7 @@ impl Db {
 
     pub fn open(dir: &Path, opts: &DbOptions) -> Result<Db, RocksError> {
         fs::create_dir_all(dir).at(dir)?;
-        let lock_path = dir.join("LOCK");
-        let lock = OpenOptions::new().create(true).truncate(false).write(true).open(&lock_path).at(&lock_path)?;
-        match lock.try_lock() {
-            Ok(()) => {}
-            Err(fs::TryLockError::WouldBlock) => return Err(RocksError::Locked { path: lock_path }),
-            Err(fs::TryLockError::Error(e)) => return Err(RocksError::Io { path: lock_path, source: e }),
-        }
+        let lock = Lock::take(&dir.join("LOCK"))?;
         let identity = dir.join("IDENTITY");
         if !identity.exists() {
             let (a, b) = (random_u64(1), random_u64(2));
@@ -213,8 +251,11 @@ impl Db {
             log: LogWriter::new(placeholder, 0),
             log_number: 0,
             fail_writes: false,
+            fail_flushes: false,
+            live: 0,
             _lock: lock,
         };
+        db.live = db.cfs.iter().flat_map(|c| c.data.iter()).map(|(k, v)| (k.len() + v.len()) as u64).sum();
         db.flush()?;
         Ok(db)
     }
@@ -243,7 +284,15 @@ impl Db {
         self.fail_writes = on;
     }
 
-    /// Appends the batch to the log (synced when `sync`), then applies it.
+    /// Fault injection for tests: while on, every flush fails before switching `CURRENT`.
+    #[doc(hidden)]
+    pub fn inject_flush_failure(&mut self, on: bool) {
+        self.fail_flushes = on;
+    }
+
+    /// Appends the batch to the log (synced when `sync`), then applies it. The write has
+    /// succeeded once it is in the log: a flush it triggers that fails leaves the database as it
+    /// was and is tried again on the next write.
     pub fn write(&mut self, batch: Batch, sync: bool) -> Result<(), RocksError> {
         if batch.is_empty() {
             return Ok(());
@@ -272,16 +321,33 @@ impl Db {
             self.log.sync().at(&log_path)?;
         }
         for (i, key, value) in targets {
-            match value {
+            let key_len = key.len() as u64;
+            let new_len = value.as_ref().map(|v| v.len() as u64);
+            let old = match value {
                 Some(v) => self.cfs[i].data.insert(key, v),
                 None => self.cfs[i].data.remove(&key),
             };
+            if let Some(o) = old {
+                self.live -= key_len + o.len() as u64;
+            }
+            if let Some(n) = new_len {
+                self.live += key_len + n;
+            }
         }
         self.last_sequence += n;
-        if self.log.len() > self.opts.flush_log_bytes {
-            self.flush()?;
+        // a flush rewrites every live key: wait until the log outgrows them, so rewriting costs
+        // at most about the bytes written
+        if self.log.len() > self.opts.flush_log_bytes.max(self.live_bytes()) {
+            if let Err(e) = self.flush() {
+                eprintln!("doris-rocks: flushing {} failed, retrying on the next write: {e}", self.dir.display());
+            }
         }
         Ok(())
+    }
+
+    /// The size of the live key set.
+    fn live_bytes(&self) -> u64 {
+        self.live
     }
 
     fn log_path(&self) -> PathBuf {
@@ -375,12 +441,18 @@ impl Db {
         fs::write(&options_path, self.options_text()).at(&options_path)?;
         keep.push(options_name);
 
-        if self.opts.fail_before_current {
+        if self.opts.fail_before_current || self.fail_flushes {
             return Err(RocksError::Io {
                 path: self.dir.join("CURRENT"),
                 source: std::io::Error::other("injected failure before CURRENT"),
             });
         }
+        // the new log exists before CURRENT names the manifest that points at it, so nothing can
+        // fail between the switch and the first write to it
+        let log_name = format!("{log_number:06}.log");
+        let log_path = self.dir.join(&log_name);
+        let log = LogWriter::new(File::create(&log_path).at(&log_path)?, log_number);
+        keep.push(log_name);
         let tmp = self.dir.join(format!("{manifest_number:06}.dbtmp"));
         {
             let mut f = File::create(&tmp).at(&tmp)?;
@@ -389,25 +461,23 @@ impl Db {
         }
         let current = self.dir.join("CURRENT");
         fs::rename(&tmp, &current).at(&current)?;
-        sync_dir(&self.dir)?;
-
-        let log_name = format!("{log_number:06}.log");
-        let log_path = self.dir.join(&log_name);
-        self.log = LogWriter::new(File::create(&log_path).at(&log_path)?, log_number);
+        self.log = log;
         self.log_number = log_number;
-        keep.push(log_name);
-
-        for e in fs::read_dir(&self.dir).at(&self.dir)?.flatten() {
-            let name = e.file_name().into_string().unwrap_or_default();
-            let ours = name.ends_with(".sst")
-                || name.ends_with(".log")
-                || name.ends_with(".dbtmp")
-                || name.starts_with("MANIFEST-")
-                || name.starts_with("OPTIONS-")
-                || name.starts_with(".doris-rocks-");
-            if ours && !keep.contains(&name) {
-                let p = e.path();
-                fs::remove_file(&p).at(&p)?;
+        // the rename and the new log's entry are durable together; cleanup below may fail
+        // without harm (the next flush deletes what is left)
+        let _ = sync_dir(&self.dir);
+        if let Ok(entries) = fs::read_dir(&self.dir) {
+            for e in entries.flatten() {
+                let name = e.file_name().into_string().unwrap_or_default();
+                let ours = name.ends_with(".sst")
+                    || name.ends_with(".log")
+                    || name.ends_with(".dbtmp")
+                    || name.starts_with("MANIFEST-")
+                    || name.starts_with("OPTIONS-")
+                    || name.starts_with(".doris-rocks-");
+                if ours && !keep.contains(&name) {
+                    let _ = fs::remove_file(e.path());
+                }
             }
         }
         Ok(())
@@ -454,6 +524,25 @@ fn recover(dir: &Path) -> Result<Recovery, RocksError> {
         let mut next_file = 2;
         let mut max_column_family = 0;
         let current = dir.join("CURRENT");
+        let numbered: Vec<u64> = match fs::read_dir(dir) {
+            Ok(entries) => entries
+                .flatten()
+                .filter_map(|e| {
+                    let n = e.file_name().into_string().ok()?;
+                    file_number(&n, "", ".log")
+                        .or_else(|| file_number(&n, "", ".sst"))
+                        .or_else(|| file_number(&n, "MANIFEST-", ""))
+                        .or_else(|| file_number(&n, "OPTIONS-", ""))
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        if !current.exists() && !numbered.is_empty() {
+            return Err(RocksError::Corrupt {
+                path: current,
+                what: "missing, but the directory holds manifests, tables or logs".into(),
+            });
+        }
         if current.exists() {
             let name = fs::read_to_string(&current).at(&current)?;
             let manifest = dir.join(name.trim_end_matches('\n'));
@@ -515,7 +604,8 @@ fn recover(dir: &Path) -> Result<Recovery, RocksError> {
             logs.sort_unstable();
             for number in logs {
                 let path = dir.join(format!("{number:06}.log"));
-                for record in read_records(&path)? {
+                let (records, stopped) = read_wal_records(&path)?;
+                for record in records {
                     let batch = WriteBatch::decode(&record).map_err(|what| RocksError::Corrupt { path: path.clone(), what })?;
                     for (i, op) in batch.ops.into_iter().enumerate() {
                         let sequence = batch.sequence + i as u64;
@@ -531,9 +621,15 @@ fn recover(dir: &Path) -> Result<Recovery, RocksError> {
                         }
                     }
                 }
+                // point-in-time recovery: nothing after the first bad record is replayed
+                if stopped {
+                    break;
+                }
             }
         }
 
+        // MarkFileNumberUsedDuringRecovery: never reuse a number already on disk
+        let next_file = next_file.max(numbered.iter().max().map_or(0, |n| n + 1));
         Ok(Recovery { states, data: recovered, last_sequence, next_file, max_column_family })
 }
 

@@ -12,6 +12,7 @@ unsafe_code = "forbid"
 [dependencies]
 crc32c = { workspace = true }
 snap = { workspace = true }
+rustix = { workspace = true }
 lz4_flex = { workspace = true }
 thiserror = { workspace = true }
 

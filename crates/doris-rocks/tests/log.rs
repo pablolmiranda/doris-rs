@@ -2,7 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use doris_rocks::log::{read_records, LogWriter};
+use doris_rocks::log::{read_records, read_wal_records, LogWriter};
 use doris_rocks::version_edit::{NewFile, VersionEdit};
 use doris_rocks::write_batch::{BatchOp, WriteBatch};
 use doris_rocks::RocksError;
@@ -119,6 +119,23 @@ fn a_bad_checksum_before_the_tail_is_corruption() {
 }
 
 #[test]
+fn a_bad_wal_record_ends_the_replay_there() {
+    // wal_recovery_mode kPointInTimeRecovery (5.14.2's default, options.h:844): replay stops at the
+    // first bad record and the database opens with what came before
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("000001.log");
+    write_records(&path, &[vec![1u8; 100], vec![2u8; 100], vec![3u8; 100]]);
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[7 + 100 + 7 + 20] ^= 0xff; // inside the second record's payload
+    fs::write(&path, bytes).unwrap();
+    let (records, stopped) = read_wal_records(&path).unwrap();
+    assert_eq!(records, vec![vec![1u8; 100]]);
+    assert!(stopped);
+    write_records(&path, &[vec![1u8; 100]]);
+    assert_eq!(read_wal_records(&path).unwrap(), (vec![vec![1u8; 100]], false));
+}
+
+#[test]
 fn batches_and_edits_round_trip() {
     let batch = WriteBatch {
         sequence: 42,
@@ -159,4 +176,52 @@ fn batches_and_edits_round_trip() {
     assert_eq!(VersionEdit::decode(&edit.encode()).unwrap(), edit);
     let plain = VersionEdit { min_log_number_to_keep: None, column_family: 0, column_family_add: None, ..edit };
     assert_eq!(VersionEdit::decode(&plain.encode()).unwrap(), plain);
+}
+
+/// A log file that fails once `limit` bytes have been written, as a full disk would mid-record.
+struct FailAfter {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+
+impl std::io::Write for FailAfter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let room = self.limit.saturating_sub(self.bytes.len());
+        if room == 0 {
+            return Err(std::io::Error::other("disk full"));
+        }
+        let n = room.min(buf.len());
+        self.bytes.extend_from_slice(&buf[..n]);
+        Ok(n)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl doris_rocks::log::LogSink for FailAfter {
+    fn truncate(&mut self, len: u64) -> std::io::Result<()> {
+        self.bytes.truncate(len as usize);
+        Ok(())
+    }
+    fn sync(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_failed_append_leaves_no_torn_record() {
+    let mut w = LogWriter::new(FailAfter { bytes: Vec::new(), limit: 150 }, 1);
+    w.add_record(&[1u8; 100]).unwrap();
+    assert!(w.add_record(&[2u8; 100]).is_err());
+    let sink = w.into_inner();
+    assert_eq!(sink.bytes.len(), 107, "the torn second record was cut back off");
+    // and the next record goes where the torn one was
+    let mut w = LogWriter::new(FailAfter { bytes: sink.bytes, limit: 10_000 }, 1);
+    w.resume_at(107);
+    w.add_record(&[3u8; 10]).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("000001.log");
+    fs::write(&path, w.into_inner().bytes).unwrap();
+    assert_eq!(read_records(&path).unwrap(), vec![vec![1u8; 100], vec![3u8; 10]]);
 }
