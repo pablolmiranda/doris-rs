@@ -18,6 +18,7 @@ Any implementation that speaks those protocols can be measured by the same 9,000
 | `compose/reference-multi.yml` | 3 FE + 3 BE reference cluster, for replica and failover suites |
 | `compose/runner.Dockerfile` | JDK 17 + Maven image that runs the Groovy framework |
 | `targets/*.env` | Where a target cluster listens (`reference-single`, `reference-multi`, `rust`, add more) |
+| `compose/fe-only.yml`, `rust/be.conf` | The cluster doris-rs is graded in: the reference FE, and doris-rs on the host |
 | `suites/*.txt` | Which suite directories to run; `ignore.txt` lists known-flaky suites |
 | `bin/run_suites.sh` | Renders the conf, runs the framework in the runner container, parses output |
 | `bin/override_conf.py` | Copies the upstream conf and overrides only the address keys |
@@ -53,7 +54,30 @@ if you want them to count.
 
 ## Gating doris-rs
 
-Start the Rust binary with the stock ports, then:
+doris-rs is graded as the BE of an FE-only cluster: the reference image's FE alone
+(`compose/fe-only.yml`, the same FE settings as `reference-single.yml`) and doris-rs running
+natively on the host as its only backend, with the reference's BE settings (`rust/be.conf`).
+
+```
+make fe-up                          # FE-only cluster; registers the host as its BE
+make rust-be                        # second terminal: build and run doris-rs be (storage in /tmp/doris-rs-oracle)
+make epic-check TARGET=rust         # both gates; the report's first line counts eligible suites
+make fe-down
+```
+
+The FE reaches doris-rs at the address `host.docker.internal` resolves to inside its container
+(OrbStack and Docker Desktop on macOS); doris-rs takes that address from the first heartbeat.
+The `rust` deployment facts (`clusters/rust.facts.json`) read the BE's host from `SHOW BACKENDS`.
+
+After Milestone 2 (join the cluster, hold tablets; run `m2-full-2`, 2026-11-05): 155 eligible
+suites, all passing both gates; 250 Epic 1 suites pass the out gate (83 of those that reach the
+BE) and 81 the strict gate (38). Eligible means every need is in `scores/epic1-supported.json`,
+counting `needs_supplement.json`: 63 suites that would otherwise be eligible wait on
+`state:global wait_timeout=31000`, a global variable `test_query_sys_tables` sets partway through
+the run and cannot reach until doris-rs executes queries. A full run takes 80–150 minutes; most
+of the spread is `test_etl_failed` waiting on its broker load.
+
+The older directory-level gate also works against any target:
 
 ```
 make check TARGET=rust SUITES=suites/p0-core.txt

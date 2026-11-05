@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Record FE<->BE RPC traffic for the wire corpus: recreate the reference container, start the
 # capture sidecar immediately (before the FE has booted, so every connection is recorded from
-# its first byte), wait for the cluster, run wire/scenario.sh, then stop the capture.
+# its first byte), wait for the cluster, run the scenario, then stop the capture.
+# SCENARIO picks the scenario (default wire/scenario.sh). With OUT set, the files the scenario
+# left in /tmp/scenario-out inside the container are copied to OUT.
 # Prints the path of the new pcap (oracle/wire/captures/<run>.pcap, never committed).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +29,13 @@ for _ in $(seq 1 120); do
 done
 [[ "$status" == healthy ]] || { echo "error: reference not healthy ($status)" >&2; exit 1; }
 
-"${COMPOSE[@]}" exec -T doris bash -s < "$WIRE/scenario.sh" >&2
+SCENARIO="${SCENARIO:-$WIRE/scenario.sh}"
+"${COMPOSE[@]}" exec -T doris bash -s < "$SCENARIO" >&2
+if [[ -n "${OUT:-}" ]]; then
+  rm -rf "$OUT/headers" "$OUT/layout.txt"
+  mkdir -p "$OUT"
+  docker cp "$("${COMPOSE[@]}" ps -q doris):/tmp/scenario-out/." "$OUT" >&2
+fi
 "${COMPOSE[@]}" stop capture >/dev/null
 "${COMPOSE[@]}" rm -f capture >/dev/null
 echo "$CAPTURE_DIR/$CAPTURE_FILE"

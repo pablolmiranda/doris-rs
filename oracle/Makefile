@@ -14,7 +14,9 @@
 #   make corpus [TABLES="t1 t2"]     build the golden corpus; TABLES limits it to new tables
 #   make wire-capture                record FE<->BE RPC traffic (recreates the reference)
 #   make wire-extract [PCAP=...]     turn the newest capture into oracle/wire/corpus
+#   make be-fixtures                 capture the M2 BE fixtures (crates/doris-be/tests/fixtures/m2)
 #   make epic-baseline               Epic 1 reference: 5 serial runs on clusters A and B, derived into epic1/
+#   make fe-up / fe-down / rust-be   FE-only cluster for doris-rs; rust-be runs doris-rs as its BE
 #   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
 #   make epic-grade RUN=..           grade an already recorded run again
 
@@ -36,7 +38,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,20p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,22p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -108,11 +110,37 @@ wire-capture:
 wire-extract:
 	python3 wire/bin/extract.py $(PCAP)
 
+BE_FIXTURES := ../crates/doris-be/tests/fixtures/m2
+
+be-fixtures:
+	pcap="$$(SCENARIO=wire/scenarios/m2.sh OUT=$(BE_FIXTURES) wire/bin/capture.sh)" && \
+	  python3 wire/bin/be_fixtures.py "$$pcap" $(BE_FIXTURES)
+
 EPIC_SUITES ?= suites/epic1.txt
 EPIC_REF    ?= epic1
 
 epic-baseline: src
 	bin/epic_baseline.sh $(EPIC_SUITES)
+
+# The cluster doris-rs is graded in: the reference FE alone, and doris-rs on the host as its BE.
+RUST_COMPOSE := docker compose -f compose/fe-only.yml
+RUST_FE      := doris-oracle-fe-only
+
+fe-up:
+	$(RUST_COMPOSE) up --wait
+	@ip="$$(docker exec $(RUST_FE) getent ahostsv4 host.docker.internal | awk 'NR==1{print $$1}')"; \
+	  test -n "$$ip" || { echo "host.docker.internal does not resolve in $(RUST_FE)"; exit 1; }; \
+	  docker exec $(RUST_FE) mysql -uroot -h127.0.0.1 -P9030 -e "SHOW BACKENDS" | grep -q "$$ip" || \
+	  docker exec $(RUST_FE) mysql -uroot -h127.0.0.1 -P9030 -e "ALTER SYSTEM ADD BACKEND '$$ip:9050'"; \
+	  echo "doris-rs registers as $$ip; start it with: make rust-be"
+
+fe-down:
+	$(RUST_COMPOSE) down -v
+
+rust-be:
+	cargo build --release -p doris-rs --manifest-path ../Cargo.toml
+	mkdir -p /tmp/doris-rs-oracle/storage
+	../target/release/doris-rs be --config rust/be.conf
 
 epic-check: src
 	@test -f $(EPIC_REF)/marks.json || { echo "no Epic 1 reference in $(EPIC_REF); run: make epic-baseline"; exit 1; }
@@ -131,4 +159,4 @@ triage:
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract epic-baseline epic-check epic-grade
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract be-fixtures fe-up fe-down rust-be epic-baseline epic-check epic-grade

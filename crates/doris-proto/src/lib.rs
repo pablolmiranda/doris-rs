@@ -7,9 +7,13 @@
 #[allow(clippy::all, clippy::pedantic)]
 pub mod doris {
     include!(concat!(env!("OUT_DIR"), "/doris.rs"));
+    #[cfg(feature = "json")]
+    include!(concat!(env!("OUT_DIR"), "/doris.serde.rs"));
     /// `package doris.segment_v2;` — segment footer, column meta, pages, indexes.
     pub mod segment_v2 {
         include!(concat!(env!("OUT_DIR"), "/doris.segment_v2.rs"));
+        #[cfg(feature = "json")]
+        include!(concat!(env!("OUT_DIR"), "/doris.segment_v2.serde.rs"));
     }
 }
 

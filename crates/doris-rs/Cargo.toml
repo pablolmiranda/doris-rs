@@ -1,0 +1,19 @@
+[package]
+name = "doris-rs"
+version = "0.1.0"
+description = "The doris-rs binary: every Doris role in one executable"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+doris-be = { workspace = true }
+
+[dev-dependencies]
+doris-fixtures = { workspace = true }
+doris-thrift = { workspace = true }
+thrift = { workspace = true }
+tempfile = { workspace = true }

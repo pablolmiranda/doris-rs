@@ -1,0 +1,113 @@
+{
+ "cluster": "rust",
+ "facts": [
+  {
+   "name": "be-host",
+   "from_backends": "Host",
+   "match": "substring"
+  },
+  {
+   "name": "be-data-path",
+   "values": [
+    "/tmp/doris-rs-oracle/storage"
+   ],
+   "match": "substring"
+  },
+  {
+   "name": "be-heartbeat-port",
+   "values": [
+    "9050"
+   ],
+   "match": "cell",
+   "columns": [
+    "HeartbeatPort"
+   ]
+  },
+  {
+   "name": "be-heartbeat-port-endpoint",
+   "from_backends": "Host",
+   "format": "{}:9050",
+   "match": "substring"
+  },
+  {
+   "name": "be-port",
+   "values": [
+    "9060"
+   ],
+   "match": "cell",
+   "columns": [
+    "BePort"
+   ]
+  },
+  {
+   "name": "be-port-endpoint",
+   "from_backends": "Host",
+   "format": "{}:9060",
+   "match": "substring"
+  },
+  {
+   "name": "be-http-port",
+   "values": [
+    "8040"
+   ],
+   "match": "cell",
+   "columns": [
+    "HttpPort"
+   ]
+  },
+  {
+   "name": "be-http-port-endpoint",
+   "from_backends": "Host",
+   "format": "{}:8040",
+   "match": "substring"
+  },
+  {
+   "name": "be-brpc-port",
+   "values": [
+    "8060"
+   ],
+   "match": "cell",
+   "columns": [
+    "BrpcPort"
+   ]
+  },
+  {
+   "name": "be-brpc-port-endpoint",
+   "from_backends": "Host",
+   "format": "{}:8060",
+   "match": "substring"
+  },
+  {
+   "name": "be-arrow-flight-port",
+   "values": [
+    "8050"
+   ],
+   "match": "cell",
+   "columns": [
+    "ArrowFlightSqlPort"
+   ]
+  },
+  {
+   "name": "be-arrow-flight-port-endpoint",
+   "from_backends": "Host",
+   "format": "{}:8050",
+   "match": "substring"
+  },
+  {
+   "name": "be-cores",
+   "match": "cell",
+   "columns": [
+    "CpuCores"
+   ],
+   "from_backends": "CpuCores"
+  },
+  {
+   "name": "be-memory",
+   "match": "cell",
+   "columns": [
+    "Memory"
+   ],
+   "from_backends": "Memory"
+  }
+ ]
+}

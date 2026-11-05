@@ -1,0 +1,17 @@
+[package]
+name = "doris-fixtures"
+version = "0.1.0"
+description = "Test-only access to the reference fixtures (crates/doris-be/tests/fixtures)"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+doris-thrift = { workspace = true }
+thrift = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

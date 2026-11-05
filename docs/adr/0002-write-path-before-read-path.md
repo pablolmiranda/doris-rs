@@ -1,6 +1,6 @@
 # The doris-rs BE takes writes before it reads cloned data
 
-The first draft had doris-rs read TPC-H tablets cloned from a C++ BE first and add loading and segment writing at the end of the epic. Once the upstream suites drive the work (ADR 0001), that order cannot hold: almost every suite creates its tables and loads its data mid-run, so doris-rs needs tablet creation, `INSERT`, stream load, transactions and segment writing before it can pass almost anything. The write path is therefore milestone 3, right after joining the cluster.
+The first draft had doris-rs read TPC-H tablets cloned from a C++ BE first and add loading and segment writing at the end of the epic. Once the upstream suites drive the work (ADR 0001), that order cannot hold: almost every suite creates its tables and loads its data mid-run, so doris-rs needs tablet creation, `INSERT`, stream load, transactions and segment writing before it can pass almost anything. The write path is therefore milestone 3, right after joining the cluster. (Milestone 4 since ADR 0003 put the C++-compatible data directory before it.)
 
 ## Consequences
 

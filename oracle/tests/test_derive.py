@@ -163,6 +163,11 @@ class NeedsRankingTests(DeriveTestCase):
         r = self.rank([load, query], {load: {"task": ["CREATE"]}, query: {"plan_node": ["X"]}}, supported={"plan_node:X"})
         self.assertIn({"feature": "task:CREATE", "alone": 2, "total": 2}, r)
 
+    def test_a_supplement_adds_needs_the_traffic_missed(self):
+        merged = derive.with_supplement({A: {"task": ["CREATE"]}},
+                                        {"suites": {A: {"needs": ["data:d.load.load"], "reason": "r"}, B: {"needs": ["rpc:x.y"], "reason": "r"}}})
+        self.assertEqual(merged, {A: {"task": ["CREATE"], "data": ["d.load.load"]}, B: {"rpc": ["x.y"]}})
+
     def test_load_suite_outside_the_gate_still_blocks_its_dependents(self):
         load, query = "d.load.load_data", "d.q.q"
         traffic = [msg("submit_tasks", 150), msg("exec_plan_fragment", 350, protocol="grpc", kind="request")]

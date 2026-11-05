@@ -1,1 +1,21 @@
-{"features": []}
+{
+ "features": [
+  "rpc:BackendService.submit_tasks",
+  "rpc:FrontendService.finishTask",
+  "task:CREATE",
+  "task:DROP",
+  "task:UPDATE_VISIBLE_VERSION",
+  "type:BIGINT",
+  "type:CHAR",
+  "type:DATETIMEV2",
+  "type:DATEV2",
+  "type:DECIMAL128I",
+  "type:DECIMAL32",
+  "type:DECIMAL64",
+  "type:INT",
+  "type:LARGEINT",
+  "type:STRING",
+  "type:TINYINT",
+  "type:VARCHAR"
+ ]
+}

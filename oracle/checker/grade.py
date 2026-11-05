@@ -2,7 +2,9 @@
 
     grade.py RUN_DIR REFERENCE_DIR SCORES_DIR [--json OUT]
 
-Two gates over the reference's gate suites: the suite's own result (.out), and byte-equal MySQL
+Eligible suites are the gate suites whose needs (the reference's needs.json, with their
+directory's load suites) are all in SCORES_DIR/epic1-supported.json; the report counts those
+that fail each gate. Two gates over the reference's gate suites: the suite's own result (.out), and byte-equal MySQL
 replies under the reference's probe marks (strict; only for suites that passed .out). The
 ratchet files in SCORES_DIR (epic1-out.txt, epic1-strict.txt) list suites that must keep
 passing; the exit status is 1 when one of them does not.
@@ -12,6 +14,7 @@ import json
 import os
 import sys
 
+import derive
 import replies
 
 GATES = ("out", "strict")
@@ -30,7 +33,7 @@ def numbers(passing, gate, reaches_be):
             "passing_be": len(passing & be), "total_be": len(be)}
 
 
-def grade(run_dir, reference_dir, scores_dir):
+def grade(run_dir, reference_dir, scores_dir, supplement=None):
     gate = read_list(os.path.join(reference_dir, "suites.txt"))
     reaches_be = read_list(os.path.join(reference_dir, "reaches_be.txt"))
     marks = replies.load_json(os.path.join(reference_dir, "marks.json"))["suites"]
@@ -57,7 +60,20 @@ def grade(run_dir, reference_dir, scores_dir):
         listed = read_list(os.path.join(scores_dir, f"epic1-{g}.txt"))
         ratchet["lost"][g] = [k for k in listed if k not in passing[g]]
         ratchet["new"][g] = [k for k in passing[g] if k not in listed]
+    needs = replies.load_json(os.path.join(reference_dir, "needs.json")) if os.path.exists(
+        os.path.join(reference_dir, "needs.json")) else {}
+    supported_path = os.path.join(scores_dir, "epic1-supported.json")
+    supported = replies.load_json(supported_path)["features"] if os.path.exists(supported_path) else []
+    needs = derive.with_supplement(needs, derive.load_supplement() if supplement is None else supplement)
+    blocked = derive.unsupported_needs(needs, supported, gate)
+    eligible = [k for k in gate if not blocked[k]]
     return {
+        "eligible": {"suites": eligible,
+                     "failing": {"out": [k for k in eligible if k not in out_passing],
+                                 # a suite the strict gate never compares (unstable or without
+                                 # replies on the reference) cannot fail it
+                                 "strict": [k for k in eligible if k not in strict_passing
+                                            and marks.get(k, {}).get("status") == "stable"]}},
         "out": {"passing": out_passing, "numbers": numbers(out_passing, gate, reaches_be)},
         "strict": {"passing": strict_passing, "differences": differences, "not_compared": not_compared,
                    "unattributed": len(actual.get(replies.UNATTRIBUTED, [])),
@@ -68,7 +84,9 @@ def grade(run_dir, reference_dir, scores_dir):
 
 
 def report(verdict):
-    lines = []
+    e = verdict["eligible"]
+    lines = [f"eligible: {len(e['suites'])}; failing out-gate: {len(e['failing']['out'])}; "
+             f"failing strict: {len(e['failing']['strict'])}"]
     for g in GATES:
         n = verdict[g]["numbers"]
         lines.append(f"{g:6}: passing {n['passing']} of {n['total']} epic suites; "
