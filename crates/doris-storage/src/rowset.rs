@@ -95,6 +95,8 @@ pub fn write_rowset(
         let mut f = std::fs::File::create(&path).at(&path)?;
         f.write_all(&seg.bytes).at(&path)?;
         f.sync_all().at(&path)?;
+        // LocalFileWriter::close: the directory too, so the new file's entry survives a crash
+        std::fs::File::open(dir).and_then(|d| d.sync_all()).at(dir)?;
         num_rows = i64::from(seg.num_rows);
         data_size = seg.bytes.len() as i64;
         let truncate = |mut k: Vec<u8>, cut: &mut bool| {

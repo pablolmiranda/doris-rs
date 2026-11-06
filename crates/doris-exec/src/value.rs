@@ -177,7 +177,7 @@ pub fn to_datum(v: &Value, col: &ColType, strict: bool) -> Result<Datum, RowErro
         },
         T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => match v {
             Value::Decimal(s) | Value::Date(s) => Datum::Int(parse_decimal(s, col.scale).ok_or_else(bad)?),
-            Value::Int(i) => Datum::Int(i * 10i128.pow(col.scale.max(0) as u32)),
+            Value::Int(i) => Datum::Int(10i128.checked_pow(col.scale.max(0) as u32).and_then(|p| i.checked_mul(p)).ok_or_else(bad)?),
             _ => return Err(bad()),
         },
         T::DATEV2 => match v {

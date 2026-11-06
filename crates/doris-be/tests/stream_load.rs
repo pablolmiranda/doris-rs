@@ -21,6 +21,11 @@ struct Run {
 
 /// Runs a sample; None when its table or plan is outside M4.
 fn run(s: &StreamLoadSample) -> Option<Run> {
+    run_with(s, |_, _| {})
+}
+
+/// Runs a sample after `adjust` has changed the service or the request the HTTP layer hands over.
+fn run_with(s: &StreamLoadSample, adjust: impl FnOnce(&LoadService, &mut StreamLoadRequest)) -> Option<Run> {
     // the corpus keeps bodies over 64 KiB only as their length and hash
     if s.headers.get("content-length").and_then(|l| l.parse::<usize>().ok()).is_some_and(|l| l != s.body.len()) {
         return None;
@@ -42,13 +47,14 @@ fn run(s: &StreamLoadSample) -> Option<Run> {
     master.set_backend_id_for_tests(s.put.0.backend_id.unwrap_or(0));
     let svc = LoadService::new(tablets, fe.clone(), master, 8040);
     let parts: Vec<&str> = s.path.split('/').collect();
-    let req = StreamLoadRequest {
+    let mut req = StreamLoadRequest {
         db: parts[2].to_string(),
         table: parts[3].to_string(),
         headers: s.headers.clone(),
-        body: s.body.clone(),
+        body: Ok(s.body.clone()),
         client_ip: s.begin.0.user_ip.clone().unwrap_or_default(),
     };
+    adjust(&svc, &mut req);
     let reply = svc.stream_load(req);
     Some(Run { reply, calls: fe.load_calls(), svc, _tmp: tmp })
 }
@@ -273,4 +279,71 @@ fn an_fe_error_is_quoted_by_its_code_name() {
     s.end = LoadEnd::Rollback(rollback_req, rollback);
     let r = run(&s).unwrap();
     assert_eq!(reply_value(&r.reply, "Message"), "\"[ANALYSIS_ERROR]TStatus: AnalysisException: no such column\"", "{}", r.reply);
+}
+
+/// The sample, ending in the rollback of its transaction instead of its commit.
+fn rolled_back(mut s: StreamLoadSample) -> StreamLoadSample {
+    let LoadEnd::Commit(c, _) = &s.end else { unreachable!() };
+    let rollback_req = doris_thrift::gen::frontend_service::TLoadTxnRollbackRequest::new(
+        None, c.user.clone(), c.passwd.clone(), c.db.clone(), c.tbl.clone(), c.user_ip.clone(), c.txn_id, None, None, None, None, None, None, None, None,
+    );
+    let rollback = doris_thrift::gen::frontend_service::TLoadTxnRollbackResult::new(s.begin.1.status.clone());
+    s.end = LoadEnd::Rollback(rollback_req, rollback);
+    s
+}
+
+#[test]
+fn a_body_that_could_not_be_read_fails_without_a_transaction() {
+    // a client that disconnects part way: nothing is loaded, and the label stays free
+    let s = committed_csv();
+    let r = run_with(&s, |_, req| req.body = Err("connection closed before message completed".into())).unwrap();
+    assert_eq!(reply_value(&r.reply, "Status"), "\"Fail\"", "{}", r.reply);
+    assert!(reply_value(&r.reply, "Message").contains("connection closed before message completed"), "{}", r.reply);
+    assert!(r.calls.is_empty(), "{:?}", r.calls);
+}
+
+#[test]
+fn a_body_over_streaming_load_max_mb_fails_before_the_transaction() {
+    // StreamLoadAction::_on_header: Content-Length against streaming_load_max_mb
+    let s = committed_csv();
+    let r = run_with(&s, |svc, req| {
+        svc.set_streaming_load_max_mb(1);
+        req.headers.insert("content-length".into(), "2097152".into());
+    })
+    .unwrap();
+    assert_eq!(
+        reply_value(&r.reply, "Message"),
+        "\"[EXCEEDED_LIMIT]body size 2097152 bytes (2.00 MiB) exceeds the limit of 1048576 bytes (1 MiB) set by BE's conf streaming_load_max_mb. Increase it if you are sure this load is reasonable\"",
+        "{}",
+        r.reply
+    );
+    assert!(r.calls.is_empty(), "{:?}", r.calls);
+}
+
+#[test]
+fn a_gzip_body_that_expands_past_the_limit_fails_and_rolls_back() {
+    // a small gzip body of many zeros: it is read up to streaming_load_max_mb, not whole
+    use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType};
+    use std::io::Write;
+    let mut s = rolled_back(committed_csv());
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    enc.write_all(&vec![b'0'; 3 << 20]).unwrap();
+    s.body = enc.finish().unwrap();
+    s.headers.insert("content-length".into(), s.body.len().to_string());
+    s.headers.insert("compress_type".into(), "gz".into());
+    let params = s.put.1.pipeline_params.as_mut().unwrap();
+    for p in params.file_scan_params.iter_mut().flat_map(|m| m.values_mut()) {
+        p.format_type = Some(TFileFormatType::FORMAT_CSV_GZ);
+        p.compress_type = Some(TFileCompressType::GZ);
+    }
+    for r in params.local_params.iter_mut().flatten().flat_map(|l| l.per_node_scan_ranges.values_mut()).flatten() {
+        if let Some(p) = r.scan_range.ext_scan_range.as_mut().and_then(|e| e.file_scan_range.as_mut()).and_then(|f| f.params.as_mut()) {
+            p.format_type = Some(TFileFormatType::FORMAT_CSV_GZ);
+            p.compress_type = Some(TFileCompressType::GZ);
+        }
+    }
+    let r = run_with(&s, |svc, _| svc.set_streaming_load_max_mb(1)).unwrap();
+    assert_eq!(reply_value(&r.reply, "Status"), "\"Fail\"", "{}", r.reply);
+    assert!(reply_value(&r.reply, "Message").contains("streaming_load_max_mb"), "{}", r.reply);
+    assert!(matches!(r.calls[..], [LoadCall::Begin(_), LoadCall::Put(_), LoadCall::Rollback(_)]), "{:?}", r.calls);
 }

@@ -294,20 +294,27 @@ fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool],
 /// The sink's rows of a stream load body, and how many rows the body held.
 /// The body as the reader sees it: gunzipped when the scan is FORMAT_CSV_GZ or compress_type GZ
 /// (`NewPlainTextLineReader` over a `GzipDecompressor`, which reads concatenated members).
-fn decompressed<'a>(params: &TFileScanRangeParams, body: &'a [u8]) -> Result<std::borrow::Cow<'a, [u8]>, ExecError> {
+/// The gunzipped bytes stop at `max_bytes`: a body past it fails rather than filling memory.
+fn decompressed<'a>(params: &TFileScanRangeParams, body: &'a [u8], max_bytes: u64) -> Result<std::borrow::Cow<'a, [u8]>, ExecError> {
     let gz = params.format_type == Some(TFileFormatType::FORMAT_CSV_GZ) || params.compress_type == Some(TFileCompressType::GZ);
     if !gz {
         return Ok(std::borrow::Cow::Borrowed(body));
     }
     let mut out = Vec::new();
-    std::io::Read::read_to_end(&mut flate2::read::MultiGzDecoder::new(body), &mut out)
+    let limit = max_bytes.saturating_add(1);
+    std::io::Read::read_to_end(&mut std::io::Read::take(flate2::read::MultiGzDecoder::new(body), limit), &mut out)
         .map_err(|e| ExecError::BadRequest(format!("the body is not gzip: {e}")))?;
+    if out.len() as u64 > max_bytes {
+        return Err(ExecError::ExceededLimit(format!(
+            "the uncompressed body exceeds the limit of {max_bytes} bytes set by BE's conf streaming_load_max_mb"
+        )));
+    }
     Ok(std::borrow::Cow::Owned(out))
 }
 
-pub fn stream_rows(f: &WriteFragment, body: &[u8]) -> Result<Vec<Result<Vec<Value>, RowError>>, ExecError> {
+pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec<Result<Vec<Value>, RowError>>, ExecError> {
     let params = scan_params(f)?;
-    let body = decompressed(&params, body)?;
+    let body = decompressed(&params, body, max_bytes)?;
     let body = &body[..];
     let src_tuple = params.src_tuple_id.unwrap_or(1);
     let dest_tuple = params.dest_tuple_id.unwrap_or(0);

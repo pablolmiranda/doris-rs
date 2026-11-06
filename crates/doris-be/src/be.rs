@@ -53,6 +53,7 @@ impl Be {
         let fe = Arc::new(ThriftFeClient::new(master.clone()));
         let agent = AgentService::new(&cfg, tablets.clone(), master.clone(), fe.clone());
         let load = LoadService::new(tablets.clone(), fe.clone(), master.clone(), cfg.webserver_port);
+        load.set_streaming_load_max_mb(cfg.streaming_load_max_mb);
         let reporter = Reporter::new(&cfg, tablets.clone(), agent.clone(), fe, master.clone());
         let sweeper = sweeper::spawn(tablets.clone(), &cfg);
 
