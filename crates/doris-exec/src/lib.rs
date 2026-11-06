@@ -17,6 +17,9 @@ pub enum ExecError {
     Unsupported { what: String },
     #[error("bad fragment request: {0}")]
     BadRequest(String),
+    /// A body over the BE's size limit (`EXCEEDED_LIMIT`).
+    #[error("{0}")]
+    ExceededLimit(String),
 }
 
 /// A row the sink filters: the C++ error message, and the source line (empty for VALUES).

@@ -38,6 +38,22 @@ pub struct SinkOutcome {
     pub error_log: Option<String>,
 }
 
+impl SinkOutcome {
+    /// A write that failed before it committed anything: INTERNAL_ERROR with the message.
+    pub fn failed(msg: String) -> SinkOutcome {
+        SinkOutcome {
+            status: status(TStatusCode::INTERNAL_ERROR, Some(msg)),
+            commit_infos: Vec::new(),
+            loaded: 0,
+            filtered: 0,
+            unselected: 0,
+            bytes: 0,
+            first_error: None,
+            error_log: None,
+        }
+    }
+}
+
 fn status(code: TStatusCode, msg: Option<String>) -> TStatus {
     TStatus { status_code: code, error_msgs: msg.map(|m| vec![m]) }
 }
@@ -137,37 +153,72 @@ pub fn run_sink(
     let load_id = uid(&f.sink.load_id);
     let txn = f.sink.txn_id;
     let names: Vec<&str> = f.dest_columns().iter().map(|c| c.name.as_str()).collect();
-    let mut mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
-    for part in f.sink.partition.partitions.iter().filter(|p| touched.contains(&p.id)) {
-        for index in &part.indexes {
-            for &tablet in &index.tablets {
-                let rows = groups.remove(&tablet).unwrap_or_default();
-                let res = (|| {
-                    let meta = mgr.tablet(tablet).ok_or_else(|| format!("tablet {tablet} not found"))?.clone();
-                    let schema = meta.schema.as_ref().ok_or("a tablet without a schema")?;
-                    // the tablet's columns, from the destination row by name
-                    let pick: Vec<usize> = schema
-                        .column
-                        .iter()
-                        .map(|c| {
-                            let name = c.name.as_deref().unwrap_or_default();
-                            names.iter().position(|n| *n == name).ok_or_else(|| format!("column {name} is not written"))
-                        })
-                        .collect::<Result<_, _>>()?;
-                    let rows: Vec<Vec<Datum>> = rows.into_iter().map(|r| pick.iter().map(|i| r[*i].clone()).collect()).collect();
-                    let id = mgr.next_rowset_id();
-                    let dir = mgr.tablet_path(tablet).ok_or("no tablet path")?;
-                    let rs = write_rowset(&dir, &meta, &id, txn, &load_id, rows).map_err(|e| e.to_string())?.meta;
-                    mgr.commit_txn(part.id, txn, tablet, load_id, rs).map_err(|e| e.to_string())
-                })();
-                if let Err(msg) = res {
-                    out.status = status(TStatusCode::INTERNAL_ERROR, Some(format!("tablet error: {msg}")));
-                    out.commit_infos.clear();
-                    return out;
+    // The tablet lock is held only to read each tablet's meta and to commit: segments are
+    // written and synced without it, so publishes, reports and other loads are not held up.
+    struct Planned {
+        partition: i64,
+        tablet: i64,
+        meta: doris_proto::doris::TabletMetaPb,
+        dir: std::path::PathBuf,
+        id: String,
+        rows: Vec<Vec<Datum>>,
+    }
+    let fail = |out: &mut SinkOutcome, msg: String| {
+        out.status = status(TStatusCode::INTERNAL_ERROR, Some(format!("tablet error: {msg}")));
+        out.commit_infos.clear();
+    };
+    let mut planned = Vec::new();
+    {
+        let mut mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
+        for part in f.sink.partition.partitions.iter().filter(|p| touched.contains(&p.id)) {
+            for index in &part.indexes {
+                for &tablet in &index.tablets {
+                    let rows = groups.remove(&tablet).unwrap_or_default();
+                    let res = (|| {
+                        let meta = mgr.tablet(tablet).ok_or_else(|| format!("tablet {tablet} not found"))?.clone();
+                        let schema = meta.schema.as_ref().ok_or("a tablet without a schema")?;
+                        // the tablet's columns, from the destination row by name
+                        let pick: Vec<usize> = schema
+                            .column
+                            .iter()
+                            .map(|c| {
+                                let name = c.name.as_deref().unwrap_or_default();
+                                names.iter().position(|n| *n == name).ok_or_else(|| format!("column {name} is not written"))
+                            })
+                            .collect::<Result<_, _>>()?;
+                        let rows: Vec<Vec<Datum>> = rows.into_iter().map(|r| pick.iter().map(|i| r[*i].clone()).collect()).collect();
+                        let id = mgr.next_rowset_id();
+                        let dir = mgr.tablet_path(tablet).ok_or("no tablet path")?;
+                        Ok::<_, String>(Planned { partition: part.id, tablet, meta, dir, id, rows })
+                    })();
+                    match res {
+                        Ok(p) => planned.push(p),
+                        Err(msg) => {
+                            fail(&mut out, msg);
+                            return out;
+                        }
+                    }
                 }
-                out.commit_infos.push(TTabletCommitInfo { tablet_id: tablet, backend_id: f.backend_id, invalid_dict_cols: None });
             }
         }
+    }
+    let mut written = Vec::with_capacity(planned.len());
+    for p in planned {
+        match write_rowset(&p.dir, &p.meta, &p.id, txn, &load_id, p.rows) {
+            Ok(w) => written.push((p.partition, p.tablet, w.meta)),
+            Err(e) => {
+                fail(&mut out, e.to_string());
+                return out;
+            }
+        }
+    }
+    let mut mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
+    for (partition, tablet, rs) in written {
+        if let Err(e) = mgr.commit_txn(partition, txn, tablet, load_id, rs) {
+            fail(&mut out, e.to_string());
+            return out;
+        }
+        out.commit_infos.push(TTabletCommitInfo { tablet_id: tablet, backend_id: f.backend_id, invalid_dict_cols: None });
     }
     out
 }

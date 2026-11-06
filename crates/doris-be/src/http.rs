@@ -82,7 +82,18 @@ async fn stream_load(req: Request<Incoming>, path: &str, peer: SocketAddr, load:
         .iter()
         .map(|(k, v)| (k.as_str().to_ascii_lowercase(), String::from_utf8_lossy(v.as_bytes()).into_owned()))
         .collect();
-    let body = req.into_body().collect().await.map(|b| b.to_bytes().to_vec()).unwrap_or_default();
+    // at most streaming_load_max_mb is read; a body cut short or over it is an error, not an empty body
+    let max = load.max_body_bytes();
+    let declared = headers.get("content-length").and_then(|l| l.trim().parse::<u64>().ok());
+    let body = if declared.is_some_and(|l| l > max) {
+        Err("the body is over streaming_load_max_mb".to_string())
+    } else {
+        http_body_util::Limited::new(req.into_body(), usize::try_from(max).unwrap_or(usize::MAX))
+            .collect()
+            .await
+            .map(|b| b.to_bytes().to_vec())
+            .map_err(|e| e.to_string())
+    };
     let request = StreamLoadRequest {
         db: parts.get(2).copied().unwrap_or_default().to_string(),
         table: parts.get(3).copied().unwrap_or_default().to_string(),

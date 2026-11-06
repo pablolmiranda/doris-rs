@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasher, Hasher};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -40,7 +41,8 @@ pub struct StreamLoadRequest {
     pub table: String,
     /// Header names lower-cased.
     pub headers: BTreeMap<String, String>,
-    pub body: Vec<u8>,
+    /// The body, or why it could not be read whole (a client gone part way, a body over the limit).
+    pub body: Result<Vec<u8>, String>,
     pub client_ip: String,
 }
 
@@ -57,7 +59,11 @@ struct Inner {
     error_dir: PathBuf,
     running: Mutex<usize>,
     idle: Condvar,
+    /// `streaming_load_max_mb`, in bytes
+    max_body_bytes: AtomicU64,
 }
+
+const MEBIBYTE: u64 = 1 << 20;
 
 fn random_u64() -> u64 {
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
@@ -80,8 +86,18 @@ impl LoadService {
             mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
         };
         LoadService {
-            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new() }),
+            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new(), max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE) }),
         }
+    }
+
+    /// `streaming_load_max_mb`: the largest stream load body read (default 102400).
+    pub fn set_streaming_load_max_mb(&self, mb: u64) {
+        self.inner.max_body_bytes.store(mb.saturating_mul(MEBIBYTE), Ordering::Relaxed);
+    }
+
+    /// The largest stream load body, in bytes, the HTTP layer reads.
+    pub fn max_body_bytes(&self) -> u64 {
+        self.inner.max_body_bytes.load(Ordering::Relaxed)
     }
 
     /// `PInternalService::exec_plan_fragment`: a write fragment is accepted (or refused) at
@@ -116,11 +132,20 @@ impl LoadService {
         };
         *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
         let inner = Arc::clone(&self.inner);
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("load-insert".into())
             .spawn(move || {
-                let outcome = run_sink(&f, rows, &inner.tablets, &inner.error_dir);
-                let params = exec_status(&f, &outcome, inner.tracking_url(&outcome));
+                // a panic in the sink still reaches the FE as a failed fragment, not a timeout
+                let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let outcome = run_sink(&f, rows, &inner.tablets, &inner.error_dir);
+                    let url = inner.tracking_url(&outcome);
+                    (outcome, url)
+                }));
+                let (outcome, url) = ran.unwrap_or_else(|p| {
+                    let what = p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
+                    (SinkOutcome::failed(format!("the write panicked: {what}")), None)
+                });
+                let params = exec_status(&f, &outcome, url);
                 let coord = f.coord.clone().or_else(|| inner.master.fe_address());
                 if let Some(coord) = coord {
                     // _coordinator_callback: one retry on a transport error
@@ -129,8 +154,11 @@ impl LoadService {
                     }
                 }
                 inner.done();
-            })
-            .expect("spawn insert");
+            });
+        if let Err(e) = spawned {
+            self.inner.done();
+            return refuse(INTERNAL_ERROR, format!("cannot start the write: {e}"));
+        }
         PExecPlanFragmentResult {
             status: pstatus(OK, None),
             received_time: Some(received),
@@ -313,6 +341,19 @@ impl<'a> StreamLoad<'a> {
             self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {fmt} yet"));
             return;
         };
+        // _on_header: Content-Length against streaming_load_max_mb, before the transaction begins
+        let max = self.inner.max_body_bytes.load(Ordering::Relaxed);
+        if let Some(len) = self.header("content-length").and_then(|l| l.trim().parse::<u64>().ok()).filter(|l| *l > max) {
+            return self.fail(format!(
+                "[EXCEEDED_LIMIT]body size {len} bytes ({:.2} MiB) exceeds the limit of {max} bytes ({} MiB) set by BE's conf streaming_load_max_mb. Increase it if you are sure this load is reasonable",
+                len as f64 / MEBIBYTE as f64,
+                max / MEBIBYTE
+            ));
+        }
+        // a body not read whole loads nothing: no transaction, so the label stays free
+        if let Err(e) = &self.req.body {
+            return self.fail(format!("[INTERNAL_ERROR]cannot read the body: {e}"));
+        }
         // _on_header: the timeout is read before the transaction begins
         let timeout = match self.header("timeout").filter(|t| !t.is_empty()).map(|t| stoi(&t, "timeout")).transpose() {
             Ok(t) => t,
@@ -388,8 +429,13 @@ impl<'a> StreamLoad<'a> {
             f.backend_id = self.inner.master.backend_id().unwrap_or(0);
         }
         let t = Instant::now();
-        let rows = match stream_rows(&f, &self.req.body) {
+        let body = self.req.body.as_deref().unwrap_or_default();
+        let rows = match stream_rows(&f, body, max) {
             Ok(r) => r,
+            Err(e @ ExecError::ExceededLimit(_)) => {
+                self.fail(format!("[EXCEEDED_LIMIT]{e}"));
+                return self.rollback();
+            }
             Err(e) => {
                 self.fail(format!("[NOT_IMPLEMENTED_ERROR]{e}"));
                 return self.rollback();
@@ -584,7 +630,7 @@ impl<'a> StreamLoad<'a> {
             ("NumberLoadedRows", if ok { self.loaded } else { 0 }.to_string()),
             ("NumberFilteredRows", self.filtered.to_string()),
             ("NumberUnselectedRows", self.unselected.to_string()),
-            ("LoadBytes", self.req.body.len().to_string()),
+            ("LoadBytes", self.req.body.as_ref().map_or(0, Vec::len).to_string()),
             ("LoadTimeMs", self.started.elapsed().as_millis().to_string()),
             ("BeginTxnTimeMs", self.times[0].to_string()),
             ("StreamLoadPutTimeMs", self.times[1].to_string()),
@@ -623,7 +669,7 @@ impl<'a> StreamLoad<'a> {
         rec.insert("NumberLoadedRows", (if self.status.is_none() { self.loaded } else { 0 }).into());
         rec.insert("NumberFilteredRows", self.filtered.into());
         rec.insert("NumberUnselectedRows", self.unselected.into());
-        rec.insert("LoadBytes", self.req.body.len().into());
+        rec.insert("LoadBytes", self.req.body.as_ref().map_or(0, Vec::len).into());
         rec.insert("StartTime", self.start_ms.into());
         rec.insert("FinishTime", finish.into());
         rec.insert("Comment", self.header("comment").unwrap_or_default().into());
