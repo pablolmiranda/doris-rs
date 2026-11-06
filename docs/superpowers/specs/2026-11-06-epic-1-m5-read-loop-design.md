@@ -145,8 +145,9 @@ scans. This one suite is the single largest unlock in the index.
   the corpus, all of which return nothing. M5 reads unique-key tablets whose visible rowsets hold
   no rows (empty result); a unique-key tablet with rows is refused.
 - **Encodings.** Today's reader decodes all 17 C++-written segments in the `cpp-loaded` fixture.
-  M5 adds ZSTD and LZ4F page decompression. The C++ BE writes ZSTD pages once a flush passes
-  256 KB, and after any compaction, so a root it has worked on will have them. LZ4 (raw), SNAPPY,
+  ZSTD and LZ4F page decompression already exist (M4). The C++ BE writes ZSTD pages once a
+  flush passes 256 KB, and after any compaction, so M5 adds a C++-written ZSTD fixture to prove
+  them. LZ4 (raw), SNAPPY,
   ZLIB, PLAIN_V2 and V3 footers stay refused (reading-segments research §2.5).
 
 ### 4.4 Sort, limit, materialization
@@ -252,6 +253,6 @@ what passes.
 4. MATERIALIZATION fetches in-process with doris-rs's own row ids. No `multiget_data_v2`, and FE
    settings stay at the reference's values.
 5. `fetch_cache` always misses and `update_cache` stores nothing. That is correct, only slower.
-6. ZSTD and LZ4F are decoded now. LZ4, SNAPPY, ZLIB, PLAIN_V2 and V3 footers are refused until a
-   suite needs them.
+6. LZ4 (raw), SNAPPY, ZLIB, PLAIN_V2 and V3 footers are refused until a suite needs them; ZSTD
+   and LZ4F (already decoded) get a C++-written fixture.
 7. The second readback form leaves out the join query until M6.
