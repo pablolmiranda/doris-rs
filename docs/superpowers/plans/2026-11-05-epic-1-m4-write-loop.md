@@ -14,6 +14,58 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-05-epic-1-m4-write-loop-design.md`. Research notes, cited below as **[wire]**, **[txn]** and **[seg]**, live in `docs/superpowers/specs/research/2026-11-05-m4-{insert-on-the-wire,txn-publish-stream-load,segment-writer}.md`.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **Fixtures and oracles.**
+  - The C++ load capture is its own target (`make loaded-fixture`, `swap/capture-loaded.sh`), so
+    M3's byte-exact fixtures are not rewritten.
+  - The corpus samples are raw captured messages, extracted by Rust binaries in `doris-wire`
+    (`extract-values`, `extract-stream-loads`) into `crates/doris-fixtures/{values,stream_loads}`,
+    with loaders in `doris-fixtures`.
+  - 60 INSERT statements carry their fragment, final report, publish task and its finishTask.
+  - 60 stream loads carry their HTTP exchange and every FE call.
+  - Tests replay them: routing gives the reference's rows per tablet; reports, publish
+    finishTasks, stream-load FE calls and replies equal the reference's.
+- **Strings are dictionary-encoded.** The readback check found that the C++ BE reads a query
+  predicate's string column into a dictionary column, which only its dictionary page decoder
+  fills. Strings are therefore `DICT_ENCODING`, with every data page in plain mode (the C++
+  writer's own fallback pages) and an empty dictionary page. Fixed-width types stay PLAIN.
+- **No C library.** `doris-segment` decodes ZSTD with pure-Rust `ruzstd`, since `doris-storage`
+  now depends on it.
+- **The refusal narrows rather than disappears.** Roots with rowsets open. Roots with
+  merge-on-write, binlog or remote-GC keys are still refused, and so are tablet directories no
+  valid header names.
+- **What the C++ BE does, learned from the corpus:**
+  - the sink's input bytes count a null map only for nullable output expressions;
+  - non-strict loads cut over-long strings to the column length in characters;
+  - `use_table_group_commit_mode` is set only when the load could group-commit;
+  - a stream load plan has no backend id, so commit infos carry this BE's;
+  - CSV is split at the byte level, quote-aware across lines, delimiter before separator,
+    invalid UTF-8 filtered;
+  - JSON numbers keep their text;
+  - the "no partition" message renders the whole row.
+- **Interfaces.**
+  - `run_sink` takes expression `Value`s and converts them, as `OlapTableBlockConvertor` does.
+  - Routing is `Router::new(&WriteFragment)` and `route(&[Value]) -> Routed`, with a tablet per
+    index.
+  - The BE side is `doris_be::load::LoadService` (`exec_plan_fragment`, `cancel_plan_fragment`,
+    `stream_load`, `error_log`, `stream_load_records`), wired to brpc, HTTP and
+    `get_stream_load_record`.
+- **The swap check waits for tablet stats.** `SHOW TABLETS`' stat columns lag the FE's
+  60-second poll on both binaries, so each snapshot waits one poll.
+- **Results.**
+  - Readback check: PASS, 24 replies equal.
+  - Swap check with data: PASS, all six steps.
+  - The full run and its grade (`m4-full-2`): 170 eligible suites, failing 0 on both gates;
+    out 297 passing (130 reaching the BE), strict 99 (56). `m4-full-1` found 18 eligible
+    failures: gzip stream loads, the `timeout`/`skip_lines` header checks, FE errors named by
+    code, DELETE hangs (the grader now reads an unanswered last command as no reply), v1
+    DATE/DATETIME wrongly listed as supported, and the `wait_timeout` leak (now a supplement
+    group). The ratchets dropped six ssb queries that expect an empty result and passed only
+    while their gzip loads failed.
+
 ## Global Constraints
 
 - **Table types.** Duplicate-key tables only. Unique, aggregate and merge-on-write stay unsupported, as in M2.
