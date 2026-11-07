@@ -19,6 +19,7 @@ Any implementation that speaks those protocols can be measured by the same 9,000
 | `compose/runner.Dockerfile` | JDK 17 + Maven image that runs the Groovy framework |
 | `targets/*.env` | Where a target cluster listens (`reference-single`, `reference-multi`, `rust`, add more) |
 | `compose/fe-only.yml`, `rust/be.conf` | The cluster doris-rs is graded in: the reference FE, and doris-rs on the host |
+| `swap/` | The swap cluster: the same FE with the reference C++ BE and doris-rs taking turns on one root (`lib.sh`, `swap-check.sh`, `capture-meta.sh`) |
 | `suites/*.txt` | Which suite directories to run; `ignore.txt` lists known-flaky suites |
 | `bin/run_suites.sh` | Renders the conf, runs the framework in the runner container, parses output |
 | `bin/override_conf.py` | Copies the upstream conf and overrides only the address keys |
@@ -86,6 +87,26 @@ make check TARGET=rust SUITES=suites/p0-core.txt
 Exit status 0 means no suite that passed on the reference failed or went missing. The full
 classification is in `results/rust/latest/compare.json`. Suites that are flaky on the reference
 belong in `suites/ignore.txt` with a reason; nothing else does.
+
+## The swap check
+
+A node must be able to switch between the C++ BE and doris-rs on the same disks. The swap
+cluster is the FE-only cluster with one backend entry, served in turns by doris-rs (native) and
+the reference C++ BE (a container with host networking, its storage root bind-mounted at the same
+absolute path). The FE reaches both at the address `host.docker.internal` resolves to; the disk
+keeps its path hash because doris-rs gets, as `host`, the VM address the C++ BE's
+`priority_networks` picks.
+
+```
+make swap-check      # doris-rs -> C++ BE -> doris-rs on one root; last line: swap check: PASS
+make meta-fixtures   # re-capture the C++ BE's meta/ databases (crates/doris-rocks/tests/fixtures)
+```
+
+After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot before it (clocks,
+the binary's version and the deployment facts aside), its tablet report diff counts every tablet
+on the backend, no DROP or CLONE arrives, and then each binary drops a table the other created.
+Internal loads (audit log, statistics) are turned off so no tablet holds data, which doris-rs
+refuses until milestone 4. Both targets recreate the FE-only cluster.
 
 ## Epic 1 checker
 

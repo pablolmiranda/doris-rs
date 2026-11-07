@@ -5,6 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use doris_be::testing::FakeFeServer;
+use doris_rocks::db::{Batch, CfOptions, Db, DbOptions};
 use doris_fixtures::{decode, Fixtures};
 use doris_thrift::gen::backend_service::{BackendServiceSyncClient, TBackendServiceSyncClient};
 use doris_thrift::gen::heartbeat_service::{
@@ -169,13 +170,22 @@ fn tablets_survive_a_process_restart() {
 }
 
 #[test]
-fn a_foreign_root_stops_the_start() {
+fn a_root_with_data_stops_the_start() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("storage");
-    std::fs::create_dir_all(root.join("meta")).unwrap();
+    {
+        // a committed rowset's key, as a C++ BE holding loaded data leaves in meta/
+        let cf = |name: &str, prefix| CfOptions { name: name.into(), fixed_prefix_len: prefix };
+        let opts = DbOptions { column_families: vec![cf("default", None), cf("doris", None), cf("meta", Some(4))], ..DbOptions::default() };
+        let mut db = Db::open(&root.join("meta"), &opts).unwrap();
+        let mut b = Batch::default();
+        b.put("meta", b"rst_0000000000000001-0000000000000002_0200000000000001", b"x");
+        db.write(b, true).unwrap();
+        db.close().unwrap();
+    }
     let p = Ports { heartbeat: free_port(), be: free_port(), brpc: free_port(), http: free_port() };
     let out = Command::new(BIN).args(["be", "--config"]).arg(write_conf(tmp.path(), &root, &p)).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains(&root.display().to_string()) && stderr.contains("C++ BE"), "{stderr}");
+    assert!(stderr.contains(&root.display().to_string()) && stderr.contains("milestone 4"), "{stderr}");
 }

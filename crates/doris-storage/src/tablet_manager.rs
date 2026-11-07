@@ -8,14 +8,30 @@ use std::collections::BTreeMap;
 use std::hash::{BuildHasher, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use doris_proto::doris::{PUniqueId, TabletMetaPb};
+use doris_proto::doris::{PUniqueId, TabletMetaPb, TabletStatePb};
+use doris_rocks::db::{CfOptions, Db, DbOptions};
 use doris_thrift::gen::agent_service::{TCreateTabletReq, TDropTabletReq};
 use doris_thrift::gen::backend_service::TTabletStat;
 use doris_thrift::gen::master_service::{TTablet, TTabletInfo};
 
 use crate::data_dir::DataDir;
 use crate::error::{IoContext, StorageError};
+use crate::file_header::encode_file_header;
 use crate::tablet::{build_tablet_meta, storage_medium, NewTablet};
+
+/// Expiries for a trash sweep (`trash_file_expire_time_sec`, `snapshot_expire_time_sec`).
+#[derive(Debug, Clone, Copy)]
+pub struct SweepOptions {
+    pub trash_expire_secs: i64,
+    pub snapshot_expire_secs: i64,
+}
+
+/// How the tablet manager writes headers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TabletOptions {
+    /// `config::sync_tablet_meta`: sync the metadata store's log on every header change.
+    pub sync_tablet_meta: bool,
+}
 
 #[derive(Debug)]
 struct Tablet {
@@ -27,6 +43,11 @@ struct Tablet {
 pub struct TabletManager {
     dirs: Vec<DataDir>,
     tablets: BTreeMap<i64, Tablet>,
+    /// Shut-down tablets (dropped, or SHUTDOWN at start) waiting for the sweep.
+    shutdown: Vec<Tablet>,
+    opts: TabletOptions,
+    /// The stream load recorder's database on the first root (`StreamLoadRecorder`).
+    _stream_load: Option<Db>,
     /// Partition id → visible version (`TabletManager::_partitions`; starts at 0, in memory only).
     partitions: BTreeMap<i64, i64>,
     report_version: i64,
@@ -48,19 +69,37 @@ fn random_u64() -> u64 {
 }
 
 impl TabletManager {
-    /// Loads every tablet header from every root.
-    pub fn open(dirs: Vec<DataDir>) -> Result<TabletManager, StorageError> {
+    /// Loads every tablet header from every root (`TabletManager::load_tablet_from_meta`): running
+    /// tablets are held, SHUTDOWN ones wait for the sweep. Opens the stream load recorder's
+    /// database on the first root, as `StorageEngine::_open` does.
+    pub fn open(dirs: Vec<DataDir>, opts: TabletOptions) -> Result<TabletManager, StorageError> {
         let mut tablets = BTreeMap::new();
+        let mut shutdown = Vec::new();
         let mut partitions = BTreeMap::new();
         for (i, dir) in dirs.iter().enumerate() {
-            for meta in dir.headers().load_all()? {
+            for meta in dir.meta().tablet_metas()? {
+                if meta.tablet_state() == TabletStatePb::PbShutdown {
+                    shutdown.push(Tablet { meta, dir: i });
+                    continue;
+                }
                 partitions.insert(meta.partition_id(), 0);
                 tablets.insert(meta.tablet_id(), Tablet { meta, dir: i });
             }
         }
+        let stream_load = match dirs.first() {
+            Some(d) => {
+                let cf = |name: &str| CfOptions { name: name.into(), fixed_prefix_len: None };
+                let o = DbOptions { column_families: vec![cf("default"), cf("meta")], ..DbOptions::default() };
+                Some(Db::open(&d.root().join("stream_load"), &o)?)
+            }
+            None => None,
+        };
         Ok(TabletManager {
             dirs,
             tablets,
+            shutdown,
+            opts,
+            _stream_load: stream_load,
             partitions,
             // `s_report_version`: time(nullptr) * 100000 at start (task_worker_pool.cpp:116)
             report_version: now_secs() * 100_000,
@@ -68,6 +107,21 @@ impl TabletManager {
             next_rowset: 1,
             stat_cache: Vec::new(),
         })
+    }
+
+    /// Fault injection for tests: while on, every header write on every root fails.
+    #[doc(hidden)]
+    pub fn inject_write_failure(&mut self, on: bool) {
+        for d in &mut self.dirs {
+            d.meta_mut().inject_write_failure(on);
+        }
+    }
+
+    /// Tablets shut down and waiting for the sweep, by id.
+    pub fn shutdown_tablets(&self) -> Vec<i64> {
+        let mut ids: Vec<i64> = self.shutdown.iter().map(|t| t.meta.tablet_id()).collect();
+        ids.sort_unstable();
+        ids
     }
 
     pub fn data_dirs(&self) -> &[DataDir] {
@@ -116,7 +170,8 @@ impl TabletManager {
             let meta = build_tablet_meta(req, &new);
             let path = self.dirs[dir].tablet_dir(new.shard_id as u64, req.tablet_id, req.tablet_schema.schema_hash);
             std::fs::create_dir_all(&path).at(&path)?;
-            if let Err(e) = self.dirs[dir].headers().put(req.tablet_id, req.tablet_schema.schema_hash, &meta) {
+            let sync = self.opts.sync_tablet_meta;
+            if let Err(e) = self.dirs[dir].meta_mut().save_tablet_meta(&meta, sync) {
                 // no header, no tablet: take the directory back out (its parent too, if empty)
                 let _ = std::fs::remove_dir_all(&path);
                 if let Some(parent) = path.parent() {
@@ -144,8 +199,9 @@ impl TabletManager {
         format!("{hi:016x}{:016x}{:016x}", self.backend_uid.0, self.backend_uid.1)
     }
 
-    /// `drop_tablet_callback` / `TabletManager::_drop_tablet`. The C++ BE marks the tablet
-    /// shut down and a later sweep moves its directory to `trash/`; this moves it at once.
+    /// `drop_tablet_callback` / `TabletManager::_drop_tablet`: the header is saved as SHUTDOWN, the
+    /// tablet leaves the tablet map (and so reports and stats), and it waits for the sweep, which
+    /// moves its directory to trash.
     pub fn drop_tablet(&mut self, req: &TDropTabletReq) -> Result<(), StorageError> {
         let Some(tablet) = self.tablets.get(&req.tablet_id) else {
             return Err(StorageError::TabletNotFound { tablet_id: req.tablet_id });
@@ -154,19 +210,85 @@ impl TabletManager {
         if replica_id != 0 && tablet.meta.replica_id() != replica_id {
             return Err(StorageError::ReplicaMismatch { current: tablet.meta.replica_id(), requested: replica_id });
         }
+        let mut meta = tablet.meta.clone();
+        meta.set_tablet_state(TabletStatePb::PbShutdown);
+        let sync = self.opts.sync_tablet_meta;
         // disk first: if it fails, the tablet stays known and a retried DROP can finish it
-        let dir = &self.dirs[tablet.dir];
-        let path = dir.tablet_dir(tablet.meta.shard_id() as u64, tablet.meta.tablet_id(), tablet.meta.schema_hash());
-        if path.is_dir() {
-            dir.move_to_trash(&path)?;
-        }
-        dir.headers().remove(tablet.meta.tablet_id(), tablet.meta.schema_hash())?;
-        let tablet = self.tablets.remove(&req.tablet_id).expect("present");
+        self.dirs[tablet.dir].meta_mut().save_tablet_meta(&meta, sync)?;
+        let mut tablet = self.tablets.remove(&req.tablet_id).expect("present");
+        tablet.meta = meta;
         let pid = tablet.meta.partition_id();
         if !self.tablets.values().any(|t| t.meta.partition_id() == pid) {
             self.partitions.remove(&pid);
         }
+        self.shutdown.push(tablet);
         Ok(())
+    }
+
+    /// `StorageEngine::start_trash_sweep`: expired `snapshot/` and `trash/` entries on every
+    /// root, then the shut-down tablets. Returns how many shut-down tablets were swept.
+    pub fn start_trash_sweep(&mut self, opts: SweepOptions) -> Result<usize, StorageError> {
+        for d in &self.dirs {
+            d.sweep_expired(opts.trash_expire_secs, opts.snapshot_expire_secs)?;
+        }
+        self.sweep_shutdown(opts.trash_expire_secs)
+    }
+
+    /// `TabletManager::start_trash_sweep`: each shut-down tablet whose move succeeds leaves the
+    /// queue; one that fails stays for the next sweep. Returns how many left.
+    pub fn sweep_shutdown(&mut self, trash_expire_secs: i64) -> Result<usize, StorageError> {
+        let queue = std::mem::take(&mut self.shutdown);
+        let mut swept = 0;
+        for t in queue {
+            if self.move_tablet_to_trash(&t, trash_expire_secs).unwrap_or(false) {
+                swept += 1;
+            } else {
+                self.shutdown.push(t);
+            }
+        }
+        Ok(swept)
+    }
+
+    /// `TabletManager::_move_tablet_to_trash`; `Ok(true)` when the tablet can leave the queue.
+    fn move_tablet_to_trash(&mut self, t: &Tablet, trash_expire_secs: i64) -> Result<bool, StorageError> {
+        let (id, hash) = (t.meta.tablet_id(), t.meta.schema_hash());
+        let path = self.dirs[t.dir].tablet_dir(t.meta.shard_id() as u64, id, hash);
+        // a tablet created again with the same id: only an old directory elsewhere goes
+        if let Some(live) = self.tablets.get(&id) {
+            if live.meta.schema_hash() == hash && live.dir == t.dir {
+                let live_path = self.dirs[t.dir].tablet_dir(live.meta.shard_id() as u64, id, hash);
+                if live_path != path && path.is_dir() {
+                    self.dirs[t.dir].remove_tablet_dir(&path, trash_expire_secs)?;
+                }
+                return Ok(true);
+            }
+        }
+        let sync = self.opts.sync_tablet_meta;
+        let dir = &mut self.dirs[t.dir];
+        match dir.meta().get_tablet_meta(id, hash) {
+            Ok(Some(stored)) => {
+                if stored.tablet_state() != TabletStatePb::PbShutdown || stored.tablet_uid != t.meta.tablet_uid {
+                    return Ok(true);
+                }
+                if path.is_dir() {
+                    let hdr = path.join(format!("{id}.hdr"));
+                    std::fs::write(&hdr, encode_file_header(&t.meta)).at(&hdr)?;
+                    dir.remove_tablet_dir(&path, trash_expire_secs)?;
+                }
+                dir.meta_mut().remove_tablet_meta(id, hash, sync)?;
+                Ok(true)
+            }
+            Ok(None) => {
+                if path.is_dir() {
+                    std::fs::remove_dir_all(&path).at(&path)?;
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::remove_dir(parent);
+                    }
+                }
+                Ok(true)
+            }
+            Err(_) => Ok(false),
+        }
     }
 
     /// `update_partitions_visible_version`: known partitions only, never backwards.

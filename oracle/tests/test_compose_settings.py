@@ -53,6 +53,14 @@ class RustClusterSettingsTests(unittest.TestCase):
                 continue
             self.assertIn(line, ours, f"rust/be.conf lacks '{line}'")
 
+    def test_swap_be_keeps_every_be_setting(self):
+        path = os.path.join(COMPOSE, "..", "swap", "be.conf")
+        ours = {line.strip() for line in open(path, encoding="utf-8")}
+        for line in block(self.single, "BE_CONFIG_EXTRA"):
+            if line.startswith("mem_limit"):
+                continue
+            self.assertIn(line, ours, f"swap/be.conf lacks '{line}'")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,5 +10,8 @@ A node must be able to switch between the C++ BE and doris-rs on the same disks,
 ## Consequences
 
 - The RocksDB-format store is its own milestone (epic 1, milestone 3), before any rowset metadata is written, so the first data doris-rs writes already lands in the real format. The write and read loop moves to milestone 4.
-- Until that milestone, headers live in a temporary doris-rs-only store (`<root>/doris-rs-meta/`) and nothing is ever written to `<root>/meta`. doris-rs refuses a root holding a C++ BE's data; a C++ BE started on a doris-rs root is unsupported. Test clusters lose nothing: suites recreate their data.
-- The store implements only the subset the BE uses (the pinned RocksDB 5.14.2's write-ahead log, table files, manifest; Snappy; put, delete, prefix scan), proven against `meta/` directories the reference writes and by the swap check.
+- As built in milestone 3: the `doris-rocks` crate reads everything RocksDB 5.14.2 writes for the BE (manifest, logs, compressed and compacted table files) and writes logs, uncompressed table files and a snapshot manifest the C++ BE opens. The whole key set is held in memory, and a flush rewrites it into one table file per column family, so no compaction is implemented. `make -C oracle swap-check` proves both directions live against the reference C++ BE.
+- M2's temporary header store (`<root>/doris-rs-meta/`) is moved into `meta/` on first start and removed.
+- Until milestone 4, doris-rs refuses a root whose tablets hold data (rowsets with segments, or keys that exist only with data), naming the root and the tablet, and leaves it untouched.
+- Dropping follows the C++ BE: the header is saved as SHUTDOWN and the trash sweep (at start, then every `min_garbage_sweep_interval`) moves the directory to trash with a `<tablet_id>.hdr` file (or, with `trash_file_expire_time_sec` at its default of 0, deletes it at once) and deletes the key.
+- The `LOCK` file is taken with `flock`, the C++ BE uses `fcntl`; the two do not exclude each other, so running both binaries on one root at once is not prevented.

@@ -4,14 +4,14 @@ use doris_be::config::BeConfig;
 use doris_be::heartbeat::HeartbeatHandler;
 use doris_be::master::MasterInfo;
 use doris_fixtures::{decode, Fixtures};
-use doris_storage::{DataDir, TabletManager};
+use doris_storage::{DataDir, TabletManager, TabletOptions};
 use doris_thrift::gen::heartbeat_service::{
     HeartbeatServiceHeartbeatArgs, HeartbeatServiceHeartbeatResult, HeartbeatServiceSyncHandler, TMasterInfo,
 };
 use doris_thrift::gen::status::TStatusCode;
 
 fn handler(root: &std::path::Path) -> (HeartbeatHandler, MasterInfo) {
-    let tablets = TabletManager::open(vec![DataDir::open(root, "127.0.0.1").unwrap()]).unwrap();
+    let tablets = TabletManager::open(vec![DataDir::open(root, "127.0.0.1").unwrap()], TabletOptions::default()).unwrap();
     let master = MasterInfo::new("127.0.0.1");
     let h = HeartbeatHandler::new(&BeConfig::default(), master.clone(), Arc::new(Mutex::new(tablets)));
     (h, master)
@@ -109,7 +109,7 @@ fn heartbeats_do_not_wait_for_storage() {
     let tmp = tempfile::tempdir().unwrap();
     let info = first_call(&fx);
     std::fs::write(tmp.path().join("cluster_id"), info.cluster_id.to_string()).unwrap();
-    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()]).unwrap()));
+    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap()));
     let h = HeartbeatHandler::new(&BeConfig::default(), MasterInfo::new("127.0.0.1"), tablets.clone());
     let _held = tablets.lock().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();

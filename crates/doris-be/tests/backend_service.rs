@@ -5,7 +5,7 @@ use doris_be::backend_service::BackendHandler;
 use doris_be::config::BeConfig;
 use doris_be::master::MasterInfo;
 use doris_be::testing::FakeFe;
-use doris_storage::{DataDir, TabletManager};
+use doris_storage::{DataDir, TabletManager, TabletOptions};
 use doris_thrift::gen::agent_service::{TAgentPublishRequest, TAgentServiceVersion, TSnapshotRequest};
 use doris_thrift::gen::backend_service::*;
 use doris_thrift::gen::doris_external_service::{TScanCloseParams, TScanNextBatchParams, TScanOpenParams};
@@ -13,7 +13,7 @@ use doris_thrift::gen::status::{TStatus, TStatusCode};
 
 fn handler() -> (BackendHandler, tempfile::TempDir) {
     let tmp = tempfile::tempdir().unwrap();
-    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()]).unwrap()));
+    let tablets = Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap()));
     let master = MasterInfo::new("127.0.0.1");
     let agent = AgentService::new(&BeConfig::default(), tablets.clone(), master.clone(), Arc::new(FakeFe::default()));
     (BackendHandler::new(agent, tablets, master), tmp)
