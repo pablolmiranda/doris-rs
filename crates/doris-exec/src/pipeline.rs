@@ -35,6 +35,8 @@ pub struct ExecCtx<'a> {
     /// Takes the result sink's rows (output expressions evaluated).
     pub result: &'a ResultFn<'a>,
     pub fetch: &'a FetchFn<'a>,
+    /// The FE's metadata calls, for information_schema scans.
+    pub fe: &'a dyn crate::schema_scan::SchemaFe,
 }
 
 struct Instance<'a> {
@@ -97,6 +99,7 @@ impl Instance<'_> {
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
+            P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
             P::MATERIALIZATION_NODE => self.materialize(t)?,
             _ => {
                 return Err(ExecError::Unsupported {
@@ -228,6 +231,16 @@ impl Instance<'_> {
             .as_ref()
             .ok_or_else(|| ExecError::BadRequest("UNION_NODE without its parameters".into()))?;
         let mut out = self.empty(u.tuple_id)?;
+        // children: the first ones pass through as they are, the rest through their result exprs
+        for (i, c) in t.children.iter().enumerate() {
+            let child = self.node(c)?;
+            let rows = if (i as i64) < u.first_materialized_child_idx || u.result_expr_lists.get(i).is_none_or(|l| l.is_empty()) {
+                self.relabel(child, u.tuple_id)?.block.rows
+            } else {
+                self.typed(project(&u.result_expr_lists[i], &child)?, &out.slots)?.rows
+            };
+            out.block.rows.extend(rows);
+        }
         let one = Chunk {
             block: Block {
                 types: vec![],
@@ -285,6 +298,17 @@ impl Instance<'_> {
             return Ok(input);
         }
         Ok(Chunk { block: self.typed(input.block, &slots)?, slots })
+    }
+
+    fn schema_scan(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let s = t.node.schema_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("SCHEMA_SCAN_NODE without its parameters".into()))?;
+        let slots = self.plan.desc.tuple_slots(s.tuple_id)?.to_vec();
+        let schema_slots = slots
+            .iter()
+            .map(|id| self.plan.desc.slot(*id).map(|s| crate::schema_scan::SchemaSlot { name: s.name.clone(), ty: s.ty.clone() }))
+            .collect::<Result<Vec<_>, _>>()?;
+        let block = crate::schema_scan::scan_schema(s, &schema_slots, self.ctx.fe)?;
+        Ok(Chunk { block, slots })
     }
 
     fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {

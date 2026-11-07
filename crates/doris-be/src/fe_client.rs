@@ -6,7 +6,8 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use doris_thrift::gen::frontend_service::{
-    FrontendServiceSyncClient, TFrontendServiceSyncClient, TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest,
+    FrontendServiceSyncClient, TDescribeTablesParams, TDescribeTablesResult, TFrontendServiceSyncClient, TGetDbsParams, TGetDbsResult,
+    TGetTablesParams, TGetTablesResult, TListTableStatusResult, TShowVariableRequest, TShowVariableResult, TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest,
     TLoadTxnCommitResult, TLoadTxnRollbackRequest, TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult,
     TStreamLoadPutRequest, TStreamLoadPutResult,
 };
@@ -34,6 +35,12 @@ pub trait FeClient: Send + Sync {
     fn stream_load_put(&self, req: TStreamLoadPutRequest) -> Result<TStreamLoadPutResult, FeError>;
     fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError>;
     fn load_txn_rollback(&self, req: TLoadTxnRollbackRequest) -> Result<TLoadTxnRollbackResult, FeError>;
+    /// The information_schema scanners' calls, to the FE their scan node names.
+    fn get_db_names(&self, fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError>;
+    fn get_table_names(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError>;
+    fn describe_tables(&self, fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError>;
+    fn list_table_status(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError>;
+    fn show_variables(&self, fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError>;
 }
 
 /// Strict binary protocol, unframed, one connection per call, to the address the last
@@ -101,5 +108,25 @@ impl FeClient for ThriftFeClient {
 
     fn load_txn_rollback(&self, req: TLoadTxnRollbackRequest) -> Result<TLoadTxnRollbackResult, FeError> {
         self.call(|c| c.load_txn_rollback(req))
+    }
+
+    fn get_db_names(&self, fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError> {
+        self.call_at(fe, |c| c.get_db_names(req))
+    }
+
+    fn get_table_names(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError> {
+        self.call_at(fe, |c| c.get_table_names(req))
+    }
+
+    fn describe_tables(&self, fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError> {
+        self.call_at(fe, |c| c.describe_tables(req))
+    }
+
+    fn list_table_status(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError> {
+        self.call_at(fe, |c| c.list_table_status(req))
+    }
+
+    fn show_variables(&self, fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError> {
+        self.call_at(fe, |c| c.show_variables(req))
     }
 }

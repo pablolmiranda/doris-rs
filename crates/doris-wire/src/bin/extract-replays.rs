@@ -8,7 +8,8 @@
 //! - every tablet it scans or writes is created in the suite, or belongs to the FE's statistics
 //!   table (created synthetically by the replay);
 //! - it reads no unique- or aggregate-key table but the FE's statistics table, writes only by
-//!   VALUES, and asks for no binary-protocol rows or v1 two-phase read (all outside M5);
+//!   VALUES, scans no information_schema table but M5's six, and asks for no binary-protocol
+//!   rows or v1 two-phase read (all outside M5);
 //! - it holds between 1 and 40 result queries, and at least one fetch the reference ended with eos.
 //!
 //! `nereids_p0.system.test_query_sys_tables` comes first, cut after the eos fetch of its sixth
@@ -267,6 +268,10 @@ fn candidate(
             let nodes = || p.params_list.iter().flatten().flat_map(|f| f.fragment.iter().flat_map(|x| x.plan.iter()).flat_map(|x| &x.nodes));
             if !is_result_query(&p) && nodes().any(|n| n.node_type != doris_thrift::gen::plan_nodes::TPlanNodeType::UNION_NODE) {
                 return Err("insert select".into());
+            }
+            const SCHEMA_TABLES: &[&str] = &["character_sets", "collations", "columns", "schemata", "tables", "session_variables", "global_variables"];
+            if nodes().any(|n| n.schema_scan_node.as_ref().is_some_and(|s| !SCHEMA_TABLES.contains(&s.table_name.to_ascii_lowercase().as_str()))) {
+                return Err("other schema table".into());
             }
             if nodes().any(|n| n.sort_node.as_ref().is_some_and(|s| s.sort_info.use_two_phase_read == Some(true))) {
                 return Err("two-phase read".into());

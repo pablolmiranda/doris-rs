@@ -21,10 +21,13 @@ use doris_proto::doris::{
 };
 use doris_storage::reader::scan_tablet;
 use doris_storage::TabletManager;
-use doris_thrift::gen::frontend_service::{FrontendServiceVersion, TReportExecStatusParams};
+use doris_thrift::gen::frontend_service::{
+    FrontendServiceVersion, TDescribeTablesParams, TDescribeTablesResult, TGetDbsParams, TGetDbsResult, TGetTablesParams, TGetTablesResult,
+    TListTableStatusResult, TReportExecStatusParams, TShowVariableRequest, TShowVariableResult,
+};
 use doris_thrift::gen::palo_internal_service::TQueryType;
 use doris_thrift::gen::status::TStatusCode;
-use doris_thrift::gen::types::TUniqueId;
+use doris_thrift::gen::types::{TNetworkAddress, TUniqueId};
 
 use crate::fe_client::FeClient;
 use crate::master::MasterInfo;
@@ -355,7 +358,8 @@ impl Inner {
             let mgr = self.tablets.lock().unwrap_or_else(|e| e.into_inner());
             doris_storage::reader::fetch_by_row_ids(&mgr, ids, cols)
         };
-        let ctx = ExecCtx { scan: &scan, exchanges: &self.exchanges, result: &result, fetch: &fetch };
+        let fe = SchemaCalls(self.fe.as_ref());
+        let ctx = ExecCtx { scan: &scan, exchanges: &self.exchanges, result: &result, fetch: &fetch, fe: &fe };
         let first_error: Mutex<Option<ExecError>> = Mutex::new(None);
         std::thread::scope(|s| {
             for (fi, f) in plan.fragments.iter().enumerate() {
@@ -431,6 +435,27 @@ impl Inner {
                 let _ = self.fe.report_exec_status(&coord, params);
             }
         }
+    }
+}
+
+/// The information_schema scanners' FE calls, over the BE's FE client.
+struct SchemaCalls<'a>(&'a dyn FeClient);
+
+impl doris_exec::schema_scan::SchemaFe for SchemaCalls<'_> {
+    fn get_db_names(&self, fe: &TNetworkAddress, p: TGetDbsParams) -> Result<TGetDbsResult, String> {
+        self.0.get_db_names(fe, p).map_err(|e| e.to_string())
+    }
+    fn get_table_names(&self, fe: &TNetworkAddress, p: TGetTablesParams) -> Result<TGetTablesResult, String> {
+        self.0.get_table_names(fe, p).map_err(|e| e.to_string())
+    }
+    fn describe_tables(&self, fe: &TNetworkAddress, p: TDescribeTablesParams) -> Result<TDescribeTablesResult, String> {
+        self.0.describe_tables(fe, p).map_err(|e| e.to_string())
+    }
+    fn list_table_status(&self, fe: &TNetworkAddress, p: TGetTablesParams) -> Result<TListTableStatusResult, String> {
+        self.0.list_table_status(fe, p).map_err(|e| e.to_string())
+    }
+    fn show_variables(&self, fe: &TNetworkAddress, p: TShowVariableRequest) -> Result<TShowVariableResult, String> {
+        self.0.show_variables(fe, p).map_err(|e| e.to_string())
     }
 }
 

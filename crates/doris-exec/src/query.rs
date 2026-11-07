@@ -307,7 +307,7 @@ fn check_partition(t: TPartitionType, what: &str) -> Result<(), ExecError> {
     }
 }
 
-fn check_node(n: &TPlanNode, children: usize) -> Result<(), ExecError> {
+fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     let name = node_type_name(n.node_type);
     match n.node_type {
         P::OLAP_SCAN_NODE | P::EMPTY_SET_NODE | P::SELECT_NODE => {}
@@ -316,9 +316,7 @@ fn check_node(n: &TPlanNode, children: usize) -> Result<(), ExecError> {
                 .union_node
                 .as_ref()
                 .ok_or_else(|| ExecError::BadRequest("UNION_NODE without its parameters".into()))?;
-            if children > 0 || u.result_expr_lists.iter().any(|l| !l.is_empty()) {
-                return Err(unsupported("UNION_NODE over children"));
-            }
+            check_exprs(u.result_expr_lists.iter().flatten(), false)?;
             check_exprs(u.const_expr_lists.iter().flatten(), false)?;
         }
         P::EXCHANGE_NODE => {
@@ -338,6 +336,10 @@ fn check_node(n: &TPlanNode, children: usize) -> Result<(), ExecError> {
             }
             check_exprs(&s.sort_info.ordering_exprs, false)?;
             check_exprs(s.sort_info.sort_tuple_slot_exprs.iter().flatten(), false)?;
+        }
+        P::SCHEMA_SCAN_NODE => {
+            let s = n.schema_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("SCHEMA_SCAN_NODE without its parameters".into()))?;
+            crate::schema_scan::check_schema_table(&s.table_name)?;
         }
         P::AGGREGATION_NODE => {
             let a = n.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
@@ -360,8 +362,8 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
         return Err(unsupported("results in the MySQL binary row format"));
     }
     for f in &plan.fragments {
-        for (n, children) in f.root.nodes().into_iter().map(|n| (n, n.num_children.max(0) as usize)) {
-            check_node(n, children)?;
+        for n in f.root.nodes() {
+            check_node(n)?;
         }
         match f.sink.type_ {
             TDataSinkType::RESULT_SINK => check_exprs(&f.output_exprs, false)?,

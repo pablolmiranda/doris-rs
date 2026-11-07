@@ -34,7 +34,7 @@ struct Be {
     load: LoadService,
     query: QueryService,
     tablets: Arc<Mutex<TabletManager>>,
-    _fe: Arc<FakeFe>,
+    fe: Arc<FakeFe>,
     _tmp: tempfile::TempDir,
 }
 
@@ -48,7 +48,7 @@ fn be() -> Be {
     let agent = AgentService::new(&BeConfig::default(), tablets.clone(), master.clone(), fe.clone());
     let load = LoadService::new(tablets.clone(), fe.clone(), master.clone(), 8040);
     let query = QueryService::new(tablets.clone(), fe.clone(), master);
-    Be { agent, load, query, tablets, _fe: fe, _tmp: tmp }
+    Be { agent, load, query, tablets, fe, _tmp: tmp }
 }
 
 /// The rows of a reply's batch, each row's bytes as sent.
@@ -244,6 +244,8 @@ impl Driver<'_> {
 /// Runs a replay; every query whose rows differ from the reference's is a mismatch.
 pub fn replay(r: &Replay) -> Vec<Mismatch> {
     let be = be();
+    let replies = Mutex::new(r.fe_replies());
+    be.fe.answer_from(Box::new(move |method, call| replies.lock().unwrap().reply(method, call)));
     for c in r.synthetic_tablets() {
         be.tablets.lock().unwrap().create_tablet(&c).unwrap();
     }
@@ -341,4 +343,22 @@ fn shapes_b_c_match_the_reference() {
 #[test]
 fn shapes_d_i_j_k_match_the_reference() {
     check(&['A', 'B', 'C', 'D', 'E', 'H', 'I', 'J', 'K']);
+}
+
+#[test]
+fn sys_tables_matches_the_reference_up_to_the_set() {
+    let r = replays::load("nereids_p0.system.test_query_sys_tables.test_query_sys_tables");
+    let m = replay(&r);
+    assert!(m.is_empty(), "{m:#?}");
+}
+
+#[test]
+fn every_replay_matches_the_reference() {
+    let mut all = Vec::new();
+    let rs = replays::all();
+    for r in &rs {
+        all.extend(replay(r));
+    }
+    let lines: Vec<String> = all.iter().map(|m| format!("{} #{}: {}", m.suite, m.query, m.what)).collect();
+    assert!(all.is_empty(), "{} mismatches over {} replays:\n{}", lines.len(), rs.len(), lines.join("\n"));
 }

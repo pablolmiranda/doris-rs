@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use doris_thrift::gen::frontend_service::{
+    FrontendServiceDescribeTablesArgs, FrontendServiceDescribeTablesResult, FrontendServiceGetDbNamesArgs, FrontendServiceGetDbNamesResult,
+    FrontendServiceGetTableNamesArgs, FrontendServiceGetTableNamesResult, FrontendServiceListTableStatusArgs, FrontendServiceListTableStatusResult,
+    FrontendServiceShowVariablesArgs, FrontendServiceShowVariablesResult, TDescribeTablesParams, TDescribeTablesResult, TGetDbsParams,
+    TGetDbsResult, TGetTablesParams, TGetTablesResult, TListTableStatusResult, TShowVariableRequest, TShowVariableResult,
     TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest, TLoadTxnCommitResult, TLoadTxnRollbackRequest,
     TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult, TStreamLoadPutRequest, TStreamLoadPutResult,
 };
@@ -34,8 +38,12 @@ pub struct LoadScript {
 
 /// A master FE that records what the BE sends and answers OK. It can fail the next calls, or
 /// hold `finishTask` calls until released. Load calls get the scripted answers.
+/// Answers an FE call, given its method and whole Thrift message, with a whole reply message.
+pub type Recorded = Box<dyn FnMut(&str, &[u8]) -> Option<Vec<u8>> + Send>;
+
 #[derive(Default)]
 pub struct FakeFe {
+    recorded: Mutex<Option<Recorded>>,
     loads: Mutex<Vec<LoadCall>>,
     script: Mutex<LoadScript>,
     finishes: Mutex<Vec<TFinishTaskRequest>>,
@@ -47,6 +55,34 @@ pub struct FakeFe {
 }
 
 impl FakeFe {
+    /// Answers the information_schema calls from recorded replies (a replay's).
+    pub fn answer_from(&self, f: Recorded) {
+        *self.recorded.lock().unwrap() = Some(f);
+    }
+
+    /// A schema call: its arguments as the Thrift message a client sends, the recorded reply's
+    /// result decoded.
+    fn recorded_call<R>(
+        &self,
+        method: &str,
+        write: impl FnOnce(&mut dyn thrift::protocol::TOutputProtocol) -> thrift::Result<()>,
+        read: impl FnOnce(&mut dyn thrift::protocol::TInputProtocol) -> thrift::Result<R>,
+    ) -> Result<R, FeError> {
+        use thrift::protocol::{TBinaryInputProtocol, TBinaryOutputProtocol, TInputProtocol, TMessageIdentifier, TMessageType, TOutputProtocol};
+        let mut call = Vec::new();
+        {
+            let mut o = TBinaryOutputProtocol::new(&mut call, true);
+            let _ = o.write_message_begin(&TMessageIdentifier::new(method, TMessageType::Call, 0));
+            let _ = write(&mut o);
+            let _ = o.write_message_end();
+        }
+        let reply = self.recorded.lock().unwrap().as_mut().and_then(|f| f(method, &call)).ok_or_else(unscripted)?;
+        let mut b = reply.as_slice();
+        let mut i = TBinaryInputProtocol::new(&mut b, true);
+        i.read_message_begin().map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })?;
+        read(&mut i).map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })
+    }
+
     pub fn load_calls(&self) -> Vec<LoadCall> {
         self.loads.lock().unwrap().clone()
     }
@@ -131,6 +167,42 @@ impl FeClient for FakeFe {
         self.load(LoadCall::Rollback(req));
         self.script.lock().unwrap().rollback.clone().ok_or_else(unscripted)
     }
+
+    fn get_db_names(&self, _fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError> {
+        self.recorded_call("getDbNames", |o| FrontendServiceGetDbNamesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceGetDbNamesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
+    }
+
+    fn get_table_names(&self, _fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError> {
+        self.recorded_call("getTableNames", |o| FrontendServiceGetTableNamesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceGetTableNamesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
+    }
+
+    fn describe_tables(&self, _fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError> {
+        self.recorded_call("describeTables", |o| FrontendServiceDescribeTablesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceDescribeTablesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
+    }
+
+    fn list_table_status(&self, _fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError> {
+        self.recorded_call("listTableStatus", |o| FrontendServiceListTableStatusArgs { params: req }.write_to_out_protocol(o), |i| {
+            FrontendServiceListTableStatusResult::read_from_in_protocol(i)
+        })?
+        .result_value
+        .ok_or_else(no_value)
+    }
+
+    fn show_variables(&self, _fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError> {
+        self.recorded_call("showVariables", |o| FrontendServiceShowVariablesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceShowVariablesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
+    }
+}
+
+fn no_value() -> FeError {
+    FeError::Call { addr: "fake".into(), msg: "the recorded reply has no result".into() }
 }
 
 fn unscripted() -> FeError {

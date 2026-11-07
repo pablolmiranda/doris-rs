@@ -15,6 +15,7 @@ pub mod query;
 pub mod route;
 pub mod sort;
 pub mod row_text;
+pub mod schema_scan;
 pub mod sink;
 pub mod value;
 
