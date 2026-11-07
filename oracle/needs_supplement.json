@@ -13,383 +13,831 @@
    ],
    "reason": "The suite expects the C++ BE's stream load reply \"[INVALID_ARGUMENT]Invalid format of 'timeout': 'abc', stoi\", so its stream load reaches the BE, but the corpus kept no BE HTTP exchange for it (the reference traffic for this suite holds only Thrift)."
   },
-  "correctness_p0.test_cast_decimal.test_cast_decimal": {
+  "load_p0.stream_load.test_stream_load_include_where_expr.test_stream_load_include_where_expr": {
    "needs": [
-    "state:global wait_timeout=31000"
+    "expr:BINARY_PRED",
+    "expr:COMPOUND_PRED"
    ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "correctness_p0.test_cast_in.test_cast_in": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "correctness_p0.test_inlineview_error_msg.test_inlineview_error_msg": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "correctness_p0.test_join_should_not_reorder.test_join_should_not_reorder": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "correctness_p0.test_select_decimal.test_select_decimal": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "correctness_p0.test_show_dummy_variables.test_show_dummy_variables": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "datatype_p0.decimalv3.test_show_decimalv3.test_show_decimalv3": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "insert_p0.test_insert_timeout.test_insert_timeout": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "inverted_index_p0.test_index_policy_unsupported_type_error.test_index_policy_unsupported_type_error": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.broker_load.test_domain_connection_and_ak_sk_correction.test_domain_connection_and_ak_sk_correction": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.broker_load.test_show_create_load.test_show_create_load": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.routine_load.test_routine_load_compute_group.test_routine_load_compute_group": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.routine_load.test_routine_load_name.test_routine_load_name": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.routine_load.test_routine_load_property.test_routine_load_property": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.routine_load.test_routine_load_topic_change.test_routine_load_topic_change": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "load_p0.routine_load.test_routine_load_with_user.test_routine_load_with_user": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "mysql_compatibility_p0.header.header": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "mysql_compatibility_p0.metadata.metadata": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.cte.test_cte_with_duplicate_consumer.test_cte_with_duplicate_consumer": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.drop.drop_resource.test_nereids_drop_resource": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.drop.drop_table.test_nereids_drop_table": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.expression.expression_depth_check.expression_depth_check": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.expression.fold_constant.fe_constant_cast_to_date.fe_constant_cast_to_date": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.expression.fold_constant.fe_constant_cast_to_fractional.fe_constant_cast_to_fractional": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.expression.fold_constant.fe_constant_cast_to_int.fe_constant_cast_to_int": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query13.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query14.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query15.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query2.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query23.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query35.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query38.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query41.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query42.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query45.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query59.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query61.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query62.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query8.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.infer_expr_name.query85.nereids_test_create_blocked": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.pkfk.test_pk_fk_drop_table.test_pk_fk_drop_table": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.array_functions.test_array_functions_by_literal.test_array_functions_by_literal": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.json_functions.test_get_json_double.test_get_json_double": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.json_functions.test_json_function.test_json_function": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.search_functions.test_multi_string_position.test_multi_string_position": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.sql_functions.table_function.explode.explode": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.system.test_explain_information_schema.test_explain_information_schema": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.tablesample.test_table_sample": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.test_create_workload_policy_command.test_create_workload_policy_command": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.test_unlock_tables_command.test_unlock_tables_command": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "nereids_p0.test_unsupported_start_transaction_command.test_start_transaction_command": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.aggregate.agg_on_view.agg_on_view": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.cast.test_cast_decimalv3.test_cast_with_decimalv3": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.literal_view.lietral_largeint.literal_largeint": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.session_variable.test_invalid_session.test_invalid_session": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.sql_functions.datetime_functions.test_time_diff.test_time_diff": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.system.test_storage_page_size.test_storage_page_size": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "query_p0.test_row_policy.test_row_policy": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
-  },
-  "schema_change_p0.test_light_schema_change_default.test_lsc_default": {
-   "needs": [
-    "state:global wait_timeout=31000"
-   ],
-   "reason": "Its JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops at exec_plan_fragment_prepare on doris-rs before the SET, so the value stays 28800 (doris-rs run m2-full-1, 2026-11-04). Remove when test_query_sys_tables passes."
+   "reason": "Its stream load sets 'where' (d = 'doris' or d = 'asf' or b = 9 or b = 8), which the FE plans as conjuncts on the file scan node; the needs index does not read the scan node's conjuncts, so the predicates it needs are declared here (doris-rs run m4-full-1, 2026-11-05)."
   }
- }
+ },
+ "groups": [
+  {
+   "needs": [
+    "state:global wait_timeout=31000"
+   ],
+   "reason": "Each suite's JDBC connect query (exchange 1) reads @@wait_timeout, which the reference returns as 31000: query_p0/system/test_query_sys_tables.groovy (and its nereids_p0 twin) runs SET GLOBAL wait_timeout = 31000 earlier in the run. That suite stops on doris-rs before the SET, so the value stays 28800 (doris-rs runs m2-full-1 and m4-full-1). The list is every gate suite whose reference connect query reads 31000 (809, from epic1/replies). Remove when test_query_sys_tables passes.",
+   "suites": [
+    "compaction.test_base_compaction.test_base_compaction",
+    "compaction.test_base_compaction_after_sc.test_base_compaction_after_sc",
+    "compaction.test_be_compaction_tasks.test_be_compaction_tasks",
+    "compaction.test_compacation_with_delete.test_compaction_with_delete",
+    "compaction.test_compaction_dup_keys.test_compaction_dup_keys",
+    "compaction.test_compaction_dup_keys_with_delete.test_compaction_dup_keys_with_delete",
+    "compaction.test_compaction_score_action.test_compaction_score_action",
+    "compaction.test_compaction_uniq_keys.test_compaction_uniq_keys",
+    "compaction.test_compaction_uniq_keys_ck.test_compaction_uniq_keys_ck",
+    "compaction.test_compaction_uniq_keys_row_store.test_compaction_uniq_keys_row_store",
+    "compaction.test_compaction_uniq_keys_row_store_ck.test_compaction_uniq_keys_row_store_ck",
+    "compaction.test_compaction_uniq_keys_with_delete.test_compaction_uniq_keys_with_delete",
+    "compaction.test_compaction_uniq_keys_with_delete_ck.test_compaction_uniq_keys_with_delete_ck",
+    "compaction.test_compaction_with_empty_rowset.test_compaction_mow_with_empty_rowset",
+    "compaction.test_config_prune_delete_sign.test_config_prune_delete_sign",
+    "compaction.test_cumu_compaction_with_delete.test_cumu_compaction_with_delete",
+    "compaction.test_full_compaction.test_full_compaction",
+    "compaction.test_full_compaction_by_table_id.test_full_compaction_by_table_id",
+    "compaction.test_full_compaction_ck.test_full_compaction_ck",
+    "compaction.test_full_compaction_status.test_full_compaction_status",
+    "compaction.test_table_level_compaction_policy.test_table_level_compaction_policy",
+    "compaction.test_time_series_compaction_policy.test_time_series_compaction_polciy",
+    "compaction.test_vertical_compaction_dup_keys.test_vertical_compaction_dup_keys",
+    "compaction.test_vertical_compaction_uniq_keys.test_vertical_compaction_uniq_keys",
+    "compaction.test_vertical_compaction_uniq_keys_ck.test_vertical_compaction_uniq_keys_ck",
+    "correctness_p0.test_agg_materialize.test_agg_materialize",
+    "correctness_p0.test_always_nullable_window_function.test_always_nullable_window_function",
+    "correctness_p0.test_and_or.test_and_or",
+    "correctness_p0.test_assert_row_num.test_assert_num_rows",
+    "correctness_p0.test_bit_function.test_bit_functions",
+    "correctness_p0.test_bit_shift_lagency.test_bit_shift",
+    "correctness_p0.test_bit_shift_nereids.test_bit_shift_nereids",
+    "correctness_p0.test_bit_test_function.test_bit_test_function",
+    "correctness_p0.test_bucket_join_with_colocate_table.test_bucket_join_with_colocate_table",
+    "correctness_p0.test_bugfix_block_reuse.test_bugfix_block_reuse",
+    "correctness_p0.test_case_when_date.test_case_when_date",
+    "correctness_p0.test_case_when_decimal.test_case_when_decimal",
+    "correctness_p0.test_cast_date_decimal.test_cast_date_decimal",
+    "correctness_p0.test_cast_decimal.test_cast_decimal",
+    "correctness_p0.test_cast_in.test_cast_in",
+    "correctness_p0.test_char_default_value.test_char_default_value",
+    "correctness_p0.test_char_implicit_cast.test_char_implicit_cast",
+    "correctness_p0.test_colocate_join_of_column_order.test_colocate_join_of_column_order",
+    "correctness_p0.test_colocate_join_with_different_tablets.test_colocate_join_with_different_tablets",
+    "correctness_p0.test_column_prune_in_hash_join.test_column_prune_in_hash_join",
+    "correctness_p0.test_constant_having.test_constant_having",
+    "correctness_p0.test_ctas_mv.test_ctas_mv.test_ctas_mv",
+    "correctness_p0.test_current_date.test_current_date",
+    "correctness_p0.test_current_timestamp.test_current_timestamp",
+    "correctness_p0.test_date_diff.test_date_diff",
+    "correctness_p0.test_default_double.test_default_double",
+    "correctness_p0.test_default_e.test_default_e",
+    "correctness_p0.test_default_pi.test_default_pi",
+    "correctness_p0.test_dict_range_predicate.test_dict_range_predicate",
+    "correctness_p0.test_distinct_agg.test_distinct_agg",
+    "correctness_p0.test_distinct_streaming_agg_local_shuffle.test_distinct_streaming_agg_local_shuffle",
+    "correctness_p0.test_div_decimal_overflow.test_div_decimal_overflow",
+    "correctness_p0.test_equal_for_null.test_equal_for_null",
+    "correctness_p0.test_function_conjunct.test_function_conjunct",
+    "correctness_p0.test_group_by_constant.test_group_by_constant",
+    "correctness_p0.test_group_having_alias.test_group_having_alias",
+    "correctness_p0.test_grouping_sets_empty.test_grouping_sets_empty",
+    "correctness_p0.test_grouping_with_alias.test_grouping_with_alias",
+    "correctness_p0.test_hash_join_local_shuffle.test_hash_join_local_shuffle",
+    "correctness_p0.test_having_subquery_with_nullliteral.test_having_subquery_with_nullliteral",
+    "correctness_p0.test_implict_cast.test_implicit_cast",
+    "correctness_p0.test_in_predicate_push_down.test_in_predicate_push_down",
+    "correctness_p0.test_inlineview_error_msg.test_inlineview_error_msg",
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview",
+    "correctness_p0.test_join_should_not_reorder.test_join_should_not_reorder",
+    "correctness_p0.test_join_with_projection.test_join_with_projection",
+    "correctness_p0.test_join_without_condition.test_join_without_condition",
+    "correctness_p0.test_keywords.test_keywords",
+    "correctness_p0.test_lag_lead_window.test_lag_lead_window",
+    "correctness_p0.test_like_predicate_with_concat.test_like_predicate_with_concat",
+    "correctness_p0.test_like_predicate_with_nullable.test_like_predicate_with_nullable",
+    "correctness_p0.test_many_inlineview.test_many_inlineview",
+    "correctness_p0.test_mask_function.test_mask_function",
+    "correctness_p0.test_merge_topn_offset.test_merge_topn_offset",
+    "correctness_p0.test_min_max_window.test_min_max_window",
+    "correctness_p0.test_multi_distinct.test_multi_distinct",
+    "correctness_p0.test_nested_lateral_view.test_nested_lateral_view",
+    "correctness_p0.test_no_grouping_window.test_no_grouping_window",
+    "correctness_p0.test_null_aware_left_anti_join.test_null_aware_left_anti_join",
+    "correctness_p0.test_null_equal.test_null_equal",
+    "correctness_p0.test_null_predicate.test_null_predicate",
+    "correctness_p0.test_order_by.test_order_by",
+    "correctness_p0.test_orderby_mod.test_order_by_mod",
+    "correctness_p0.test_outer_join_sort.test_outer_join_sort",
+    "correctness_p0.test_outer_join_with_cross_join.test_outer_join_with_cross_join",
+    "correctness_p0.test_outer_join_with_empty_node.test_outer_join_with_empty_node",
+    "correctness_p0.test_outer_join_with_inline_view.test_outer_join_with_inline_view",
+    "correctness_p0.test_outer_join_with_null_value.test_outer_join_with_null_value",
+    "correctness_p0.test_outer_join_with_order_by.test_outer_join_with_order_by",
+    "correctness_p0.test_outer_join_with_subquery.test_outer_join_with_subquery",
+    "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
+    "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
+    "correctness_p0.test_partial_const_args_for_function.test_partial_const_args_for_function",
+    "correctness_p0.test_probe_clean.test_probe_clean",
+    "correctness_p0.test_rand_filter.test_rand_filter",
+    "correctness_p0.test_rf_in_list_not_erased_by_scope_range.test_rf_in_list_not_erased_by_scope_range",
+    "correctness_p0.test_runtime_filter.test_runtime_filter",
+    "correctness_p0.test_runtime_filter_outer_join_nullable_side.test_runtime_filter_outer_join_nullable_side",
+    "correctness_p0.test_runtimefilter_with_window.test_runtimefilter_with_window",
+    "correctness_p0.test_scan_topn_limit.test_scan_topn_limit",
+    "correctness_p0.test_select_constant.test_select_constant",
+    "correctness_p0.test_select_decimal.test_select_decimal",
+    "correctness_p0.test_select_stddev_variance_window.test_select_stddev_variance_window",
+    "correctness_p0.test_select_variance_agg.test_select_variance_agg",
+    "correctness_p0.test_select_with_predicate_like.test_select_with_predicate_like",
+    "correctness_p0.test_select_with_prefix.test_select_with_prefix",
+    "correctness_p0.test_set_operation.test_set_operation",
+    "correctness_p0.test_show_dummy_variables.test_show_dummy_variables",
+    "correctness_p0.test_similar_query_with_different_results.test_similar_query_with_different_results",
+    "correctness_p0.test_sort.test_sort",
+    "correctness_p0.test_string_pad_function.test_string_pad_function",
+    "correctness_p0.test_string_to_decimal.test_string_to_decimal",
+    "correctness_p0.test_subquery_grouping.test_subquery_grouping",
+    "correctness_p0.test_subquery_with_limit.test_limit_subquery",
+    "correctness_p0.test_table_function_with_subquery.test_table_function_with_subquery",
+    "correctness_p0.test_temp_partition.test_temp_partition",
+    "correctness_p0.test_time_round.test_time_round",
+    "correctness_p0.test_topn_with_cast_to_date.test_topn_with_cast_to_date",
+    "correctness_p0.test_union_has_in_predicate.test_union_has_in_predicate",
+    "correctness_p0.test_window_function_error.test_window_function_error",
+    "correctness_p0.test_window_function_with_project.test_window_function_with_project",
+    "correctness_p0.test_xor_pred.test_xor_pred",
+    "datatype_p0.date.test_agg_functions.test_agg_functions",
+    "datatype_p0.date.test_date_exprs.test_date_exprs",
+    "datatype_p0.date.test_date_in_predicate.test_date_in_predicate",
+    "datatype_p0.date.test_date_key.test_date_key",
+    "datatype_p0.date.test_date_runtime_filter.test_date_runtime_filter",
+    "datatype_p0.date.test_datetime_key.test_datetime_key",
+    "datatype_p0.date.test_datev1.test_datev1",
+    "datatype_p0.date.test_default_current_timestamp.test_default_current_timestamp",
+    "datatype_p0.date.test_from_unixtime.test_from_unixtime",
+    "datatype_p0.date.test_unix_timestamp_range.test_unix_timestamp_range",
+    "datatype_p0.date.test_weekofyear.test_weekofyear",
+    "datatype_p0.datetimev1.test_datetimev1_date_function.test_datetimev1_date_function",
+    "datatype_p0.datetimev1.test_datetimev1_load.test_datetimev1_load",
+    "datatype_p0.datetimev2.test_agg_functions.test_agg_functions",
+    "datatype_p0.datetimev2.test_curdate_fold.test_curdate_fold",
+    "datatype_p0.datetimev2.test_exprs.test_exprs",
+    "datatype_p0.datetimev2.test_invalid_hour.test_invalid_hour",
+    "datatype_p0.datetimev2.test_round.test_time_round",
+    "datatype_p0.datetimev2.test_timezone.test_timezone",
+    "datatype_p0.datev1.test_datev1_load.test_datev1_load",
+    "datatype_p0.decimalv2.test_decimalv2_agg.test_decimalv2_agg",
+    "datatype_p0.decimalv2.test_decimalv2_calc.test_decimalv2_calc",
+    "datatype_p0.decimalv2.test_decimalv2_calc_with_conversion.test_decimalv2_calc_with_conversion",
+    "datatype_p0.decimalv2.test_decimalv2_cast_to_string.test_decimalv2_cast_to_string",
+    "datatype_p0.decimalv2.test_decimalv2_load.test_decimalv2_load",
+    "datatype_p0.decimalv2.test_decimalv2_overflow.test_decimalv2_overflow",
+    "datatype_p0.decimalv2.test_decimalv2_overflow2.test_decimalv2_overflow2",
+    "datatype_p0.decimalv2.test_decimalv2_rqg.test_decimalv2_rqg",
+    "datatype_p0.decimalv3.aggregate_decimal256.aggregate_decimal256",
+    "datatype_p0.decimalv3.fix-overflow.fix-overflow",
+    "datatype_p0.decimalv3.test_arithmetic_expressions.test_arithmetic_expressions",
+    "datatype_p0.decimalv3.test_decimal256_cast.test_decimal256_cast",
+    "datatype_p0.decimalv3.test_decimal256_index.test_decimal256_index",
+    "datatype_p0.decimalv3.test_decimal256_load.test_decimal256_load",
+    "datatype_p0.decimalv3.test_decimal256_multi_distinct.test_decimal256_multi_distinct",
+    "datatype_p0.decimalv3.test_decimal256_predicate.test_decimal256_predicate",
+    "datatype_p0.decimalv3.test_decimalv2_v3.test_decimalv2_v3",
+    "datatype_p0.decimalv3.test_decimalv3.test_decimalv3",
+    "datatype_p0.decimalv3.test_decimalv3_cast.test_decimalv3_cast",
+    "datatype_p0.decimalv3.test_decimalv3_cast2.test_decimalv3_cast2",
+    "datatype_p0.decimalv3.test_decimalv3_cast3.test_decimalv3_cast3",
+    "datatype_p0.decimalv3.test_decimalv3_cast4.test_decimalv3_cast4",
+    "datatype_p0.decimalv3.test_decimalv3_cast_to_string.test_decimalv3_cast_to_string",
+    "datatype_p0.decimalv3.test_decimalv3_key.test_decimalv3_key.test_decimalv3_key",
+    "datatype_p0.decimalv3.test_decimalv3_overflow.test_decimalv3_overflow",
+    "datatype_p0.decimalv3.test_decimalv3_string.test_decimalv3_string",
+    "datatype_p0.decimalv3.test_decimalv3_where.test_decimalv3_where",
+    "datatype_p0.decimalv3.test_dup_tab_decimalv3.test_dup_tab_decimalv3",
+    "datatype_p0.decimalv3.test_functions.test_functions",
+    "datatype_p0.decimalv3.test_if_functions.test_if_functions",
+    "datatype_p0.decimalv3.test_load.test_load",
+    "datatype_p0.decimalv3.test_predicate.test_predicate",
+    "datatype_p0.decimalv3.test_predicate_with_implicit_cast.test_predicate_with_implicit_cast",
+    "datatype_p0.decimalv3.test_show_decimalv3.test_show_decimalv3",
+    "datatype_p0.decimalv3.test_uniq_tab_decimalv2.test_uniq_tab_decimalv2",
+    "datatype_p0.decimalv3.test_uniq_tab_decimalv3.test_uniq_tab_decimalv3",
+    "datatype_p0.double.test_double_special_values.test_double_special_values",
+    "datatype_p0.double.test_double_zonemap.test_double_zonemap",
+    "datatype_p0.float.test_float_double_to_mysql_result.test_float_to_mysql_result",
+    "datatype_p0.ip.ip_rf.test_ip_rf.test_ip_rf",
+    "datatype_p0.ip.test_ip_implicit_cast.test_ip_implicit_cast",
+    "datatype_p0.ip.test_ip_in_predicate.test_ip_in_predicate",
+    "datatype_p0.ip.test_ip_stream_load.test_ip_stream_load",
+    "datatype_p0.nested_types.meta.test_complextype_information_schema.test_complextype_information_schema",
+    "datatype_p0.nested_types.query.array_functions.test_array_element_at_and_slice.test_array_element_at_and_slice",
+    "datatype_p0.nested_types.query.array_functions.test_array_functions_array_join.test_array_functions_array_join",
+    "datatype_p0.nested_types.query.array_functions.test_array_functions_array_with_const.test_array_functions_array_with_const",
+    "datatype_p0.nested_types.query.array_functions.test_array_push_pop_backfront.test_array_push_pop_backfront",
+    "datatype_p0.nested_types.query.map_functions.test_map_with_agg.test_map_with_agg",
+    "datatype_p0.nested_types.query.test_nested_type_with_count.test_nested_type_with_count",
+    "datatype_p0.nested_types.query.test_nested_types_insert_into_with_literal.test_nested_types_insert_into_with_literal",
+    "datatype_p0.scalar_types.get_assignment_compatible_type.get_assignment_compatible_type",
+    "datatype_p0.string.test_string_basic.test_string_basic",
+    "datatype_p0.string.test_string_embedded_nul_zonemap.test_string_embedded_nul_zonemap",
+    "datatype_p0.test_varbinary_sql_support.test_varbinary_sql_support",
+    "datatype_p0.time_type.test_time_in_runtimepredicate.test_time_in_runtimepredicate",
+    "datatype_p0.timestamptz.index.test_timestamptz_bloom_filter.test_timestamptz_bloom_filter",
+    "datatype_p0.timestamptz.load.stream_load.test_timestamptz_stream_load.test_timestamptz_stream_load",
+    "datatype_p0.timestamptz.test_cast_timestamptz.test_cast_timestamptz",
+    "datatype_p0.timestamptz.test_timestamptz_binary_output.test_timestamptz_binary_output",
+    "datatype_p0.timestamptz.test_timestamptz_cast.test_timestamptz_cast",
+    "datatype_p0.timestamptz.test_timestamptz_cmp.test_timestamptz_cmp",
+    "datatype_p0.timestamptz.test_timestamptz_coalesce.test_timestamptz_coalesce",
+    "datatype_p0.timestamptz.test_timestamptz_count_distinct.test_timestamptz_count_distinct",
+    "datatype_p0.timestamptz.test_timestamptz_delete_dup_key.test_timestamptz_delete_dup_key",
+    "datatype_p0.timestamptz.test_timestamptz_delete_uniq_key.test_timestamptz_delete_uniq_key",
+    "datatype_p0.timestamptz.test_timestamptz_dst_fold.test_timestamptz_dst_fold",
+    "datatype_p0.timestamptz.test_timestamptz_dst_gap.test_timestamptz_dst_gap",
+    "datatype_p0.timestamptz.test_timestamptz_group_by.test_timestamptz_group_by",
+    "datatype_p0.timestamptz.test_timestamptz_historical_offset.test_timestamptz_historical_offset",
+    "datatype_p0.timestamptz.test_timestamptz_jdbc_binary_protocol.test_timestamptz_jdbc_binary_protocol",
+    "datatype_p0.timestamptz.test_timestamptz_join.test_timestamptz_join",
+    "datatype_p0.timestamptz.test_timestamptz_max_min_by.test_timestamptz_max_min_by",
+    "datatype_p0.timestamptz.test_timestamptz_mv.test_timestamptz_mv",
+    "datatype_p0.timestamptz.test_timestamptz_null_string.test_timestamptz_null_string",
+    "datatype_p0.timestamptz.test_timestamptz_output_boundary.test_timestamptz_output_boundary",
+    "datatype_p0.timestamptz.test_timestamptz_partition_boundary_timezone.test_timestamptz_partition_boundary_timezone",
+    "datatype_p0.timestamptz.test_timestamptz_rf.test_timestamptz_rf",
+    "datatype_p0.timestamptz.test_timestamptz_rf_partition_prune_dst.test_timestamptz_rf_partition_prune_dst",
+    "datatype_p0.timestamptz.test_timestamptz_sort.test_timestamptz_sort",
+    "datatype_p0.timestamptz.test_timestamptz_storage_dup_key.test_timestamptz_storage_dup_key",
+    "datatype_p0.timestamptz.test_timestamptz_storage_uniq_key.test_timestamptz_storage_uniq_key",
+    "datatype_p0.timestamptz.test_timestamptz_utc_functions.test_timestamptz_utc_functions",
+    "insert_p0.insert.insert",
+    "insert_p0.insert_group_commit_into_max_filter_ratio.insert_group_commit_into_max_filter_ratio",
+    "insert_p0.insert_group_commit_into_unique.insert_group_commit_into_unique",
+    "insert_p0.insert_group_commit_into_unique_sync_mode.insert_group_commit_into_unique_sync_mode",
+    "insert_p0.insert_group_commit_with_exception.insert_group_commit_with_exception",
+    "insert_p0.insert_group_commit_with_large_data.insert_group_commit_with_large_data",
+    "insert_p0.insert_group_commit_with_prepare_stmt.insert_group_commit_with_prepare_stmt",
+    "insert_p0.mow_insert_with_partition_drop.mow_insert_with_partition_drop",
+    "insert_p0.prepare_insert.prepare_insert",
+    "insert_p0.test_group_commit_data_bytes_property.test_group_commit_data_bytes_property",
+    "insert_p0.test_group_commit_interval_ms_property.test_group_commit_interval_ms_property",
+    "insert_p0.test_group_commit_timeout.test_group_commit_timeout",
+    "insert_p0.test_insert_docs_demo.test_insert_docs_demo",
+    "insert_p0.test_insert_nan.test_insert_nan",
+    "insert_p0.test_insert_partition_fail_url.test_insert_partition_fail_url",
+    "insert_p0.test_insert_row_count.test_insert_row_count",
+    "insert_p0.test_insert_tablet_sink.test_insert_tablet_sink",
+    "insert_p0.test_insert_timeout.test_insert_timeout",
+    "insert_p0.test_jdbc.test_jdbc",
+    "insert_p0.transaction.txn_insert_concurrent_insert.txn_insert_concurrent_insert",
+    "insert_p0.transaction.txn_insert_concurrent_insert_mow.txn_insert_concurrent_insert_mow",
+    "insert_p0.transaction.txn_insert_values_with_schema_change.txn_insert_values_with_schema_change",
+    "insert_p0.transaction.txn_insert_with_schema_change.txn_insert_with_schema_change",
+    "insert_p0.transaction.txn_insert_with_specify_columns.txn_insert_with_specify_columns",
+    "inverted_index_p0.analyzer.test_ngram_max_diff_custom_analyzer.test_ngram_max_diff_custom_analyzer",
+    "inverted_index_p0.analyzer.test_unicode_normalize.test_unicode_normalize",
+    "inverted_index_p0.test_index_policy_unsupported_type_error.test_index_policy_unsupported_type_error",
+    "load_p0.broker_load.test_domain_connection_and_ak_sk_correction.test_domain_connection_and_ak_sk_correction",
+    "load_p0.broker_load.test_s3_load_without_aksk.test_s3_load_without_aksk",
+    "load_p0.broker_load.test_show_create_load.test_show_create_load",
+    "load_p0.clean_label.test_clean_label.test_clean_label",
+    "load_p0.http_stream.test_group_commit_http_stream.test_group_commit_http_stream",
+    "load_p0.http_stream.test_http_stream_2pc.test_http_stream_2pc",
+    "load_p0.http_stream.test_http_stream_csv_with_names.test_http_stream_csv_with_names",
+    "load_p0.http_stream.test_http_stream_csv_with_names_and_types.test_http_stream_csv_with_names_and_types",
+    "load_p0.http_stream.test_http_stream_json.test_http_stream_json",
+    "load_p0.insert.insert_select_empty_table.insert_select_empty_table",
+    "load_p0.insert.test_insert.test_insert",
+    "load_p0.insert.test_insert_random_distribution_table.test_insert_random_distribution_table",
+    "load_p0.insert.test_insert_strict_mode_and_filter_ratio.test_insert_strict_mode_and_filter_ratio",
+    "load_p0.insert.test_insert_strict_mode_and_filter_ratio_custom.test_insert_strict_mode_and_filter_ratio_custom",
+    "load_p0.merge_into.test_merge_into.test_merge_into",
+    "load_p0.mysql_load.test_mysql_load_skip_lines.test_mysql_load_skip_lines",
+    "load_p0.mysql_load.test_mysql_load_strict_mode_and_filter_ratio.test_mysql_load_strict_mode_and_filter_ratio",
+    "load_p0.mysql_load.test_mysql_load_trim_quotes.test_mysql_load_trim_quotes",
+    "load_p0.mysql_load.test_mysql_load_unified.test_mysql_load_unified",
+    "load_p0.routine_load.test_routine_load_compute_group.test_routine_load_compute_group",
+    "load_p0.routine_load.test_routine_load_name.test_routine_load_name",
+    "load_p0.routine_load.test_routine_load_property.test_routine_load_property",
+    "load_p0.routine_load.test_routine_load_topic_change.test_routine_load_topic_change",
+    "load_p0.routine_load.test_routine_load_with_user.test_routine_load_with_user",
+    "load_p0.stream_load.load_json_null_to_nullable.test_load_json_null_to_nullable",
+    "load_p0.stream_load.load_json_parse_failed.load_json_parse_failed.load_json_parse_failed",
+    "load_p0.stream_load.load_json_with_jsonpath.test_load_json_with_jsonpath",
+    "load_p0.stream_load.load_object_array_json.load_object_array_json",
+    "load_p0.stream_load.test_arrow_stream_load_uppercase_column.test_arrow_stream_load_uppercase_column",
+    "load_p0.stream_load.test_chinese_col_load.test_chinese_col_load",
+    "load_p0.stream_load.test_csv_special_seperator.test_csv_special_seperator",
+    "load_p0.stream_load.test_csv_split_line.test_csv_split_line",
+    "load_p0.stream_load.test_csv_with_double_quotes.test_csv_with_double_quotes",
+    "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape",
+    "load_p0.stream_load.test_csv_with_none_utf8_data.test_csv_with_none_utf8_data",
+    "load_p0.stream_load.test_csv_with_skip_lines.test_csv_with_skip_lines",
+    "load_p0.stream_load.test_get_stream_load_state.test_get_stream_load_state",
+    "load_p0.stream_load.test_group_commit_and_wal_back_pressure.test_group_commit_and_wal_back_pressure",
+    "load_p0.stream_load.test_group_commit_stream_load_high_concurrency_async.test_group_commit_stream_load_high_concurrency_async",
+    "load_p0.stream_load.test_json_load_default_number_value.test_json_load_default_number_value",
+    "load_p0.stream_load.test_json_load_default_value.test_json_load_default_value",
+    "load_p0.stream_load.test_load_block_to_single_tablet.test_load_block_to_single_tablet",
+    "load_p0.stream_load.test_load_to_single_tablet.test_load_to_single_tablet",
+    "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal",
+    "load_p0.stream_load.test_load_with_transfer_encoding.test_load_with_transfer_encoding",
+    "load_p0.stream_load.test_publish_timeout.test_publish_timeout",
+    "load_p0.stream_load.test_stream_load_2pc_with_schema_change.test_stream_load_2pc_with_schema_change",
+    "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast",
+    "load_p0.stream_load.test_stream_load_empty_field_as_null.test_stream_load_empty_field_as_null",
+    "load_p0.stream_load.test_stream_load_err_log_limit.test_stream_load_err_log_limit",
+    "load_p0.stream_load.test_stream_load_error_url.test_stream_load_error_url",
+    "load_p0.stream_load.test_stream_load_fe_redirect_chunked_e2e.test_stream_load_fe_redirect_chunked_e2e",
+    "load_p0.stream_load.test_stream_load_illegal_skip_lines.test_stream_load_illegal_skip_lines",
+    "load_p0.stream_load.test_stream_load_illegal_timeout.test_stream_load_illegal_timeout",
+    "load_p0.stream_load.test_stream_load_include_where_expr.test_stream_load_include_where_expr",
+    "load_p0.stream_load.test_stream_load_new_move_memtable.test_stream_load_new_move_memtable",
+    "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio",
+    "load_p0.stream_load.test_stream_load_with_aes_encrypt.test_stream_load_with_aes_encrypt",
+    "load_p0.stream_load.test_stream_load_with_filtered_rows.test_stream_load_with_filtered_rows",
+    "load_p0.stream_load.test_txt_special_delimiter.test_txt_special_delimiter",
+    "load_p0.tvf.test_tvf_without_aksk.test_tvf_without_aksk",
+    "mysql_compatibility_p0.header.header",
+    "mysql_compatibility_p0.metadata.metadata",
+    "nereids_p0.authorization.column_authorization.column_authorization",
+    "nereids_p0.authorization.view_authorization.view_authorization",
+    "nereids_p0.colocate.test_multi_cast_colocate.test_multi_cast_colocate",
+    "nereids_p0.colocate.test_set_operation_colocate.test_set_operation_colocate",
+    "nereids_p0.cte.costbasedrewrite_producer.costbasedrewrite_producer.costbasedrewrite_producer",
+    "nereids_p0.cte.subquery_in_cte.subquery_in_cte.subquery_in_cte",
+    "nereids_p0.cte.test_constant_cte_partition_prune.test_constant_cte_partition_prune",
+    "nereids_p0.cte.test_cte_column_pruning.test_cte_column_pruning",
+    "nereids_p0.cte.test_cte_filter_pushdown.test_cte_filter_pushdown",
+    "nereids_p0.cte.test_cte_with_duplicate_consumer.test_cte_with_duplicate_consumer",
+    "nereids_p0.delta_row.delta_row.delta_row",
+    "nereids_p0.drop.drop_resource.test_nereids_drop_resource",
+    "nereids_p0.drop.drop_table.test_nereids_drop_table",
+    "nereids_p0.expression.case_when_to_if.test_case_when_to_if",
+    "nereids_p0.expression.expression_depth_check.expression_depth_check",
+    "nereids_p0.expression.fold_constant.fe_constant_cast_to_date.fe_constant_cast_to_date",
+    "nereids_p0.expression.fold_constant.fe_constant_cast_to_fractional.fe_constant_cast_to_fractional",
+    "nereids_p0.expression.fold_constant.fe_constant_cast_to_int.fe_constant_cast_to_int",
+    "nereids_p0.expression.fold_constant.fold_constant_cast.fold_constant_cast",
+    "nereids_p0.expression.fold_constant.fold_constant_date_arithmatic.fold_constant_date_arithmatic",
+    "nereids_p0.expression.fold_constant.fold_constant_ip.fold_constant_ip",
+    "nereids_p0.expression.fold_constant.fold_constant_numeric_arithmatic.fold_constant_numeric_arithmatic",
+    "nereids_p0.expression.fold_constant.fold_constant_string_arithmatic.fold_constant_string_arithmatic",
+    "nereids_p0.expression.fold_constant.json_constant.json_constant",
+    "nereids_p0.expression.operator_precedence.operator_precedence",
+    "nereids_p0.huge_compound.huge_compound.huge_compound",
+    "nereids_p0.infer_expr_name.query13.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query14.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query15.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query2.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query23.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query35.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query38.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query41.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query42.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query45.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query59.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query61.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query62.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query8.nereids_test_create_blocked",
+    "nereids_p0.infer_expr_name.query85.nereids_test_create_blocked",
+    "nereids_p0.infer_predicate.infer_predicate.test_infer_predicate",
+    "nereids_p0.javaudf.test_alias_function.nereids_test_alias_function",
+    "nereids_p0.keyword.order_group.order_group",
+    "nereids_p0.keyword.test_keyword.test_keyword",
+    "nereids_p0.large_wide_table.large_wide_table.large_wide_table",
+    "nereids_p0.multi_distinct.multi_distinct_window.multi_distinct_window",
+    "nereids_p0.operator.test_arithmetic_operators.test_arithmetic_operators",
+    "nereids_p0.operator.test_logical_operators.test_logical_operators",
+    "nereids_p0.partition_topn.check_partitionkey.check_partitionkey",
+    "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
+    "nereids_p0.pkfk.test_pk_fk_drop_table.test_pk_fk_drop_table",
+    "nereids_p0.session_variable.test_default_limit.test_default_limit",
+    "nereids_p0.session_variable.test_variable_between.test_variable_between",
+    "nereids_p0.set_operations.except.except",
+    "nereids_p0.sql_functions.aggregate_functions.test_aggregate_bit.test_aggregate_bit",
+    "nereids_p0.sql_functions.aggregate_functions.test_aggregate_collect.test_aggregate_collect",
+    "nereids_p0.sql_functions.aggregate_functions.test_aggregate_percentile_no_cast.test_aggregate_percentile_no_cast",
+    "nereids_p0.sql_functions.aggregate_functions.test_approx_count_distinct.test_approx_count_distinct",
+    "nereids_p0.sql_functions.array_functions.test_array_functions_by_literal.test_array_functions_by_literal",
+    "nereids_p0.sql_functions.case_function.test_case_function.test_case_function",
+    "nereids_p0.sql_functions.conditional_functions.test_coalesce.test_coalesce",
+    "nereids_p0.sql_functions.conditional_functions.test_conditional_function.test_conditional_function",
+    "nereids_p0.sql_functions.conditional_functions.test_nvl.test_nvl",
+    "nereids_p0.sql_functions.conditional_functions.test_query_between.test_query_between",
+    "nereids_p0.sql_functions.conditional_functions.test_query_in.test_query_in",
+    "nereids_p0.sql_functions.conditional_functions.test_query_like.test_query_like",
+    "nereids_p0.sql_functions.conditional_functions.test_query_limit.test_query_limit",
+    "nereids_p0.sql_functions.conditional_functions.test_query_where.test_query_where",
+    "nereids_p0.sql_functions.datetime_functions.test_add_sub_union_type.test_add_sub_union_type",
+    "nereids_p0.sql_functions.datetime_functions.test_date_or_datetime_computation_negative.test_date_or_datetime_computation_negative",
+    "nereids_p0.sql_functions.datetime_functions.test_dayofweek.test_dayofweek",
+    "nereids_p0.sql_functions.datetime_functions.test_time_lut.test_time_lut",
+    "nereids_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff",
+    "nereids_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking",
+    "nereids_p0.sql_functions.encryption_digest.test_encryption_function.test_encryption_function",
+    "nereids_p0.sql_functions.encryption_digest.test_md5.test_md5",
+    "nereids_p0.sql_functions.hash_functions.test_hash_function.test_hash_function",
+    "nereids_p0.sql_functions.json_function.test_query_json_array.test_query_json_array",
+    "nereids_p0.sql_functions.json_function.test_query_json_insert.test_query_json_insert",
+    "nereids_p0.sql_functions.json_function.test_query_json_object.test_query_json_object",
+    "nereids_p0.sql_functions.json_function.test_query_json_replace.test_query_json_replace",
+    "nereids_p0.sql_functions.json_function.test_query_json_set.test_query_json_set",
+    "nereids_p0.sql_functions.json_functions.test_get_json_double.test_get_json_double",
+    "nereids_p0.sql_functions.json_functions.test_json_function.test_json_function",
+    "nereids_p0.sql_functions.math_functions.test_abs.test_abs",
+    "nereids_p0.sql_functions.math_functions.test_conv.test_conv",
+    "nereids_p0.sql_functions.math_functions.test_multiply.test_multiply",
+    "nereids_p0.sql_functions.math_functions.test_round.test_round",
+    "nereids_p0.sql_functions.math_functions.test_round_overflow.test_round_overflow",
+    "nereids_p0.sql_functions.search_functions.test_multi_string_position.test_multi_string_position",
+    "nereids_p0.sql_functions.spatial_functions.test_gis_function.test_gis_function",
+    "nereids_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "nereids_p0.sql_functions.string_functions.test_reverse.test_reverse",
+    "nereids_p0.sql_functions.string_functions.test_split_by_string.test_split_by_string",
+    "nereids_p0.sql_functions.string_functions.test_split_part.test_split_part",
+    "nereids_p0.sql_functions.string_functions.test_string_function.test_string_function",
+    "nereids_p0.sql_functions.string_functions.test_string_function_like.test_string_function_like",
+    "nereids_p0.sql_functions.string_functions.test_string_function_like_pushdown.test_string_function_like_pushdown",
+    "nereids_p0.sql_functions.string_functions.test_string_function_regexp.test_string_function_regexp",
+    "nereids_p0.sql_functions.table_function.explode.explode",
+    "nereids_p0.sql_functions.table_function.explode_json_array.explode_json_array",
+    "nereids_p0.sql_functions.table_function.explode_split.explode_split",
+    "nereids_p0.sql_functions.test_arith_functions.test_arith_functions",
+    "nereids_p0.sql_functions.test_in_expr.test_in_expr",
+    "nereids_p0.sql_functions.width_bucket_fuctions.test_width_bucket_function.test_width_bucket_function",
+    "nereids_p0.sql_functions.window_functions.test_count_star.test_count_star",
+    "nereids_p0.sql_functions.window_functions.test_lead_lag_nullable.test_lead_lag_nullable",
+    "nereids_p0.sql_functions.window_functions.test_ntile_function.test_ntile_function",
+    "nereids_p0.sql_functions.window_functions.test_select_stddev_variance_window.test_select_stddev_variance_window",
+    "nereids_p0.sql_functions.window_functions.test_sum.test_sum",
+    "nereids_p0.sql_functions.window_functions.test_window_fn.test_window_fn",
+    "nereids_p0.sql_functions.window_functions.test_window_function.test_window_function",
+    "nereids_p0.stats.col_stats.column_stats.column_stats",
+    "nereids_p0.stats.col_stats.estimate_string_as_date.estimate_string_as_date",
+    "nereids_p0.stats.col_stats.hot_value_analyze_sync.hot_value_analyze_sync",
+    "nereids_p0.stats.col_stats.hot_value_str_to_date.hot_value_str_to_date",
+    "nereids_p0.stats.invalid_stats.invalid_stats.invalid_stats",
+    "nereids_p0.stats.partitionRowCount.partitionRowCount",
+    "nereids_p0.stats.partition_col_stats.partition_col_stats",
+    "nereids_p0.stats.partition_key_minmax.partition_key_minmax",
+    "nereids_p0.stats.virtual_column.virtual_column",
+    "nereids_p0.system.test_explain_information_schema.test_explain_information_schema",
+    "nereids_p0.system.test_runtime_filter.test_runtime_filter",
+    "nereids_p0.tablesample.test_table_sample",
+    "nereids_p0.test_alter_storage_policy_command.test_alter_storage_policy_command",
+    "nereids_p0.test_create_workload_policy_command.test_create_workload_policy_command",
+    "nereids_p0.test_cse_session_var_guard.test_cse_session_var_guard",
+    "nereids_p0.test_cte_subquery_many.test_cte_subquery_many",
+    "nereids_p0.test_filter_pushdown_set.test_filter_pushdown_set",
+    "nereids_p0.test_repeat_no_stackflow.test_repeat_no_stackflow",
+    "nereids_p0.test_select_constant.test_select_constant",
+    "nereids_p0.test_unlock_tables_command.test_unlock_tables_command",
+    "nereids_p0.test_unsupported_start_transaction_command.test_start_transaction_command",
+    "nereids_p0.union.or_expansion.or_expansion",
+    "nereids_p0.union.push_limit_with_eliminate_union.push_limit_with_eliminate_union",
+    "nereids_p0.union.test_union.test_union",
+    "point_query_p0.test_rowstore.test_rowstore",
+    "point_query_p0.test_rowstore_ck.test_rowstore_ck",
+    "query_p0.aggregate.agg_on_view.agg_on_view",
+    "query_p0.aggregate.agg_with_having.agg_with_having.agg_with_having",
+    "query_p0.aggregate.aggregate.aggregate",
+    "query_p0.aggregate.aggregate_function_kurt.aggregate_function_kurt",
+    "query_p0.aggregate.aggregate_function_skew.aggregate_function_skew",
+    "query_p0.aggregate.aggregate_groupby_null.aggregate_groupby_null",
+    "query_p0.aggregate.aggregate_max_min_by_test.aggregate_max_min_by_test",
+    "query_p0.aggregate.aggregate_not_group_null.aggregate_no_group_null",
+    "query_p0.aggregate.aggregate_output_null.aggregate_output_null",
+    "query_p0.aggregate.exponential_moving_average.exponential_moving_average.exponential_moving_average",
+    "query_p0.aggregate.map_agg.map_agg",
+    "query_p0.aggregate.map_agg_v1.map_agg_v1",
+    "query_p0.aggregate.nullablity_consistency.aggregate_nullability_consistency",
+    "query_p0.aggregate.push_filter_through_agg.push_filter_through_agg",
+    "query_p0.aggregate.support_type.avg.avg.avg",
+    "query_p0.aggregate.support_type.avg_weighted.avg_weighted.avg_weighted",
+    "query_p0.aggregate.support_type.corr.corr.corr",
+    "query_p0.aggregate.support_type.corr_welford.corr_welford.corr_welford",
+    "query_p0.aggregate.support_type.count.count.count",
+    "query_p0.aggregate.support_type.covar.covar.covar",
+    "query_p0.aggregate.support_type.covar_samp.covar_samp.covar_samp",
+    "query_p0.aggregate.support_type.max.max.max",
+    "query_p0.aggregate.support_type.min.min.min",
+    "query_p0.aggregate.support_type.ndv.ndv.ndv",
+    "query_p0.aggregate.support_type.percentile.percentile.percentile",
+    "query_p0.aggregate.support_type.percentile_ap.percentile_approx.percentile_approx",
+    "query_p0.aggregate.support_type.percentile_ap_w.percentile_approx_weighted.percentile_approx_weighted",
+    "query_p0.aggregate.support_type.percentile_ar.percentile_array.percentile_array",
+    "query_p0.aggregate.support_type.regr_intercept.regr_intercept.regr_intercept",
+    "query_p0.aggregate.support_type.regr_slope.regr_slope.regr_slope",
+    "query_p0.aggregate.test_regr_intercept.test_regr_intercept",
+    "query_p0.aggregate.test_regr_slope.test_regr_slope",
+    "query_p0.bi_p0.datagrip.datagrip",
+    "query_p0.bi_p0.dbeaver.dbeaver",
+    "query_p0.cache.clear_sorted_partition_cache.clear_sorted_partition_cache",
+    "query_p0.cache.condition_cache.condition_cache",
+    "query_p0.cache.query_cache.query_cache",
+    "query_p0.cache.sql_cache.sql_cache",
+    "query_p0.cache.test_partition_instance_query_cache.test_partition_instance_query_cache",
+    "query_p0.cast.test_cast_decimalv3.test_cast_with_decimalv3",
+    "query_p0.common_sub_expression.dist_expr_list.dist_expr_list.dist_expr_list",
+    "query_p0.deleteFromUsing.deleteFromUsing.deleteFromUsing",
+    "query_p0.dry_run.dry_run.dry_run",
+    "query_p0.dual.dual.dual",
+    "query_p0.explain.test_compoundpredicate_explain.test_compoundpredicate_explain",
+    "query_p0.explain.test_pushdown_explain.test_pushdown_explain",
+    "query_p0.expr_zonemap.test_expr_zonemap_pruning.test_expr_zonemap_pruning",
+    "query_p0.grouping_sets.test_grouping_sets.test_grouping_sets",
+    "query_p0.having.having_between.test_having_between",
+    "query_p0.intersect.test_intersect2.test_intersect2",
+    "query_p0.join.bucket_shuffle_join.bucket-shuffle-join",
+    "query_p0.join.eliminate_const_join_condition.eliminate_const_join_condition",
+    "query_p0.join.join_on_view.join_on_view",
+    "query_p0.join.left_anti_with_other.left_anti_with_other.left_anti_with_other",
+    "query_p0.join.mark_join.mark_join.mark_join",
+    "query_p0.join.mark_join.right_semi_mark_join.right_semi_mark_join",
+    "query_p0.join.no_null_str_rf.no_null_str_rf.no_null_str_rf",
+    "query_p0.join.rqg.doris8317.doris8317.doris8317",
+    "query_p0.join.rqg.doris9097.doris9097.doris9097",
+    "query_p0.join.rqg.doris9100.doris9100.doris9100",
+    "query_p0.join.rqg.doris9161.doris9161.doris9161",
+    "query_p0.join.rqg.rqg12257.rqg12257.rqg12257",
+    "query_p0.join.rqg.rqg1333347798.rqg1333347798.rqg1333347798",
+    "query_p0.join.rqg.rqg4265.rqg4265.rqg4265",
+    "query_p0.join.rqg.rqg4442.rqg4442.rqg4442",
+    "query_p0.join.rqg.rqg500079780.rqg500079780.rqg1333347798",
+    "query_p0.join.test_agg_after_nested_loop_join_local_exchange.test_agg_after_nested_loop_join_local_exchange",
+    "query_p0.join.test_collect_list_distinct.test_collect_list_distinct",
+    "query_p0.join.test_full_join_batch_size.test_full_join_batch_size",
+    "query_p0.join.test_half_join_nullable_build_side.test_half_join_nullable_build_side",
+    "query_p0.join.test_hash_join_probe_early_eos.test_hash_join_probe_early_eos",
+    "query_p0.join.test_hash_join_probe_side_zero_copy.test_hash_join_probe_side_zero_copy",
+    "query_p0.join.test_ignore.test_ignore.test_ignore",
+    "query_p0.join.test_join.test_join",
+    "query_p0.join.test_join3.test_join3",
+    "query_p0.join.test_join4.test_join4",
+    "query_p0.join.test_join5.test_join5",
+    "query_p0.join.test_join6.test_join6",
+    "query_p0.join.test_join_bucket_shffule_hash_partitioned.test_join_bucket_shffule_hash_partitioned",
+    "query_p0.join.test_join_decimal256.join_decimal256",
+    "query_p0.join.test_join_result_count.test_join_result_count",
+    "query_p0.join.test_join_with_cast_array.test_join_with_cast_array",
+    "query_p0.join.test_left_join_batch_size.test_left_join_batch_size",
+    "query_p0.join.test_left_join_null.test_left_join_null",
+    "query_p0.join.test_left_join_with.test_left_join_with",
+    "query_p0.join.test_low_bucket.test_low_bucket.test_low_bucket",
+    "query_p0.join.test_nestedloop_semi_anti_join.test_nestedloop_semi_anti_join",
+    "query_p0.join.test_null_safe_eq_join_string_key.test_null_safe_eq_join_string_key",
+    "query_p0.join.test_runtime_filter_boolean.test_runtime_filter_boolean",
+    "query_p0.join.test_runtime_filter_decimal256.test_runtime_filter_decimal256",
+    "query_p0.join.test_runtimefilter_2.test_runtimefilter_2",
+    "query_p0.join.test_runtimefilter_on_datev2.test_runtimefilter_on_datev2",
+    "query_p0.keyword.order_group.order_group",
+    "query_p0.keyword.test_keyword.test_keyword",
+    "query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword",
+    "query_p0.large_wide_table.large_wide_table.large_wide_table",
+    "query_p0.lateral_view.test_with_view.lateral_view_with_inline_view",
+    "query_p0.limit.test_group_by_limit.test_group_by_limit",
+    "query_p0.limit.test_orderby_limit.test_orderby_limit.test_orderby_limit",
+    "query_p0.literal_view.lietral_largeint.literal_largeint",
+    "query_p0.operator.test_arithmetic_operators.test_arithmetic_operators",
+    "query_p0.operator.test_logical_operators.test_logical_operators",
+    "query_p0.runtimefilterV2.rfv2.rfv2",
+    "query_p0.scan_range.test_scan_range.test_scan_range",
+    "query_p0.schema_table.test_sql_block_rule_status.test_sql_block_rule_status",
+    "query_p0.schema_table.test_view_dependency.test_view_dependency",
+    "query_p0.session_variable.test_invalid_session.test_invalid_session",
+    "query_p0.session_variable.test_reset_connection_session_variable.test_reset_connection_session_variable",
+    "query_p0.session_variable.test_set_var_hint_restore.test_set_var_hint_restore",
+    "query_p0.session_variable.test_skip_missing_version.test_skip_missing_version",
+    "query_p0.set.rqg_prod_20240226.rqg_prod_20240226.rqg_prod_20240226",
+    "query_p0.set.test_mysql_compat_var_whitelist.test_mysql_compat_var_whitelist",
+    "query_p0.set.test_set_command.test_set_command",
+    "query_p0.set.test_set_global_default.test_set_global_default",
+    "query_p0.set.test_user_var.test_user_var",
+    "query_p0.set_operations.set_operation_exprid_reuse.set_operation_exprid_reuse",
+    "query_p0.set_operations.set_with_null.set_with_null.set_with_null",
+    "query_p0.set_operations.sql.intersect_nullable_not_nullable.intersect_nullable_not_nullable",
+    "query_p0.set_operations.test_pullup_predicate_null.test_pullup_predicate_null",
+    "query_p0.show.test_show_partitions.test_show_partitions",
+    "query_p0.show.test_show_transaction.test_show_transaction",
+    "query_p0.sort.heap_sort.heap_sort",
+    "query_p0.sort.topn_2pr_rule.topn_2pr_rule",
+    "query_p0.sort_spill.sort_spill.sort_spill",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_bit.test_aggregate_bit",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_collect.test_aggregate_collect",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_histogram.test_aggregate_histogram",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_push_down_agg.test_aggregate_push_down_agg",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_retention_param_limit.test_aggregate_retention_param_limit",
+    "query_p0.sql_functions.aggregate_functions.test_approx_count_distinct.test_approx_count_distinct",
+    "query_p0.sql_functions.aggregate_functions.test_linear_histogram_boolean.test_linear_histogram_boolean",
+    "query_p0.sql_functions.array_functions.test_array_range_null_argument.test_array_range_null_argument",
+    "query_p0.sql_functions.binary_functions.test_binary_hex_function.test_binary_hex_function",
+    "query_p0.sql_functions.case_function.test_case_function.test_case_function",
+    "query_p0.sql_functions.cast_function.test_cast_function.test_cast_function",
+    "query_p0.sql_functions.cast_function.test_cast_to_datetime.test_cast_to_datetime",
+    "query_p0.sql_functions.cast_function.test_cast_with_scale_type.test_cast_with_scale_type",
+    "query_p0.sql_functions.conditional_functions.test_coalesce.test_coalesce",
+    "query_p0.sql_functions.conditional_functions.test_coalesce_new.test_coalesce_new",
+    "query_p0.sql_functions.conditional_functions.test_ifnull.test_ifnull",
+    "query_p0.sql_functions.conditional_functions.test_in_no_concurrent.test_in_no_concurrent",
+    "query_p0.sql_functions.conditional_functions.test_nvl.test_nvl",
+    "query_p0.sql_functions.conditional_functions.test_query_between.test_query_between",
+    "query_p0.sql_functions.conditional_functions.test_query_in.test_query_in",
+    "query_p0.sql_functions.conditional_functions.test_query_like.test_query_like",
+    "query_p0.sql_functions.conditional_functions.test_query_limit.test_query_limit",
+    "query_p0.sql_functions.conditional_functions.test_query_where.test_query_where",
+    "query_p0.sql_functions.conditional_functions.test_short_circuit_evaluation.test_short_circuit_evaluation",
+    "query_p0.sql_functions.datetime_functions.test_convert_tz.test_convert_tz",
+    "query_p0.sql_functions.datetime_functions.test_date_floor_ceil.test_date_floor_ceil",
+    "query_p0.sql_functions.datetime_functions.test_date_trunc.test_date_trunc",
+    "query_p0.sql_functions.datetime_functions.test_dateadd_with_other_timeunit.test_dateadd_with_other_timeunit",
+    "query_p0.sql_functions.datetime_functions.test_dayofweek.test_dayofweek",
+    "query_p0.sql_functions.datetime_functions.test_from_iso8601_date.test_from_iso8601_date",
+    "query_p0.sql_functions.datetime_functions.test_func_time.test_func_time",
+    "query_p0.sql_functions.datetime_functions.test_quarters_add.test_quarters_add",
+    "query_p0.sql_functions.datetime_functions.test_time_diff.test_time_diff",
+    "query_p0.sql_functions.datetime_functions.test_time_lut.test_time_lut",
+    "query_p0.sql_functions.datetime_functions.test_timestampdiff.test_timestampdiff",
+    "query_p0.sql_functions.datetime_functions.test_to_iso8601.test_to_iso8601",
+    "query_p0.sql_functions.datetime_functions.test_week_floor_ceil_microsecond.test_week_floor_ceil_microsecond",
+    "query_p0.sql_functions.digital-masking.test_digital_masking.test_digital_masking",
+    "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive",
+    "query_p0.sql_functions.encryption_digest.test_digest.test_digest",
+    "query_p0.sql_functions.ip_functions.test_cut_ipv6_function.test_cut_ipv6_function",
+    "query_p0.sql_functions.ip_functions.test_ipv4_cidr_to_range.test_ipv4_cidr_to_range",
+    "query_p0.sql_functions.ip_functions.test_ipv4_ipv6_multi_not_equal.test_ipv4_ipv6_multi_not_equal",
+    "query_p0.sql_functions.ip_functions.test_ipv4_to_ipv6_function.test_ipv4_to_ipv6_function",
+    "query_p0.sql_functions.ip_functions.test_ipv6_cidr_to_range_function.test_ipv6_cidr_to_range_function",
+    "query_p0.sql_functions.ip_functions.test_ipv6_num_to_string_function.test_ipv6_num_to_string_function",
+    "query_p0.sql_functions.ip_functions.test_is_ip_address_in_range_function.test_is_ip_address_in_range_function",
+    "query_p0.sql_functions.ip_functions.test_is_ip_string_functions.test_is_ip_string_functions",
+    "query_p0.sql_functions.ip_functions.test_to_ip_functions.test_to_ip_functions",
+    "query_p0.sql_functions.json_functions.test_json_contains_numeric_equality.test_json_contains_numeric_equality",
+    "query_p0.sql_functions.json_functions.test_json_extract_bool_null_payload.test_json_extract_bool_null_payload",
+    "query_p0.sql_functions.math_functions.test_format_round.test_format_round",
+    "query_p0.sql_functions.math_functions.test_function_truncate.test_function_truncate",
+    "query_p0.sql_functions.math_functions.test_least_greatest.test_least_greatest",
+    "query_p0.sql_functions.math_functions.test_math_unary_always_nullable.test_math_unary_alway_nullable",
+    "query_p0.sql_functions.math_functions.test_mod.test_mod",
+    "query_p0.sql_functions.math_functions.test_multiply.test_multiply",
+    "query_p0.sql_functions.math_functions.test_normal_cdf.test_normal_cdf",
+    "query_p0.sql_functions.math_functions.test_round.test_round",
+    "query_p0.sql_functions.math_functions.test_triangle.test_triangle",
+    "query_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar",
+    "query_p0.sql_functions.string_functions.test_count_substrings.test_count_substrings",
+    "query_p0.sql_functions.string_functions.test_find_in_set.test_find_in_set",
+    "query_p0.sql_functions.string_functions.test_format_functions.test_format_functions",
+    "query_p0.sql_functions.string_functions.test_is_valid_utf8.test_is_valid_utf8",
+    "query_p0.sql_functions.string_functions.test_like_escape.test_like_escapes",
+    "query_p0.sql_functions.string_functions.test_like_literal.test_like_literal",
+    "query_p0.sql_functions.string_functions.test_like_no_backslash_escapes_mode.test_like_no_backslash_escapes_mode",
+    "query_p0.sql_functions.string_functions.test_like_table.test_like_table",
+    "query_p0.sql_functions.string_functions.test_like_whole_string_match.test_like_whole_string_match",
+    "query_p0.sql_functions.string_functions.test_money_format.test_money_format",
+    "query_p0.sql_functions.string_functions.test_months_between.test_months_between",
+    "query_p0.sql_functions.string_functions.test_next_day.test_next_day",
+    "query_p0.sql_functions.string_functions.test_parse_data_size_nullable.test_parse_data_size_nullable",
+    "query_p0.sql_functions.string_functions.test_previous_day.test_previous_day",
+    "query_p0.sql_functions.string_functions.test_regexp_chinese.test_regexp_chinese",
+    "query_p0.sql_functions.string_functions.test_regexp_extended_nonconstant_pattern.test_regexp_extended_nonconstant_pattern",
+    "query_p0.sql_functions.string_functions.test_reverse.test_reverse",
+    "query_p0.sql_functions.string_functions.test_split_by_regexp.test_split_by_regexp",
+    "query_p0.sql_functions.string_functions.test_split_part.test_split_part",
+    "query_p0.sql_functions.string_functions.test_str_to_map.test_str_to_map",
+    "query_p0.sql_functions.string_functions.test_string_function_like.test_string_function_like",
+    "query_p0.sql_functions.string_functions.test_string_function_like_pushdown.test_string_function_like_pushdown",
+    "query_p0.sql_functions.string_functions.test_string_function_regexp.test_string_function_regexp",
+    "query_p0.sql_functions.string_functions.test_translate.test_translate",
+    "query_p0.sql_functions.string_functions.test_trim_in.test_trim_in",
+    "query_p0.sql_functions.string_functions.test_url_decode.test_url_decode",
+    "query_p0.sql_functions.string_functions.test_url_encode.test_url_encode",
+    "query_p0.sql_functions.string_functions.test_url_functions.test_url_functions",
+    "query_p0.sql_functions.string_functions.test_xpath_string.test_xpath_string",
+    "query_p0.sql_functions.struct_functions.test_struct_functions_by_literal.test_struct_functions_by_literal",
+    "query_p0.sql_functions.table_function.test_json_text_embedded_nul.test_json_text_embedded_nul",
+    "query_p0.sql_functions.test_template_one_arg.test_template_one_arg",
+    "query_p0.sql_functions.test_template_three_args.test_template_three_args",
+    "query_p0.sql_functions.test_template_two_args.test_template_two_args",
+    "query_p0.sql_functions.test_years_add.test_years_add",
+    "query_p0.sql_functions.window_functions.test_ntile_function.test_ntile_function",
+    "query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn",
+    "query_p0.sql_functions.window_functions.test_qualify_query.test_qualify_query",
+    "query_p0.sql_functions.window_functions.test_select_stddev_variance_window.test_select_stddev_variance_window",
+    "query_p0.sql_functions.window_functions.test_sum.test_sum",
+    "query_p0.sql_functions.window_functions.test_window_float_sliding_frame.test_window_float_sliding_frame",
+    "query_p0.sql_functions.window_functions.test_window_function.test_window_function",
+    "query_p0.stats.query_stats_test.query_stats_test",
+    "query_p0.subquery.test_subquery.test_subquery",
+    "query_p0.system.test_metadata_name_ids.test_metadata_name_ids",
+    "query_p0.system.test_query_sys.test_query_sys",
+    "query_p0.system.test_query_sys_rowsets.test_query_sys_rowsets",
+    "query_p0.system.test_query_sys_tables.test_query_sys_tables",
+    "query_p0.system.test_runtime_filter.test_runtime_filter",
+    "query_p0.system.test_storage_page_size.test_storage_page_size",
+    "query_p0.test_char_implicit_cast.test_char_implicit_cast",
+    "query_p0.test_multiple_stmt.test_multiple_stmt",
+    "query_p0.test_partition_sort_hash_types.test_partition_sort_hash_types",
+    "query_p0.test_row_policy.test_row_policy",
+    "query_p0.topn.test_key_topn.test_key_topn",
+    "query_p0.topn_lazy.lazy_materialize_view.lazy_materialize_view",
+    "query_p0.topn_lazy.topn_lazy_light_schema_change.topn_lazy_light_schema_change",
+    "query_p0.type_inference.test_binary_predicate_cast.test_binary_predicate_cast",
+    "query_p0.union.test_union.test_union",
+    "query_p0.union.test_union_decimal_agg.test_union_decimal_agg",
+    "query_p0.union.test_union_instance.test_union_instance",
+    "query_p0.view.test_view.test_view",
+    "query_p0.view.test_view2.test_view2",
+    "query_p0.virtual_slot_ref.adjust_virtual_slot_nullable.adjust_virtual_slot_nullable",
+    "query_p0.virtual_slot_ref.char_type_shrink_before_project.char_type_shrink_before_projec",
+    "query_p0.virtual_slot_ref.expr_with_runtime_return_type.expr_with_runtime_return_type",
+    "query_p0.virtual_slot_ref.virtual_slot_ref_basic.virtual_slot_ref_basic",
+    "query_p0.with.test_with.test_with",
+    "schema_change_p0.alter_disable_auto_compaction.test_alter_property_mow",
+    "schema_change_p0.check_time_type.check_time_type",
+    "schema_change_p0.modify_col_type_dup.schema_change_modify_mv_column_type.schema_change_modify_mv_column_type",
+    "schema_change_p0.modify_col_type_dup2.schema_change_modify_mv_column_type2.schema_change_modify_mv_column_type2",
+    "schema_change_p0.reorder_mor.reorder_mor.reorder_mor",
+    "schema_change_p0.test_add_rename_column.test_add_rename_column",
+    "schema_change_p0.test_alter_colocate_table.test_alter_colocate_table",
+    "schema_change_p0.test_alter_table_after_empty_insert.test_alter_table_after_empty_insert",
+    "schema_change_p0.test_alter_table_column_nullable.test_alter_table_column_nullable",
+    "schema_change_p0.test_alter_table_column_rename.test_alter_table_column_rename",
+    "schema_change_p0.test_alter_table_column_with_delete.test_alter_table_column_with_delete",
+    "schema_change_p0.test_alter_uniq_null.test_alter_uniq_null",
+    "schema_change_p0.test_delete_schema_change.test_delete_schema_change",
+    "schema_change_p0.test_delete_schema_change_2.test_delete_schema_chang_2",
+    "schema_change_p0.test_dup_keys_schema_change.test_dup_keys_schema_change",
+    "schema_change_p0.test_dup_mv_schema_change.test_dup_mv_schema_change",
+    "schema_change_p0.test_dup_rollup_schema_change.test_dup_rollup_schema_change",
+    "schema_change_p0.test_dup_schema_key_change_modify.test_dup_schema_key_change_modify",
+    "schema_change_p0.test_dup_schema_key_change_modify1.test_dup_schema_key_change_modify1",
+    "schema_change_p0.test_dup_schema_key_drop.test_dup_schema_key_drop",
+    "schema_change_p0.test_dup_schema_value_modify.test_dup_schema_value_modify",
+    "schema_change_p0.test_dup_vals_schema_change.test_dup_vals_schema_change",
+    "schema_change_p0.test_enable_light_schema_change.test_enable_light_schema_change",
+    "schema_change_p0.test_light_schema_change_default.test_lsc_default",
+    "schema_change_p0.test_merge_dropped_column.test_merge_dropped_column",
+    "schema_change_p0.test_move_column_with_cast.test_move_column_with_cast",
+    "schema_change_p0.test_new_schema_change.test_new_schema_change",
+    "schema_change_p0.test_random_ordered_bucket_columns.test_random_ordered_bucket_columns",
+    "schema_change_p0.test_rename_single_col_tbl.test_rename_single_col_tbl",
+    "schema_change_p0.test_schema_change.test_schema_change",
+    "schema_change_p0.test_schema_change_auto_inc.test_schema_change_auto_inc",
+    "schema_change_p0.test_schema_change_mow_with_empty_rowset.test_schema_change_mow_with_empty_rowset",
+    "schema_change_p0.test_schema_change_with_empty_rowset.test_schema_change_with_empty_rowset",
+    "schema_change_p0.test_type_length_change.test_type_length_change",
+    "schema_change_p0.test_uniq_delete_sign_schema_change.test_uniq_delete_sign_schema_change",
+    "schema_change_p0.test_uniq_keys_schema_change.test_uniq_keys_schema_change",
+    "schema_change_p0.test_uniq_mv_schema_change.test_uniq_mv_schema_change",
+    "schema_change_p0.test_uniq_rollup_schema_change.test_uniq_rollup_schema_change",
+    "schema_change_p0.test_uniq_seq_col_schema_change.test_uniq_seq_col_schema_change",
+    "schema_change_p0.test_uniq_vals_schema_change.test_uniq_vals_schema_change",
+    "schema_change_p0.test_unique_schema_key_change_drop.test_unique_schema_key_change_drop",
+    "schema_change_p0.test_unique_schema_key_change_modify.test_unique_schema_key_change_modify",
+    "schema_change_p0.test_update_schema_change.test_update_schema_change",
+    "schema_change_p0.test_varchar_schema_change.test_varchar_schema_change",
+    "unique_with_mow_p0.flexible.legacy.test_f_2pc_schema_change.test_f_2pc_schema_change",
+    "unique_with_mow_p0.flexible.publish.test_auto_inc_replica_consistency.test_auto_inc_replica_consistency",
+    "unique_with_mow_p0.flexible.test_f_new_key_policy.test_f_new_key_policy",
+    "unique_with_mow_p0.flexible.test_flexible_partial_update_default_value.test_flexible_partial_update_default_value",
+    "unique_with_mow_p0.key_bounds.test_key_bounds_truncation_basic.test_key_bounds_truncation_basic",
+    "unique_with_mow_p0.key_bounds.test_key_bounds_truncation_read_scenarios.test_key_bounds_truncation_read_scenarios",
+    "unique_with_mow_p0.partial_update.publish.test_partial_update_publish_all_del.test_partial_update_publish_all_del",
+    "unique_with_mow_p0.partial_update.publish.test_partial_update_publish_seq.test_partial_update_publish_seq",
+    "unique_with_mow_p0.partial_update.test_p_seq_publish_read_from_old.test_p_seq_publish_read_from_old",
+    "unique_with_mow_p0.partial_update.test_partial_update_2pc_schema_change.test_partial_update_2pc_schema_change",
+    "unique_with_mow_p0.partial_update.test_partial_update_after_delete.test_partial_update_after_delete",
+    "unique_with_mow_p0.partial_update.test_partial_update_auto_inc.test_partial_update_auto_inc",
+    "unique_with_mow_p0.partial_update.test_partial_update_case_insensitivity.test_partial_update_case_insensitivity",
+    "unique_with_mow_p0.partial_update.test_partial_update_delete.test_partial_update_delete",
+    "unique_with_mow_p0.partial_update.test_partial_update_delete_sign.test_partial_update_delete_sign",
+    "unique_with_mow_p0.partial_update.test_partial_update_delete_sign_with_conflict.test_partial_update_delete_sign_with_conflict",
+    "unique_with_mow_p0.partial_update.test_partial_update_insert_seq_col.test_partial_update_native_insert_seq_col",
+    "unique_with_mow_p0.partial_update.test_partial_update_lookup_row_key.test_partial_update_lookup_row_key",
+    "unique_with_mow_p0.partial_update.test_partial_update_merge_type.test_partial_update_merge_type",
+    "unique_with_mow_p0.partial_update.test_partial_update_mow_with_sync_mv.test_partial_update_mow_with_sync_mv",
+    "unique_with_mow_p0.partial_update.test_partial_update_multi_stmt.test_partial_update_multi_stmt",
+    "unique_with_mow_p0.partial_update.test_partial_update_native_insert_stmt_complex.test_partial_update_native_insert_stmt_complex",
+    "unique_with_mow_p0.partial_update.test_partial_update_only_keys.test_partial_update_only_keys",
+    "unique_with_mow_p0.partial_update.test_partial_update_orc.test_primary_key_partial_update_orc",
+    "unique_with_mow_p0.partial_update.test_partial_update_parallel.test_primary_key_partial_update_parallel",
+    "unique_with_mow_p0.partial_update.test_partial_update_publish.test_primary_key_partial_update_publish",
+    "unique_with_mow_p0.partial_update.test_partial_update_row_store.test_partial_update_row_store",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_col.test_primary_key_partial_update_seq_col",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_col_delete.test_primary_key_partial_update_seq_col_delete",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_map_col.test_partial_update_seq_map_col",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_read_from_old.test_partial_update_seq_read_from_old",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_type.test_primary_key_partial_update_seq_type",
+    "unique_with_mow_p0.partial_update.test_partial_update_seq_type_delete.test_primary_key_partial_update_seq_type_delete",
+    "unique_with_mow_p0.partial_update.test_partial_update_strict_mode.test_partial_update_strict_mode",
+    "unique_with_mow_p0.partial_update.test_partial_update_upsert.test_partial_update_upsert",
+    "unique_with_mow_p0.partial_update.test_partial_update_with_delete_stmt.test_primary_key_partial_update_with_delete_stmt",
+    "unique_with_mow_p0.partial_update.test_partial_update_with_row_column.test_primary_key_partial_update_with_row_column",
+    "unique_with_mow_p0.partial_update.test_partial_update_with_update_stmt.test_primary_key_partial_update_with_update_stmt",
+    "unique_with_mow_p0.partial_update.test_update_on_current_timestamp.test_mow_update_on_current_timestamp",
+    "unique_with_mow_p0.partial_update.test_with_delete_sign_col.test_with_delete_sign_col",
+    "unique_with_mow_p0.ssb_unique_load_zstd.four.load_four_step.load_four_step",
+    "unique_with_mow_p0.ssb_unique_load_zstd.one.load_one_step.load_one_step",
+    "unique_with_mow_p0.ssb_unique_load_zstd.three.load_three_step.load_three_step",
+    "unique_with_mow_p0.ssb_unique_load_zstd.two.load_two_step.load_two_step",
+    "unique_with_mow_p0.test_mow_enable_sequence_col.test_mow_enable_sequence_col",
+    "unique_with_mow_p0.test_mow_time_series_compaction.test_mow_time_series_compaction",
+    "unique_with_mow_p0.test_mow_with_null_sequence.test_mow_with_null_sequence",
+    "unique_with_mow_p0.test_pk_uk_case.test_pk_uk_case",
+    "unique_with_mow_p0.test_primary_key_simple_case.test_primary_key_simple_case",
+    "unique_with_mow_p0.test_seq_type_rename_col.test_seq_type_rename_col",
+    "unique_with_mow_p0.test_unique_mow_sequence.test_unique_mow_sequence",
+    "variant_p0.v2.test_variant_count_distinct.test_variant_count_distinct"
+   ]
+  }
+ ]
 }

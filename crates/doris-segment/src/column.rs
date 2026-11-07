@@ -231,6 +231,20 @@ fn decode_page_values(
             }
             Ok(elems)
         }
+        EncodingTypePb::PlainEncoding => {
+            // PlainPageDecoder: `u32 count | count values`, nothing else (plain_page.h:112-127)
+            if values.len() < 4 {
+                return Err(Error::Corrupt("plain page shorter than its header".into()));
+            }
+            let count = u32::from_le_bytes(values[..4].try_into().expect("4 bytes")) as usize;
+            if count != non_null || values.len() != 4 + count * elem_size {
+                return Err(Error::Corrupt(format!(
+                    "plain page of {} bytes holds {count} values, the null bitmap implies {non_null}",
+                    values.len()
+                )));
+            }
+            Ok(values[4..].to_vec())
+        }
         other => Err(Error::UnsupportedEncoding {
             column: unique_id,
             encoding: other as i32,

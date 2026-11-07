@@ -1,0 +1,16 @@
+PUT /api/regression_test_correctness_p0/test_current_timestamp_ms/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: ee323b87-252e-4b76-9d7c-038cb6ef7882
+columns: id, name, dt_2 = current_timestamp(3)
+format: json
+read_json_by_line: true
+strip_outer_array: false
+Expect: 100-Continue
+Content-Length: 50
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+{"id":9,"name":"apache"}
+{"id":10,"name":"doris"}

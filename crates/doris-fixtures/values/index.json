@@ -1,0 +1,647 @@
+[
+  {
+    "dir": "00",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_base_compaction_after_sc.test_base_compaction_after_sc"
+  },
+  {
+    "dir": "01",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_be_compaction_tasks.test_be_compaction_tasks"
+  },
+  {
+    "dir": "02",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compacation_with_delete.test_compaction_with_delete"
+  },
+  {
+    "dir": "03",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys.test_compaction_dup_keys"
+  },
+  {
+    "dir": "04",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(27)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys.test_compaction_dup_keys"
+  },
+  {
+    "dir": "05",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(29)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(8)/TPrimitiveType(7)",
+      "TExprNodeType(8)/TPrimitiveType(8)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_with_empty_rowset.test_compaction_mow_with_empty_rowset"
+  },
+  {
+    "dir": "06",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(31)",
+      "TExprNodeType(17)/TPrimitiveType(15)"
+    ],
+    "suite": "correctness_p0.test_agg_materialize.test_agg_materialize"
+  },
+  {
+    "dir": "07",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(2)",
+      "TExprNodeType(3)/TPrimitiveType(2)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "correctness_p0.test_and_or.test_and_or"
+  },
+  {
+    "dir": "08",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(5)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "correctness_p0.test_assert_row_num.test_assert_num_rows"
+  },
+  {
+    "dir": "09",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(26)",
+      "TExprNodeType(15)/TPrimitiveType(27)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "correctness_p0.test_case_when_date.test_case_when_date"
+  },
+  {
+    "dir": "10",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(30)",
+      "TExprNodeType(17)/TPrimitiveType(15)"
+    ],
+    "suite": "correctness_p0.test_case_when_decimal.test_case_when_decimal"
+  },
+  {
+    "dir": "11",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(23)",
+      "TExprNodeType(15)/TPrimitiveType(26)",
+      "TExprNodeType(15)/TPrimitiveType(5)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "correctness_p0.test_column_prune_in_hash_join.test_column_prune_in_hash_join"
+  },
+  {
+    "dir": "12",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(6)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "correctness_p0.test_distinct_streaming_agg_local_shuffle.test_distinct_streaming_agg_local_shuffle"
+  },
+  {
+    "dir": "13",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(15)",
+      "TExprNodeType(15)/TPrimitiveType(23)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "correctness_p0.test_in_predicate_push_down.test_in_predicate_push_down"
+  },
+  {
+    "dir": "14",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(8)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(8)/TPrimitiveType(8)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "correctness_p0.test_null_predicate.test_null_predicate"
+  },
+  {
+    "dir": "15",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(5)/TPrimitiveType(23)"
+    ],
+    "suite": "correctness_p0.test_similar_query_with_different_results.test_similar_query_with_different_results"
+  },
+  {
+    "dir": "16",
+    "kinds": [
+      "TExprNodeType(7)/TPrimitiveType(10)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "datatype_p0.date.test_date_exprs.test_date_exprs"
+  },
+  {
+    "dir": "17",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(9)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.date.test_date_in_predicate.test_date_in_predicate"
+  },
+  {
+    "dir": "18",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(17)",
+      "TExprNodeType(15)/TPrimitiveType(17)"
+    ],
+    "suite": "datatype_p0.decimalv2.test_decimalv2_agg.test_decimalv2_agg"
+  },
+  {
+    "dir": "19",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(31)",
+      "TExprNodeType(15)/TPrimitiveType(31)",
+      "TExprNodeType(17)/TPrimitiveType(15)"
+    ],
+    "suite": "datatype_p0.decimalv3.fix-overflow.fix-overflow"
+  },
+  {
+    "dir": "20",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(37)"
+    ],
+    "suite": "datatype_p0.decimalv3.test_arithmetic_expressions.test_arithmetic_expressions"
+  },
+  {
+    "dir": "21",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(37)",
+      "TExprNodeType(15)/TPrimitiveType(37)"
+    ],
+    "suite": "datatype_p0.decimalv3.test_decimal256_index.test_decimal256_index"
+  },
+  {
+    "dir": "22",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(29)",
+      "TExprNodeType(10)/TPrimitiveType(30)",
+      "TExprNodeType(10)/TPrimitiveType(31)",
+      "TExprNodeType(15)/TPrimitiveType(29)",
+      "TExprNodeType(15)/TPrimitiveType(30)",
+      "TExprNodeType(15)/TPrimitiveType(31)"
+    ],
+    "suite": "datatype_p0.decimalv3.test_dup_tab_decimalv3.test_dup_tab_decimalv3"
+  },
+  {
+    "dir": "23",
+    "kinds": [
+      "TExprNodeType(34)/TPrimitiveType(38)",
+      "TExprNodeType(35)/TPrimitiveType(39)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "datatype_p0.ip.ip_rf.test_ip_rf.test_ip_rf"
+  },
+  {
+    "dir": "24",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(38)",
+      "TExprNodeType(15)/TPrimitiveType(39)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.ip.test_ip_implicit_cast.test_ip_implicit_cast"
+  },
+  {
+    "dir": "25",
+    "kinds": [
+      "TExprNodeType(20)/TPrimitiveType(38)",
+      "TExprNodeType(35)/TPrimitiveType(39)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.ip.test_ip_implicit_cast.test_ip_implicit_cast"
+  },
+  {
+    "dir": "26",
+    "kinds": [
+      "TExprNodeType(20)/TPrimitiveType(38)",
+      "TExprNodeType(20)/TPrimitiveType(39)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "datatype_p0.ip.test_ip_implicit_cast.test_ip_implicit_cast"
+  },
+  {
+    "dir": "27",
+    "kinds": [
+      "TExprNodeType(21)/",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.nested_types.query.test_nested_types_insert_into_with_literal.test_nested_types_insert_into_with_literal"
+  },
+  {
+    "dir": "28",
+    "kinds": [
+      "TExprNodeType(5)/",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.nested_types.query.test_nested_types_insert_into_with_literal.test_nested_types_insert_into_with_literal"
+  },
+  {
+    "dir": "29",
+    "kinds": [
+      "TExprNodeType(28)/",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "datatype_p0.nested_types.query.test_nested_types_insert_into_with_literal.test_nested_types_insert_into_with_literal"
+  },
+  {
+    "dir": "30",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(23)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(20)/TPrimitiveType(15)"
+    ],
+    "suite": "datatype_p0.string.test_string_basic.test_string_basic"
+  },
+  {
+    "dir": "31",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(44)",
+      "TExprNodeType(7)/TPrimitiveType(44)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "datatype_p0.timestamptz.test_timestamptz_binary_output.test_timestamptz_binary_output"
+  },
+  {
+    "dir": "32",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(13)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "nereids_p0.join.test_join5.test_join5"
+  },
+  {
+    "dir": "33",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(31)",
+      "TExprNodeType(15)/TPrimitiveType(14)",
+      "TExprNodeType(15)/TPrimitiveType(2)",
+      "TExprNodeType(15)/TPrimitiveType(23)",
+      "TExprNodeType(15)/TPrimitiveType(3)",
+      "TExprNodeType(15)/TPrimitiveType(31)",
+      "TExprNodeType(15)/TPrimitiveType(4)",
+      "TExprNodeType(15)/TPrimitiveType(5)",
+      "TExprNodeType(15)/TPrimitiveType(6)",
+      "TExprNodeType(15)/TPrimitiveType(7)",
+      "TExprNodeType(15)/TPrimitiveType(8)",
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(3)/TPrimitiveType(2)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(8)/TPrimitiveType(7)",
+      "TExprNodeType(8)/TPrimitiveType(8)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "nereids_p0.outfile.test_outfile_exception.test_outfile_exception"
+  },
+  {
+    "dir": "34",
+    "kinds": [
+      "TExprNodeType(10)/TPrimitiveType(31)",
+      "TExprNodeType(5)/TPrimitiveType(31)"
+    ],
+    "suite": "nereids_p0.variables_persist.test_generated_column.test_generated_column"
+  },
+  {
+    "dir": "35",
+    "kinds": [
+      "TExprNodeType(1)/TPrimitiveType(31)",
+      "TExprNodeType(10)/TPrimitiveType(31)"
+    ],
+    "suite": "nereids_p0.variables_persist.test_sync_mv.test_sync_mv"
+  },
+  {
+    "dir": "36",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(9)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "query_p0.sql_functions.cast_function.test_cast_to_datetime.test_cast_to_datetime"
+  },
+  {
+    "dir": "37",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(10)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "query_p0.sql_functions.cast_function.test_cast_to_datetime.test_cast_to_datetime"
+  },
+  {
+    "dir": "38",
+    "kinds": [
+      "TExprNodeType(15)/TPrimitiveType(6)",
+      "TExprNodeType(20)/TPrimitiveType(19)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "unique_with_mow_p0.flexible.publish.test_auto_inc_replica_consistency.test_auto_inc_replica_consistency"
+  },
+  {
+    "dir": "39",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_base_compaction_after_sc.test_base_compaction_after_sc"
+  },
+  {
+    "dir": "40",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_base_compaction_after_sc.test_base_compaction_after_sc"
+  },
+  {
+    "dir": "41",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_be_compaction_tasks.test_be_compaction_tasks"
+  },
+  {
+    "dir": "42",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_be_compaction_tasks.test_be_compaction_tasks"
+  },
+  {
+    "dir": "43",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compacation_with_delete.test_compaction_with_delete"
+  },
+  {
+    "dir": "44",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compacation_with_delete.test_compaction_with_delete"
+  },
+  {
+    "dir": "45",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys.test_compaction_dup_keys"
+  },
+  {
+    "dir": "46",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys_with_delete.test_compaction_dup_keys_with_delete"
+  },
+  {
+    "dir": "47",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys_with_delete.test_compaction_dup_keys_with_delete"
+  },
+  {
+    "dir": "48",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_dup_keys_with_delete.test_compaction_dup_keys_with_delete"
+  },
+  {
+    "dir": "49",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compaction_score_action.test_compaction_score_action"
+  },
+  {
+    "dir": "50",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compaction_score_action.test_compaction_score_action"
+  },
+  {
+    "dir": "51",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "compaction.test_compaction_score_action.test_compaction_score_action"
+  },
+  {
+    "dir": "52",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys.test_compaction_uniq_keys"
+  },
+  {
+    "dir": "53",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys.test_compaction_uniq_keys"
+  },
+  {
+    "dir": "54",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys.test_compaction_uniq_keys"
+  },
+  {
+    "dir": "55",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys_ck.test_compaction_uniq_keys_ck"
+  },
+  {
+    "dir": "56",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys_ck.test_compaction_uniq_keys_ck"
+  },
+  {
+    "dir": "57",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(23)/TPrimitiveType(14)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys_ck.test_compaction_uniq_keys_ck"
+  },
+  {
+    "dir": "58",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys_row_store.test_compaction_uniq_keys_row_store"
+  },
+  {
+    "dir": "59",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(26)",
+      "TExprNodeType(7)/TPrimitiveType(27)",
+      "TExprNodeType(9)/TPrimitiveType(3)",
+      "TExprNodeType(9)/TPrimitiveType(4)",
+      "TExprNodeType(9)/TPrimitiveType(5)",
+      "TExprNodeType(9)/TPrimitiveType(6)"
+    ],
+    "suite": "compaction.test_compaction_uniq_keys_row_store.test_compaction_uniq_keys_row_store"
+  }
+]

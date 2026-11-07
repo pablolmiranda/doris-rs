@@ -1,0 +1,19 @@
+PUT /api/regression_test_load_p0_stream_load/test_csv_split_line2/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: dec3ccfe-547d-43e6-9962-fdca98fe6b88
+column_separator: hello
+trim_double_quotes: true
+Expect: 100-Continue
+Content-Length: 267
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1000helloworldhellhello10000000helloello
+2000hellowohellhellhello200000helloellohell
+3000helloworellohellhello30000000helloelloab
+4000hellohellwohellhellhello\Nhelloabcdeeelhllo
+"1111"hello"22131"hello"123123"hello0000000
+2222hello\Nhello\Nhello\N
+7777hellohellohello

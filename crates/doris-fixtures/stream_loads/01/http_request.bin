@@ -1,0 +1,23 @@
+PUT /api/regression_test_datatype_p0_timestamptz_load_stream_load/test_timestamptz_stream_load_dup_key/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 8408cb1a-52b9-492a-a761-a5c498873420
+column_separator: |
+strict_mode: false
+max_filter_ratio: 0.2
+Expect: 100-Continue
+Content-Length: 272
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+\N|-1
+0000-01-01 00:00:00 +00:00|0
+2023-01-01 12:00:00 +03:00|1
+2023-02-02 12:00:00 +03:00|2
+2023-03-03 12:00:00 -05:00|3
+2023-10-10 10:10:10 -03:00|10
+2023-08-08 20:20:20 -04:00|8
+2023-12-12 12:12:12 +09:00|12
+a2023-12-12 12:12:12 +09:00|12
+a2023-12-12 12:12:12 +09:00|12

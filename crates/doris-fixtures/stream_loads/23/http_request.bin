@@ -1,0 +1,17 @@
+PUT /api/regression_test_correctness_p0/test_current_date/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 8ca154ed-2db7-4d74-8afd-d5f887a36e8a
+column_separator: ,
+columns: id, name, dt_0 = current_date(), dt_2 = current_date()
+Expect: 100-Continue
+Content-Length: 23
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+5,ee
+6,ff
+7,gg
+8,hh
+9,

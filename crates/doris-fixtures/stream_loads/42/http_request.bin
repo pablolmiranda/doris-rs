@@ -1,0 +1,19 @@
+PUT /api/regression_test_load_p0_stream_load/test_csv_with_double_quotes/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 61849708-02f4-482e-9f97-29abedb62a73
+column_separator: ,
+Expect: 100-Continue
+Content-Length: 376
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1,2,3,abc,2022-12-01,2022-12-01 09:30:31
+2,3,3,abc,2022-12-01,2022-12-01 09:30:31
+3,4,3,abc,2022-12-01,2022-12-01 09:30:31
+4,5,3,abc,2022-12-01,2022-12-01 09:30:31
+"5","6","3","abc","2022-12-01","2022-12-01 09:30:31"
+"6","7","3","abc","2022-12-01","2022-12-01 09:30:31"
+"7","8","3","abc","2022-12-01","2022-12-01 09:30:31"
+"8","9","3","abc","2022-12-01","2022-12-01 09:30:31"

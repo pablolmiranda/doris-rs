@@ -1,0 +1,21 @@
+PUT /api/regression_test_load_p0_stream_load/tbl_test_load_json_with_jsonpath/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: cb807a33-3b3b-43e3-9089-dc11b859bc30
+strip_outer_array: true
+read_json_by_line: 
+format: json
+columns: 
+jsonpaths: ["$.k1", "$.v1"]
+json_root: 
+where: 
+fuzzy_parse: 
+column_separator: 
+max_filter_ratio: 1
+Expect: 100-Continue
+Content-Length: 148
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+ [{"v1": "7395.231067", "k1": "1000"}, {"v2": "7291.703724", "k1": "2000"}, {"k1": "22", "v2": "7291.703724", "k2": "2000"}, {"tinyint_key": null}]

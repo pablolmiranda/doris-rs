@@ -1,0 +1,24 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_new_function_mm/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: ac882cff-f18f-4932-905a-76a78b82e6db
+column_separator: ,
+columns: id, name, tmp_c3, year = year(tmp_c3), month = month(tmp_c3), day = day(tmp_c3)
+memtable_on_sink_node: true
+Expect: 100-Continue
+Content-Length: 220
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+10000,aa,2017-10-01
+10001,bb,2017-10-02
+10002,cc,2017-10-03
+10003,dd,2017-10-04
+10004,ee,2017-10-05
+10005,ff,2017-10-06
+10006,gg,2017-10-07
+10007,hh,2017-10-08
+10008,ii,2017-10-09
+10009,jj,2017-10-10
+10010,kk,2017-10-11

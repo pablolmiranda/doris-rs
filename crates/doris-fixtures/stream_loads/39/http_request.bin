@@ -1,0 +1,13 @@
+PUT /api/regression_test_load_p0_stream_load/test_csv_split_line1/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: fb4aa83f-a751-4163-b0cf-14ab7c922222
+column_separator: 5b18511e
+columns:  mid,ent_id,file_md5,m2,event_time,event_date,product,combo,                     file_sha1,file_sha256,file_path,file_name,file_size,file_age,file_ispe,                         file_isx64,file_level,file_sublevel,file_level_sublevel,client_iswin64,                         client_os_version,client_ie_version,rule_group_id,process_sign,                         process_product_name,process_original_name,process_internal_name,                         process_pparent_path,process_parent_path,process_parent_command_line,                         process_path,process_command_line,file_dna,icon_dna,client_ip,assetid,                         product_ver,clientid,process_file_size,client_id,rule_hit_all 
+Expect: 100-Continue
+Content-Length: 1036
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+000e124abc3a49b18b14424ebb6ee8b55b18511e27156683477263332175b18511e352b88835f0a761888314515e4de5b185b18511e000e124abc3a49b18b14424ebb6ee8b55b18511e16828975433555b18511e2023-05-015b18511ehips_product5b18511ehips_combo5b18511e829aafbe9b59ae408b3fbf21d8d8fb797c7f23585b18511e\N5b18511ec:\windows\system32\tasks\lenovo\imcontroller\timebasedevents\a4612416-67a7-48f1-9f87-e1e6dd7dd87e5b18511ea4612416-67a7-48f1-9f87-e1e6dd7dd87e5b18511e\N5b18511e05b18511e05b18511e\N5b18511e05b18511e05b18511e\N5b18511e15b18511e10.0.19044.256.1.05b18511e11.00.19041.1566 (WinBuild.160101.0800)5b18511efdid:5635b18511eLenovo5b18511eLenovo.Modern.ImController5b18511eLenovo.Modern.ImController.exe5b18511e\N5b18511e\N5b18511ec:\windows\lenovo\imcontroller\service\lenovo.modern.imcontroller.exe5b18511e\N5b18511ec:\windows\sysnative\tasks\lenovo\imcontroller\timebasedevents\a4612416-67a7-48f1-9f87-e1e6dd7dd87e5b18511e\N5b18511e\N5b18511e\N5b18511e20.20.28.20,36.7.115.1345b18511e27778378427541749895b18511e10.1.0.25005b18511e\N5b18511e\N5b18511e\N5b18511e\N

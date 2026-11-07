@@ -78,6 +78,14 @@ counting `needs_supplement.json`: 63 suites that would otherwise be eligible wai
 the run and cannot reach until doris-rs executes queries. A full run takes 80–150 minutes; most
 of the spread is `test_etl_failed` waiting on its broker load.
 
+After Milestone 4 (the write loop: INSERT … VALUES and CSV/JSON stream loads into duplicate-key
+tables; run `m4-full-2`, 2026-11-05): 170 eligible suites, all passing both gates; 297 Epic 1
+suites pass the out gate (130 of those that reach the BE) and 99 the strict gate (56). The
+`wait_timeout=31000` need is now a supplement group over the 809 suites whose connect query reads
+it on the reference. Six ssb queries left the ratchets (`ssb_unique_sql_zstd` q3.4, q4.2 and q4.3
+in `inverted_index_p0` and `unique_with_mow_p0`): they expect an empty result and passed only
+while their gzip loads failed; now the tables hold rows and the queries need the read path.
+
 The older directory-level gate also works against any target:
 
 ```
@@ -98,15 +106,29 @@ keeps its path hash because doris-rs gets, as `host`, the VM address the C++ BE'
 `priority_networks` picks.
 
 ```
-make swap-check      # doris-rs -> C++ BE -> doris-rs on one root; last line: swap check: PASS
+make swap-check      # doris-rs -> C++ BE -> doris-rs -> C++ BE on one root; last line: swap check: PASS
+make readback-check  # the C++ BE reads doris-rs's loads as its own; last line: readback check: PASS
 make meta-fixtures   # re-capture the C++ BE's meta/ databases (crates/doris-rocks/tests/fixtures)
+make loaded-fixture  # re-capture the C++ BE after the M4 load dataset (crates/doris-storage/tests/fixtures/cpp-loaded)
 ```
 
-After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot before it (clocks,
-the binary's version and the deployment facts aside), its tablet report diff counts every tablet
-on the backend, no DROP or CLONE arrives, and then each binary drops a table the other created.
-Internal loads (audit log, statistics) are turned off so no tablet holds data, which doris-rs
-refuses until milestone 4. Both targets recreate the FE-only cluster.
+**Swap check.** After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot
+before it (clocks, the binary's version and the deployment facts aside), its tablet report diff
+counts every tablet on the backend, and no DROP or CLONE arrives. Each binary inserts rows into
+the tables it creates and drops a table the other created, and the C++ BE sweeps the tablets
+doris-rs shut down. `SHOW TABLETS`' stat columns lag the FE's tablet-stat poll (60 s), so each
+snapshot waits one poll and until every tablet's version count equals its version. Internal
+loads (audit log, statistics) are turned off: their tables use types doris-rs does not write
+yet.
+
+**Readback check.** The M4 load dataset (`swap/load-dataset.sql`: INSERT … VALUES and CSV/JSON
+stream loads into four duplicate-key tables, every M4 type, 1 to 8 buckets, a RANGE partition,
+6,000 rows by stream load) runs twice on fresh swap clusters: once on the C++ BE, once on doris-rs,
+after which the C++ BE takes doris-rs's root over. The C++ BE's replies to
+`swap/readback-queries.sql` (24 queries: whole tables, key points and ranges, NULL and value
+predicates, counts, MIN/MAX, a join) must be the same both times; replies without ORDER BY are
+compared as sorted rows. It found that the C++ BE cannot run a predicate on a PLAIN string
+column, which is why doris-rs writes strings dictionary-encoded in plain mode.
 
 ## Epic 1 checker
 

@@ -141,6 +141,8 @@ impl Inner {
         match task.task_type {
             TTaskType::CREATE => self.create(task),
             TTaskType::DROP => self.drop_tablet(task),
+            TTaskType::PUBLISH_VERSION => self.publish(task),
+            TTaskType::CLEAR_TRANSACTION_TASK => self.clear_transaction(task),
             // visible_version_callback: no finishTask, and (as in the C++ BE) the signature
             // stays registered.
             TTaskType::UPDATE_VISIBLE_VERSION => {
@@ -192,6 +194,57 @@ impl Inner {
         let info = doris_storage::tablet_info(req.tablet_id, req.schema_hash.unwrap_or(0), 0, 0, 0);
         finish.finish_tablet_infos = Some(vec![info]);
         self.finish(finish);
+        self.remove(task.task_type, task.signature);
+    }
+
+    /// `publish_version_callback` (`EnginePublishVersionTask`): each partition's pending rowsets
+    /// become visible at its version. The finishTask always carries `succ_tablets` (every tablet
+    /// that holds the version, value 0), `error_tablet_ids`, the rows each base tablet gained by
+    /// table, and the report version (not increased); its status is OK even with error tablets.
+    fn publish(&self, task: &TAgentTaskRequest) {
+        let mut succ = BTreeMap::new();
+        let mut errors = Vec::new();
+        let mut delta: BTreeMap<i64, BTreeMap<i64, i64>> = BTreeMap::new();
+        let report_version;
+        {
+            let mut tablets = self.tablets();
+            if let Some(req) = &task.publish_version_req {
+                for p in &req.partition_version_infos {
+                    let res = tablets.publish_txn(p.partition_id, req.transaction_id, p.version);
+                    succ.extend(res.succ.iter().map(|t| (*t, 0i64)));
+                    errors.extend(res.errors.iter().copied());
+                    for (tablet, rows) in res.delta_rows {
+                        if req.base_tablet_ids.as_ref().is_some_and(|b| !b.contains(&tablet)) {
+                            continue;
+                        }
+                        if let Some(table) = tablets.tablet(tablet).map(|m| m.table_id()) {
+                            delta.entry(table).or_default().insert(tablet, rows);
+                        }
+                    }
+                }
+            }
+            report_version = tablets.report_version();
+        }
+        let mut finish = self.finish_request(task, status::ok());
+        finish.succ_tablets = Some(succ);
+        finish.error_tablet_ids = Some(errors);
+        finish.table_id_to_tablet_id_to_delta_num_rows = Some(delta);
+        finish.report_version = Some(report_version);
+        self.finish(finish);
+        self.remove(task.task_type, task.signature);
+    }
+
+    /// `clear_transaction_task_callback`: the transaction's pending rowsets are discarded; the
+    /// finishTask has only the status, always OK.
+    fn clear_transaction(&self, task: &TAgentTaskRequest) {
+        if let Some(req) = &task.clear_transaction_task_req {
+            if req.transaction_id > 0 {
+                if let Err(e) = self.tablets().clear_txn(req.transaction_id, &req.partition_id) {
+                    eprintln!("doris-rs be: clear transaction {}: {e}", req.transaction_id);
+                }
+            }
+        }
+        self.finish(self.finish_request(task, status::ok()));
         self.remove(task.task_type, task.signature);
     }
 

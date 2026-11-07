@@ -36,6 +36,22 @@ pub fn unpack_datev2(v: u32) -> Date {
     }
 }
 
+/// The inverse of `unpack_datev2`.
+pub fn pack_datev2(d: &Date) -> u32 {
+    d.year << 9 | u32::from(d.month) << 5 | u32::from(d.day)
+}
+
+/// The inverse of `unpack_datetimev2`.
+pub fn pack_datetimev2(t: &DateTime) -> u64 {
+    u64::from(t.date.year) << 46
+        | u64::from(t.date.month) << 42
+        | u64::from(t.date.day) << 37
+        | u64::from(t.hour) << 32
+        | u64::from(t.minute) << 26
+        | u64::from(t.second) << 20
+        | u64::from(t.microsecond)
+}
+
 /// DATETIMEV2: `microsecond:20 | second:6 | minute:6 | hour:5 | day:5 | month:4 | year:18`.
 pub fn unpack_datetimev2(v: u64) -> DateTime {
     DateTime {

@@ -170,16 +170,16 @@ fn tablets_survive_a_process_restart() {
 }
 
 #[test]
-fn a_root_with_data_stops_the_start() {
+fn a_root_with_unsupported_data_stops_the_start() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("storage");
     {
-        // a committed rowset's key, as a C++ BE holding loaded data leaves in meta/
+        // a delete bitmap key (merge-on-write), which doris-rs cannot keep yet
         let cf = |name: &str, prefix| CfOptions { name: name.into(), fixed_prefix_len: prefix };
         let opts = DbOptions { column_families: vec![cf("default", None), cf("doris", None), cf("meta", Some(4))], ..DbOptions::default() };
         let mut db = Db::open(&root.join("meta"), &opts).unwrap();
         let mut b = Batch::default();
-        b.put("meta", b"rst_0000000000000001-0000000000000002_0200000000000001", b"x");
+        b.put("meta", b"dlb_0000000000000001-0000000000000002_0200000000000001", b"x");
         db.write(b, true).unwrap();
         db.close().unwrap();
     }
@@ -187,5 +187,5 @@ fn a_root_with_data_stops_the_start() {
     let out = Command::new(BIN).args(["be", "--config"]).arg(write_conf(tmp.path(), &root, &p)).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains(&root.display().to_string()) && stderr.contains("milestone 4"), "{stderr}");
+    assert!(stderr.contains(&root.display().to_string()) && stderr.contains("dlb_"), "{stderr}");
 }
