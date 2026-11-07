@@ -121,14 +121,19 @@ snapshot waits one poll and until every tablet's version count equals its versio
 loads (audit log, statistics) are turned off: their tables use types doris-rs does not write
 yet.
 
-**Readback check.** The M4 load dataset (`swap/load-dataset.sql`: INSERT … VALUES and CSV/JSON
+**Readback check.** The load dataset (`swap/load-dataset.sql`: INSERT … VALUES and CSV/JSON
 stream loads into four duplicate-key tables, every M4 type, 1 to 8 buckets, a RANGE partition,
-6,000 rows by stream load) runs twice on fresh swap clusters: once on the C++ BE, once on doris-rs,
-after which the C++ BE takes doris-rs's root over. The C++ BE's replies to
-`swap/readback-queries.sql` (24 queries: whole tables, key points and ranges, NULL and value
-predicates, counts, MIN/MAX, a join) must be the same both times; replies without ORDER BY are
-compared as sorted rows. It found that the C++ BE cannot run a predicate on a PLAIN string
-column, which is why doris-rs writes strings dictionary-encoded in plain mode.
+6,000 rows by stream load; and `m5.zstd`, 20,000 rows in one load, which the C++ BE writes with
+ZSTD pages) runs twice on fresh swap clusters: once on the C++ BE, once on doris-rs, after which
+the C++ BE takes doris-rs's root over. Three rounds compare replies to
+`swap/readback-queries.sql` (26 queries: whole tables, key points and ranges, NULL and value
+predicates, counts, MIN/MAX, a join) with the C++ BE's on its own loads:
+(a) the C++ BE over doris-rs's loads; (b) doris-rs over the C++ BE's loads, on its root; (c)
+doris-rs over its own loads. doris-rs skips the join (M6). Replies without ORDER BY are compared
+as sorted rows; in rounds b and c the LIMIT without ORDER BY (`big_head_unordered`) is compared by
+row count, since which rows come first is each BE's read order. The check found that the C++ BE
+cannot run a predicate on a PLAIN string column, which is why doris-rs writes strings
+dictionary-encoded in plain mode.
 
 ## Epic 1 checker
 
