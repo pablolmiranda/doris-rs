@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+pub mod replays;
 pub mod stream_loads;
 pub mod values;
 

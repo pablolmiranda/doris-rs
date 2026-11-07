@@ -223,6 +223,7 @@ dependencies = [
 name = "doris-wire"
 version = "0.1.0"
 dependencies = [
+ "doris-fixtures",
  "doris-proto",
  "doris-thrift",
  "flate2",
