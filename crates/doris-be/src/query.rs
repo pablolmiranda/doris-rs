@@ -73,6 +73,8 @@ struct Buffer {
 
 struct Query {
     plan: QueryPlan,
+    /// Every instance has ended: a later cancel has nothing to stop.
+    finished: std::sync::atomic::AtomicBool,
     started: Mutex<bool>,
     buffer: Mutex<Buffer>,
     changed: Condvar,
@@ -162,6 +164,7 @@ impl QueryService {
         }
         let q = Arc::new(Query {
             plan,
+            finished: std::sync::atomic::AtomicBool::new(false),
             started: Mutex::new(false),
             buffer: Mutex::new(Buffer::default()),
             changed: Condvar::new(),
@@ -241,11 +244,10 @@ impl QueryService {
         let deadline = Instant::now() + Duration::from_secs(q.plan.timeout_s.max(1) as u64);
         let mut b = q.buffer();
         loop {
-            if let Some(st) = &b.failed {
-                return PFetchDataResult {
-                    status: st.clone(),
-                    ..Default::default()
-                };
+            if let Some(st) = b.failed.clone() {
+                drop(b);
+                self.forget(&q);
+                return PFetchDataResult { status: st, ..Default::default() };
             }
             if let Some(packet) = b.packets.pop_front() {
                 let seq = b.sent;
@@ -259,12 +261,16 @@ impl QueryService {
                 };
             }
             if b.closed {
+                let (sent, rows) = (b.sent, b.rows);
+                drop(b);
+                // the result is served: the query is done (the FE's FINISHED cancel finds nothing)
+                self.forget(&q);
                 return PFetchDataResult {
                     status: pstatus(OK, None),
-                    packet_seq: Some(b.sent),
+                    packet_seq: Some(sent),
                     eos: Some(true),
                     query_statistics: Some(PQueryStatistics {
-                        returned_rows: Some(b.rows),
+                        returned_rows: Some(rows),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -297,7 +303,7 @@ impl QueryService {
         let finished = req.cancel_status.as_ref().is_some_and(|s| s.status_code == TStatusCode::FINISHED.0)
             || (req.cancel_status.is_none() && req.cancel_reason.is_none());
         if let Some(q) = removed.first() {
-            if !finished {
+            if !finished && !q.finished.load(std::sync::atomic::Ordering::SeqCst) {
                 let why = req.cancel_status.as_ref().and_then(|s| s.error_msgs.first().cloned()).unwrap_or_else(|| {
                     format!(
                         "cancelled: {:?}",
@@ -309,6 +315,16 @@ impl QueryService {
             }
         }
         PCancelPlanFragmentResult { status: pstatus(OK, None) }
+    }
+
+    /// Drops every key of a query whose outcome the FE has had.
+    fn forget(&self, q: &Arc<Query>) {
+        self.queries().retain(|_, x| !Arc::ptr_eq(x, q));
+    }
+
+    /// Queries held and exchange entries held: what is left of past queries.
+    pub fn live_state(&self) -> (usize, usize) {
+        (self.queries().len(), self.inner.exchanges.entries())
     }
 
     /// `update_cache`: doris-rs keeps no SQL cache; the FE's store succeeds.
@@ -402,6 +418,7 @@ impl Inner {
             }
         }
         self.exchanges.forget(id);
+        q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// One `reportExecStatus` per fragment (`PipelineFragmentContext::send_report`).

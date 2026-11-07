@@ -250,3 +250,70 @@ fn cancel_and_cache_rpcs_answer() {
     assert_eq!(env.query.update_cache().status(), PCacheStatus::CacheOk);
     assert_eq!(env.query.fetch_cache().status(), PCacheStatus::NoSqlKey);
 }
+
+fn cancel_with(q: &TUniqueId, code: i32) -> PCancelPlanFragmentRequest {
+    PCancelPlanFragmentRequest {
+        finst_id: PUniqueId { hi: 0, lo: 0 },
+        query_id: Some(PUniqueId { hi: q.hi, lo: q.lo }),
+        cancel_status: Some(doris_proto::doris::PStatus { status_code: code, error_msgs: vec!["the FE cancelled it".into()] }),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_finished_query_leaves_no_state() {
+    let env = env();
+    let v = table(&env, 1008, kv(2));
+    let q = qid(8);
+    env.query.exec_plan_fragment(&exec_request(vec![scan_query(q.clone(), 1008, v, &columns(), 4064)]));
+    assert_eq!(fetch_all(&env.query, &q).last().unwrap().eos, Some(true));
+    // a LIMIT_REACH cancel after the query ended (the FE had the rows it needed)
+    env.query.cancel(&cancel_with(&q, doris_thrift::gen::status::TStatusCode::LIMIT_REACH.0));
+    assert_eq!(env.query.live_state(), (0, 0));
+}
+
+#[test]
+fn a_failed_query_leaves_no_state() {
+    let env = env();
+    table(&env, 1009, kv(2));
+    let q = qid(9);
+    env.query.exec_plan_fragment(&exec_request(vec![scan_query(q.clone(), 1009, 5, &columns(), 4064)]));
+    assert_ne!(env.query.fetch_data(&fetch_req(&q)).status.status_code, 0);
+    // the FE cancels a failed query with its error
+    env.query.cancel(&cancel_with(&q, 6));
+    assert_eq!(env.query.live_state(), (0, 0));
+}
+
+#[test]
+fn exchange_sender_counts_must_match_the_plan() {
+    use doris_fixtures::replays::{self, plan_list, shape, Step};
+    // a two-fragment corpus plan: SORT(OLAP_SCAN) -> merge | EXCHANGE -> RESULT
+    let (req, list) = replays::all()
+        .iter()
+        .flat_map(|r| r.steps.clone())
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(&request).filter(|p| shape(p) == "SORT(OLAP_SCAN)->DS(merge) | EXCHANGE->RESULT").map(|p| (request, p)),
+            _ => None,
+        })
+        .expect("a shape B plan");
+    let encode = |list: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        let mut r = req.clone();
+        r.request = exec_request(list.params_list.clone().unwrap()).request;
+        r
+    };
+    for change in [0, 1] {
+        let env = env();
+        let mut l = list.clone();
+        let receiver = l.params_list.as_mut().unwrap().iter_mut().find(|p| !p.per_exch_num_senders.is_empty()).unwrap();
+        if change == 0 {
+            receiver.per_exch_num_senders.clear();
+        } else {
+            receiver.per_exch_num_senders.values_mut().for_each(|n| *n += 1);
+        }
+        let r = env.query.prepare(&encode(&l));
+        assert_ne!(r.status.status_code, 0, "change {change} was accepted");
+        assert!(r.status.error_msgs.iter().any(|m| m.contains("sender")), "{:?}", r.status);
+    }
+    // the plan as the FE sent it is accepted
+    assert_eq!(env().query.prepare(&encode(&list)).status.status_code, 0);
+}

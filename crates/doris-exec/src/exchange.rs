@@ -87,6 +87,12 @@ impl Exchanges {
         self.changed.notify_all();
     }
 
+    /// Channels and cancellations held, for checks that a query left nothing behind.
+    pub fn entries(&self) -> usize {
+        let s = self.lock();
+        s.channels.len() + s.cancelled.len()
+    }
+
     /// Drops what is left of a finished query.
     pub fn forget(&self, query: QueryId) {
         let mut s = self.lock();
