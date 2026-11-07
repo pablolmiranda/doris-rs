@@ -179,7 +179,10 @@ impl Driver<'_> {
 
     fn exec(&mut self, rpc: Rpc, request: &doris_proto::doris::PExecPlanFragmentRequest) {
         if is_write(request) {
-            self.be.load.exec_plan_fragment(request);
+            let reply = self.be.load.exec_plan_fragment(request);
+            if reply.status.status_code != 0 {
+                self.mismatch(usize::MAX, format!("write refused: {:?}", reply.status.error_msgs));
+            }
             assert!(self.be.load.wait_idle(Duration::from_secs(60)), "{}: a write never finished", self.r.suite);
             return;
         }
@@ -313,7 +316,8 @@ pub fn replays_with_shapes(shapes: &[char]) -> Vec<Replay> {
 }
 
 fn check(shapes: &[char]) {
-    let rs = replays_with_shapes(shapes);
+    let only = std::env::var("REPLAY").ok();
+    let rs: Vec<Replay> = replays_with_shapes(shapes).into_iter().filter(|r| only.as_ref().is_none_or(|o| r.suite.contains(o.as_str()))).collect();
     assert!(!rs.is_empty(), "no replay of shapes {shapes:?}");
     let mut all = Vec::new();
     for r in &rs {
@@ -327,4 +331,9 @@ fn check(shapes: &[char]) {
 #[test]
 fn shapes_a_e_h_match_the_reference() {
     check(&['A', 'E', 'H']);
+}
+
+#[test]
+fn shapes_b_c_match_the_reference() {
+    check(&['A', 'B', 'C', 'E', 'H']);
 }

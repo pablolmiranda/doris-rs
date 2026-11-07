@@ -351,11 +351,11 @@ impl Inner {
             q.changed.notify_all();
             Ok(())
         };
-        let ctx = ExecCtx {
-            scan: &scan,
-            exchanges: &self.exchanges,
-            result: &result,
+        let fetch = |ids: &[Vec<u8>], cols: &[doris_storage::reader::ScanColumn]| {
+            let mgr = self.tablets.lock().unwrap_or_else(|e| e.into_inner());
+            doris_storage::reader::fetch_by_row_ids(&mgr, ids, cols)
         };
+        let ctx = ExecCtx { scan: &scan, exchanges: &self.exchanges, result: &result, fetch: &fetch };
         let first_error: Mutex<Option<ExecError>> = Mutex::new(None);
         std::thread::scope(|s| {
             for (fi, f) in plan.fragments.iter().enumerate() {

@@ -239,3 +239,30 @@ fn unknown_function_is_refused() {
         .to_string();
     assert!(err.contains("function like"), "{err}");
 }
+
+#[test]
+fn datetime_casts_round_to_the_lower_scale() {
+    // cast_to_datetimev2_impl.hpp transform_date_scale: half up, carrying into the second
+    let from = scalar(T::DATETIMEV2, -1, 0, 6);
+    let to = scalar(T::DATETIMEV2, -1, 0, 3);
+    let ts = |s: &str| Datum::Int(parse_datetimev2(s, 6).unwrap().into());
+    let block = Block {
+        types: vec![col("t", T::DATETIMEV2, 0, 6)],
+        rows: vec![
+            vec![ts("2022-12-01 22:23:24.999999")],
+            vec![ts("2022-12-31 23:59:59.999500")],
+            vec![ts("2022-12-01 22:23:24.123449")],
+            vec![ts("9999-12-31 23:59:59.999999")],
+        ],
+    };
+    let slots = SlotMap(HashMap::from([(1, 0)]));
+    let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 1);
+    cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
+    let e = doris_fixtures::build::over(cast, vec![slot(1, from)]);
+    let (t, v) = eval_column(&e, &block, &slots).unwrap();
+    let text: Vec<Option<String>> = v.iter().map(|d| doris_exec::row_text::cell_text(d, &t).map(|b| String::from_utf8(b).unwrap())).collect();
+    assert_eq!(
+        text,
+        vec![Some("2022-12-01 22:23:25.000".into()), Some("2023-01-01 00:00:00.000".into()), Some("2022-12-01 22:23:24.123".into()), None]
+    );
+}

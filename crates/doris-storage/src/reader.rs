@@ -189,3 +189,42 @@ pub fn scan_tablet(
     }
     Ok(out)
 }
+
+/// A row's id, private to doris-rs (spec §4.4): it never leaves the BE. 24 bytes: tablet id and
+/// version (i64 LE), the segment's position among the tablet's segments at that version, and the
+/// row's ordinal in the segment (u32 LE).
+pub fn row_id(tablet_id: i64, version: i64, segment: u32, ordinal: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(24);
+    out.extend_from_slice(&tablet_id.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
+    out.extend_from_slice(&segment.to_le_bytes());
+    out.extend_from_slice(&ordinal.to_le_bytes());
+    out
+}
+
+fn parse_row_id(id: &[u8]) -> Option<(i64, i64, usize, usize)> {
+    if id.len() != 24 {
+        return None;
+    }
+    let i64_at = |at: usize| i64::from_le_bytes(id[at..at + 8].try_into().expect("8 bytes"));
+    let u32_at = |at: usize| u32::from_le_bytes(id[at..at + 4].try_into().expect("4 bytes")) as usize;
+    Some((i64_at(0), i64_at(8), u32_at(16), u32_at(20)))
+}
+
+/// The given columns of the rows the ids name, in the ids' order.
+pub fn fetch_by_row_ids(mgr: &TabletManager, ids: &[Vec<u8>], columns: &[ScanColumn]) -> Result<Vec<Vec<Datum>>, StorageError> {
+    let mut read: std::collections::HashMap<(i64, i64), Vec<Vec<Vec<Datum>>>> = std::collections::HashMap::new();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let (tablet, version, segment, ordinal) = parse_row_id(id).ok_or_else(|| refuse(-1, format!("malformed row id of {} bytes", id.len())))?;
+        if let std::collections::hash_map::Entry::Vacant(e) = read.entry((tablet, version)) {
+            e.insert(scan_tablet(mgr, tablet, version, columns)?);
+        }
+        let row = read[&(tablet, version)]
+            .get(segment)
+            .and_then(|s| s.get(ordinal))
+            .ok_or_else(|| refuse(tablet, format!("row id {version}/{segment}/{ordinal} names no row")))?;
+        out.push(row.clone());
+    }
+    Ok(out)
+}

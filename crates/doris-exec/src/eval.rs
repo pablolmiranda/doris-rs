@@ -275,6 +275,9 @@ fn eval_at(
             let out = vals
                 .iter()
                 .map(|d| {
+                    if let Some(r) = round_datetime(d, &from, &to) {
+                        return Ok(r);
+                    }
                     let v = expr::cast(datum_value(d, &from), &to);
                     if v == Value::Null {
                         Ok(Datum::Null)
@@ -494,10 +497,23 @@ fn same_storage(a: &ColType, b: &ColType) -> bool {
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
 }
 
+/// A DATETIMEV2 cast to a lower scale: rounded, not cut (`transform_date_scale`).
+fn round_datetime(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
+    match d {
+        Datum::Int(v) if from.ptype == T::DATETIMEV2 && to.ptype == T::DATETIMEV2 && to.scale < from.scale => {
+            Some(crate::value::round_datetimev2(*v as u64, from.scale, to.scale).map_or(Datum::Null, |r| Datum::Int(r.into())))
+        }
+        _ => None,
+    }
+}
+
 /// A value of type `from` as a value of type `to` (a slot's type), cast when they differ.
 pub fn coerce(d: Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
     if d == Datum::Null || same_storage(from, to) || to.ptype == T::NULL_TYPE {
         return Ok(d);
+    }
+    if let Some(r) = round_datetime(&d, from, to) {
+        return Ok(r);
     }
     let v = expr::cast(datum_value(&d, from), to);
     if v == Value::Null {

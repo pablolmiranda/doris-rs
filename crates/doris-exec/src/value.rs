@@ -246,7 +246,7 @@ pub fn parse_datev2(s: &str) -> Option<u32> {
     Some(y << 9 | m << 5 | d)
 }
 
-/// `YYYY-MM-DD[ hh:mm:ss[.ffffff]]` as a packed DATETIMEV2, the fraction cut to `scale` digits.
+/// `YYYY-MM-DD[ hh:mm:ss[.ffffff]]` as a packed DATETIMEV2, the fraction rounded to `scale` digits.
 pub fn parse_datetimev2(s: &str, scale: i32) -> Option<u64> {
     let (y, m, d, rest) = date_parts(s)?;
     let (mut hh, mut mi, mut ss, mut us) = (0u64, 0u64, 0u64, 0u64);
@@ -259,12 +259,24 @@ pub fn parse_datetimev2(s: &str, scale: i32) -> Option<u64> {
         if hh > 23 || mi > 59 || ss > 59 || !frac.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
+        // init_microsecond: `scale` digits kept, the next one rounding half up
         let keep = scale.clamp(0, 6) as usize;
-        let mut f: String = frac.chars().take(keep).collect();
-        while f.len() < 6 {
-            f.push('0');
+        let digits: Vec<u64> = frac.bytes().map(|b| u64::from(b - b'0')).collect();
+        let mut part = digits.iter().take(keep).fold(0u64, |a, d| a * 10 + d);
+        part *= 10u64.pow((keep - digits.len().min(keep)) as u32);
+        let mut carry = false;
+        if digits.get(keep).is_some_and(|d| *d >= 5) {
+            part += 1;
+            if part == 10u64.pow(keep as u32) {
+                part = 0;
+                carry = true;
+            }
         }
-        us = f.parse().ok()?;
+        us = part * 10u64.pow(6 - keep as u32);
+        if carry {
+            let packed = u64::from(y) << 46 | u64::from(m) << 42 | u64::from(d) << 37 | hh << 32 | mi << 26 | ss << 20 | 999_999;
+            return round_datetimev2(packed, 6, 0);
+        }
     }
     Some(u64::from(y) << 46 | u64::from(m) << 42 | u64::from(d) << 37 | hh << 32 | mi << 26 | ss << 20 | us)
 }
@@ -314,4 +326,46 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
         }
         _ => return None,
     })
+}
+
+/// A packed DATETIMEV2 at a lower scale, rounded half up as `transform_date_scale` does, the
+/// carry going into the second (and on). None past 9999-12-31 23:59:59.
+pub fn round_datetimev2(v: u64, from_scale: i32, to_scale: i32) -> Option<u64> {
+    if to_scale >= from_scale || to_scale < 0 {
+        return Some(v);
+    }
+    let us = (v & 0xF_FFFF) as u32;
+    let divisor = 10u32.pow((6 - to_scale.min(6)) as u32);
+    let rounded = if us % divisor >= divisor / 2 { (us / divisor + 1) * divisor } else { us / divisor * divisor };
+    let base = v & !0xF_FFFF;
+    if rounded < 1_000_000 {
+        return Some(base | u64::from(rounded));
+    }
+    let (mut y, mut m, mut d) = ((v >> 46) as u32, ((v >> 42) & 0xF) as u32, ((v >> 37) & 0x1F) as u32);
+    let (mut h, mut mi, mut s) = (((v >> 32) & 0x1F) as u32, ((v >> 26) & 0x3F) as u32, ((v >> 20) & 0x3F) as u32);
+    s += 1;
+    if s == 60 {
+        s = 0;
+        mi += 1;
+    }
+    if mi == 60 {
+        mi = 0;
+        h += 1;
+    }
+    if h == 24 {
+        h = 0;
+        d += 1;
+    }
+    if d > days_in_month(y, m) {
+        d = 1;
+        m += 1;
+    }
+    if m > 12 {
+        m = 1;
+        y += 1;
+    }
+    if y > 9999 {
+        return None;
+    }
+    Some(u64::from(y) << 46 | u64::from(m) << 42 | u64::from(d) << 37 | u64::from(h) << 32 | u64::from(mi) << 26 | u64::from(s) << 20)
 }

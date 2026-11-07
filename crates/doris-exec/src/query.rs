@@ -300,7 +300,7 @@ fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool)
 }
 
 fn check_partition(t: TPartitionType, what: &str) -> Result<(), ExecError> {
-    if t == TPartitionType::UNPARTITIONED {
+    if matches!(t, TPartitionType::UNPARTITIONED | TPartitionType::HASH_PARTITIONED | TPartitionType::RANDOM) {
         Ok(())
     } else {
         Err(unsupported(format!("{what} partitioned as {t:?}")))
@@ -326,10 +326,22 @@ fn check_node(n: &TPlanNode, children: usize) -> Result<(), ExecError> {
                 .exchange_node
                 .as_ref()
                 .ok_or_else(|| ExecError::BadRequest("EXCHANGE_NODE without its parameters".into()))?;
-            if e.sort_info.is_some() {
-                return Err(unsupported("a merging EXCHANGE_NODE"));
+            if let Some(info) = &e.sort_info {
+                check_exprs(&info.ordering_exprs, false)?;
             }
             check_partition(e.partition_type.unwrap_or(TPartitionType::UNPARTITIONED), "an EXCHANGE_NODE")?;
+        }
+        P::SORT_NODE => {
+            let s = n.sort_node.as_ref().ok_or_else(|| ExecError::BadRequest("SORT_NODE without its parameters".into()))?;
+            if s.sort_info.use_two_phase_read == Some(true) {
+                return Err(unsupported("a SORT_NODE with the two-phase read"));
+            }
+            check_exprs(&s.sort_info.ordering_exprs, false)?;
+            check_exprs(s.sort_info.sort_tuple_slot_exprs.iter().flatten(), false)?;
+        }
+        P::MATERIALIZATION_NODE => {
+            let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
+            check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;
         }
         _ => return Err(unsupported(name)),
     }
@@ -355,11 +367,8 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
                     .stream_sink
                     .as_ref()
                     .ok_or_else(|| ExecError::BadRequest("DATA_STREAM_SINK without its parameters".into()))?;
-                if s.is_merge != Some(true) {
-                    check_partition(s.output_partition.type_, "a DATA_STREAM_SINK")?;
-                } else {
-                    return Err(unsupported("a merging DATA_STREAM_SINK"));
-                }
+                check_partition(s.output_partition.type_, "a DATA_STREAM_SINK")?;
+                check_exprs(s.output_partition.partition_exprs.iter().flatten(), false)?;
                 check_exprs(s.output_exprs.iter().flatten(), false)?;
                 check_exprs(s.conjuncts.iter().flatten(), false)?;
             }
