@@ -14,6 +14,60 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-06-epic-1-m5-read-loop-design.md`. Research notes, cited below as **[wire]**, **[seg]** and **[agg]**, live in `docs/superpowers/specs/research/2026-11-06-m5-{queries-on-the-wire,reading-segments,aggregation-and-schema-scan}.md`.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **The replays.**
+  - 60 suites are replayed in-process against `QueryService` and `LoadService` with `FakeFe`.
+  - Each query's whole result is compared (rows of every packet, eos, error), not packet by
+    packet: C++ packet boundaries follow scanner timing.
+  - Captured order within a millisecond is unreliable, so replies are re-sorted by
+    `packet_seq` and a query's exec/start runs before its first fetch.
+  - A query the reference ended early (LIMIT_REACH) must have its rows contained in doris-rs's.
+  - Suites are left out when they read unique/aggregate tables (other than the always-empty
+    stats table), ask for binary rows, use `INSERT … SELECT` or the v1 two-phase read, or scan
+    a schema table beyond the six.
+  - Shape J (sort over aggregation over scan) is in no replayable suite. Unit tests and the
+    full run cover it.
+- **Interfaces.**
+  - `version_path` returns `Option`; the caller names the tablet and version in `MissedVersion`.
+  - `run_instance` takes a fragment and an instance index.
+  - Row ids are `tablet | version | segment position in the scan | ordinal`.
+    `fetch_by_row_ids` re-walks the same version path.
+- **What the C++ BE does, learned from the corpus:**
+  - year 0 is not a leap year;
+  - DATETIMEV2 rounds half up to a lower scale, in casts and in text (M4's parser truncated);
+  - a sort without slot exprs relabels its child's columns by position;
+  - a scalar aggregation over no rows still gives one row;
+  - `describeTables` sends `show_hidden_columns=false`;
+  - dry-run queries count rows and send none;
+  - a limit with `agg_sort_info_by_group_key` keeps the top groups;
+  - an empty `jsonpaths` means none.
+- **Added beyond the plan.** UNION over children (three replays use UNION ALL). The
+  `information_schema.tables` times are refused when the FE sends one.
+- **Errors.** Errors reach the FE as `INTERNAL_ERROR`, `NOT_IMPLEMENTED_ERROR` or `CANCELLED`
+  with the code name, not the C++ BE's E-codes. A query's state is forgotten once its eos or
+  failure is served. Exchange sender counts are checked against the plan.
+- **The gate.** The needs index records what plans need that the types do not show
+  (`read:UNIQUE_KEYS`, `read:AGG_KEYS`, `write:INSERT_SELECT`, `result:binary_rows`,
+  `sort:two_phase_read`, `schema_table:<name>`). That takes the estimate from 476 to 370
+  eligible suites, and the supplement to 348:
+  - `state:fe enable_date_conversion=true` (18 suites) was added: `test_coalesce_new` leaks
+    v1 date columns;
+  - four single-suite needs were added;
+  - the `wait_timeout` group was removed.
+- **Results.**
+  - Readback check: PASS, with rounds a/b/c of 26/25/25 replies equal.
+  - Swap check: PASS.
+  - `m5-full-1` found 23 out and 21 strict eligible failures. They were a top-n-by-group-key
+    bug, empty jsonpaths, the date-conversion leak and four unsupported features.
+  - `m5-full-2`, the final run: 348 eligible, failing 0 on both gates. Out passes 378 (211
+    reaching the BE), strict 276 (196). `test_move_column_with_cast` left the out ratchet: it
+    needs `task:ALTER` and had passed in only one run of six.
+  - `m5-full-2` ran on 8bef912. The review fixes after it (query and exchange state forgotten
+    once served, sender counts checked, the cancel/finish race) change no reply.
+
 ## Global Constraints
 
 - **Plans.** A query runs only if every node, sink, expression, function and type in every fragment is in the M5 set (spec §8, plus M4's). Otherwise it is refused at prepare (or at `exec_plan_fragment`), with a status naming the first unsupported item, and nothing runs.

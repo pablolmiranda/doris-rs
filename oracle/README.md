@@ -86,6 +86,19 @@ it on the reference. Six ssb queries left the ratchets (`ssb_unique_sql_zstd` q3
 in `inverted_index_p0` and `unique_with_mow_p0`): they expect an empty result and passed only
 while their gzip loads failed; now the tables hold rows and the queries need the read path.
 
+After Milestone 5 (the read loop: scans of duplicate-key tablets, filters, sorts and top-n,
+aggregation, exchanges, six `information_schema` tables; run `m5-full-2`, 2026-11-07): 348
+eligible suites, all passing both gates; 378 Epic 1 suites pass the out gate (211 of those that
+reach the BE) and 276 the strict gate (196). The needs index now also records what the plan
+shows and the types do not (`read:UNIQUE_KEYS`, `read:AGG_KEYS`, `write:INSERT_SELECT`,
+`result:binary_rows`, `sort:two_phase_read`, `schema_table:<name>`), which takes the eligible set
+from 476 to 370; the supplement takes it to 348. It gains a group,
+`state:fe enable_date_conversion=true`, over 18 suites: `test_coalesce_new` sets the variable to
+false and fails on the reference before it resets it, so later tables get v1 DATE columns. The
+`wait_timeout=31000` group is gone: the nereids `test_query_sys_tables` now runs past the
+statement that sets it. `test_move_column_with_cast` left the out ratchet: it needs
+`task:ALTER` and had passed in only one run of six.
+
 The older directory-level gate also works against any target:
 
 ```
