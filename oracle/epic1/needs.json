@@ -16,6 +16,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.get_stream_load_record",
       "BackendService.submit_tasks",
@@ -96,6 +99,10 @@
       "http./api/compaction/show",
       "http.stream_load"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -117,6 +124,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_be_compaction_tasks.test_be_compaction_tasks": {
@@ -149,6 +159,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "http./api/compaction/run"
+    ],
+    "schema_table": [
+      "be_compaction_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -203,6 +216,10 @@
       "http./api/compaction/run",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -321,6 +338,10 @@
       "http./api/compaction/show",
       "http./api/show_config"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -366,6 +387,10 @@
       "PBackendService.fetch_data",
       "http./api/compaction_score"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "OLAP_TABLE_SINK",
       "RESULT_SINK"
@@ -401,6 +426,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -458,6 +486,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -520,6 +551,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -580,6 +614,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -639,6 +676,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -653,6 +693,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -676,6 +720,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_compaction_uniq_keys_with_delete_ck.test_compaction_uniq_keys_with_delete_ck": {
@@ -698,6 +745,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -712,6 +762,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -759,6 +813,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -772,6 +829,10 @@
       "http./api/compaction/run",
       "http./api/compaction/run_status",
       "http./api/compaction/show"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -820,6 +881,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -854,6 +918,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_cumu_compaction_with_delete.test_cumu_compaction_with_delete": {
@@ -930,6 +997,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -944,6 +1014,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -964,6 +1038,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_full_compaction_by_table_id.test_full_compaction_by_table_id": {
@@ -982,6 +1059,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -1015,6 +1095,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_full_compaction_ck.test_full_compaction_ck": {
@@ -1034,6 +1117,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -1048,6 +1134,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -1068,6 +1158,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_full_compaction_status.test_full_compaction_status": {
@@ -1156,6 +1249,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http.stream_load"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -1263,6 +1360,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -1277,6 +1377,10 @@
       "http./api/compaction/run_status",
       "http./api/compaction/show",
       "http./api/show_config"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -1300,6 +1404,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "compaction.test_vertical_compaction_uniq_keys_ck.test_vertical_compaction_uniq_keys_ck": {
@@ -1322,6 +1429,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -1358,6 +1468,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "correctness_p0.test_agg_materialize.test_agg_materialize": {
@@ -2400,6 +2513,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "correctness_p0.test_current_date.test_current_date": {
@@ -2586,6 +2702,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -2633,6 +2752,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -2682,6 +2804,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -2801,6 +2926,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -2910,6 +3038,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -3052,6 +3183,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -3115,6 +3249,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -3452,6 +3589,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -3743,6 +3883,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -5093,6 +5236,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "correctness_p0.test_probe_clean.test_probe_clean": {
@@ -5539,6 +5685,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -5592,6 +5741,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -5647,6 +5799,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -5804,6 +5959,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -5898,6 +6056,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "correctness_p0.test_string_to_decimal.test_string_to_decimal": {
@@ -5994,6 +6155,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -6515,6 +6679,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -6787,6 +6954,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -6816,6 +6986,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.date.test_from_unixtime.test_from_unixtime": {
@@ -7076,6 +7249,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.datetimev2.test_agg_functions.test_agg_functions": {
@@ -7147,6 +7323,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -7176,6 +7355,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.datetimev2.test_exprs.test_exprs": {
@@ -7200,6 +7382,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -7249,6 +7434,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -7301,6 +7489,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -7379,6 +7570,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.datev1.test_datev1_load.test_datev1_load": {
@@ -7428,6 +7622,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv2.test_decimalv2_agg.test_decimalv2_agg": {
@@ -7702,6 +7899,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv2.test_decimalv2_overflow.test_decimalv2_overflow": {
@@ -7730,6 +7930,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -7786,6 +7989,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -8007,6 +8213,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_arithmetic_expressions.test_arithmetic_expressions": {
@@ -8067,6 +8276,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_decimal256_cast.test_decimal256_cast": {
@@ -8121,6 +8333,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_decimal256_index.test_decimal256_index": {
@@ -8243,6 +8458,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_decimal256_multi_distinct.test_decimal256_multi_distinct": {
@@ -8818,6 +9036,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -8870,6 +9091,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -8900,6 +9124,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_decimalv3_where.test_decimalv3_where": {
@@ -8920,6 +9147,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -8950,6 +9180,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_dup_tab_decimalv3.test_dup_tab_decimalv3": {
@@ -9129,6 +9362,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -9163,6 +9399,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.decimalv3.test_predicate.test_predicate": {
@@ -9302,6 +9541,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -9356,6 +9598,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -9427,6 +9672,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "result": [
+      "binary_rows"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -9797,6 +10045,9 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "columns"
     ],
     "sink": [
       "RESULT_SINK"
@@ -16075,6 +16326,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "columns"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -16101,6 +16355,9 @@
       "AGGREGATION_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16150,6 +16407,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -16196,6 +16456,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16239,6 +16502,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16284,6 +16550,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16328,6 +16597,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16375,6 +16647,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16419,6 +16694,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16465,6 +16743,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16509,6 +16790,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16555,6 +16839,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16599,6 +16886,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16645,6 +16935,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16689,6 +16982,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16735,6 +17031,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16780,6 +17079,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -16824,6 +17126,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16871,6 +17176,9 @@
       "AGGREGATION_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -16920,6 +17228,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -16966,6 +17277,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17009,6 +17323,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17054,6 +17371,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17098,6 +17418,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17145,6 +17468,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17189,6 +17515,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17235,6 +17564,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17279,6 +17611,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17325,6 +17660,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17369,6 +17707,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17415,6 +17756,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17459,6 +17803,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17505,6 +17852,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17549,6 +17899,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17595,6 +17948,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17640,6 +17996,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17683,6 +18042,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17729,6 +18091,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17773,6 +18138,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17819,6 +18187,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17863,6 +18234,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17909,6 +18283,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -17953,6 +18330,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -17999,6 +18379,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18043,6 +18426,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18090,6 +18476,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -18136,6 +18525,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18180,6 +18572,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18226,6 +18621,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18270,6 +18668,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18316,6 +18717,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18360,6 +18764,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18406,6 +18813,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18450,6 +18860,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18496,6 +18909,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18540,6 +18956,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18586,6 +19005,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18630,6 +19052,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18676,6 +19101,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18720,6 +19148,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18766,6 +19197,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18810,6 +19244,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18856,6 +19293,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18900,6 +19340,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -18946,6 +19389,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -18990,6 +19436,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19036,6 +19485,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19080,6 +19532,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19126,6 +19581,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19170,6 +19628,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19216,6 +19677,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19260,6 +19724,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19306,6 +19773,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19350,6 +19820,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19396,6 +19869,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19441,6 +19917,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
@@ -19484,6 +19963,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19530,6 +20012,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19574,6 +20059,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19620,6 +20108,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19664,6 +20155,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19710,6 +20204,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19754,6 +20251,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19800,6 +20300,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19844,6 +20347,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19890,6 +20396,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -19934,6 +20443,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -19980,6 +20492,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20024,6 +20539,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20070,6 +20588,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20114,6 +20635,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20160,6 +20684,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20204,6 +20731,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20250,6 +20780,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20294,6 +20827,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20340,6 +20876,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20384,6 +20923,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20430,6 +20972,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20474,6 +21019,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20520,6 +21068,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20564,6 +21115,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20610,6 +21164,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20654,6 +21211,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20700,6 +21260,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20744,6 +21307,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20790,6 +21356,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20834,6 +21403,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20880,6 +21452,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -20924,6 +21499,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -20970,6 +21548,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21014,6 +21595,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21060,6 +21644,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21104,6 +21691,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21150,6 +21740,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21195,6 +21788,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21239,6 +21835,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21287,6 +21886,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21332,6 +21934,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21375,6 +21980,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21416,6 +22024,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21459,6 +22070,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21501,6 +22115,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21547,6 +22164,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -21591,6 +22211,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21633,6 +22256,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21677,6 +22303,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21719,6 +22348,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21763,6 +22395,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21805,6 +22440,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21849,6 +22487,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -21891,6 +22532,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -21936,6 +22580,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -21980,6 +22627,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22022,6 +22672,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22067,6 +22720,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22114,6 +22770,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -22160,6 +22819,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22204,6 +22866,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22250,6 +22915,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22294,6 +22962,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22340,6 +23011,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22384,6 +23058,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22430,6 +23107,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22474,6 +23154,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22520,6 +23203,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22564,6 +23250,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22610,6 +23299,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22654,6 +23346,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22700,6 +23395,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22744,6 +23442,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22790,6 +23491,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22834,6 +23538,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22880,6 +23587,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -22924,6 +23634,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -22970,6 +23683,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23014,6 +23730,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23060,6 +23779,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23104,6 +23826,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23150,6 +23875,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23194,6 +23922,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23240,6 +23971,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23284,6 +24018,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23330,6 +24067,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23374,6 +24114,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23420,6 +24163,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23464,6 +24210,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23510,6 +24259,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23554,6 +24306,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23600,6 +24355,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23644,6 +24402,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23690,6 +24451,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23734,6 +24498,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23780,6 +24547,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23824,6 +24594,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23870,6 +24643,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -23914,6 +24690,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -23960,6 +24739,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24004,6 +24786,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24050,6 +24835,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24094,6 +24882,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24140,6 +24931,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24184,6 +24978,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24230,6 +25027,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24274,6 +25074,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24320,6 +25123,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24364,6 +25170,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24410,6 +25219,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24454,6 +25266,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24500,6 +25315,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24544,6 +25362,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24590,6 +25411,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24634,6 +25458,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24680,6 +25507,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24724,6 +25554,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24770,6 +25603,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24814,6 +25650,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24860,6 +25699,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24904,6 +25746,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -24950,6 +25795,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -24994,6 +25842,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25040,6 +25891,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25084,6 +25938,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25130,6 +25987,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25174,6 +26034,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25220,6 +26083,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25264,6 +26130,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25310,6 +26179,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25354,6 +26226,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25400,6 +26275,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25444,6 +26322,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25490,6 +26371,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25535,6 +26419,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -25579,6 +26466,9 @@
       "MATERIALIZATION_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -25637,6 +26527,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -25801,6 +26694,9 @@
       "TINYINT",
       "VARBINARY",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.time_type.test_time_in_runtimepredicate.test_time_in_runtimepredicate": {
@@ -26026,6 +26922,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "result": [
+      "binary_rows"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -26316,6 +27215,9 @@
       "TIMESTAMPTZ",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.timestamptz.test_timestamptz_delete_uniq_key.test_timestamptz_delete_uniq_key": {
@@ -26344,6 +27246,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -26375,6 +27280,9 @@
       "TIMESTAMPTZ",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.timestamptz.test_timestamptz_dst_fold.test_timestamptz_dst_fold": {
@@ -26431,6 +27339,9 @@
       "TIMESTAMPTZ",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.timestamptz.test_timestamptz_dst_gap.test_timestamptz_dst_gap": {
@@ -26596,6 +27507,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "result": [
+      "binary_rows"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -26756,6 +27670,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -26889,6 +27806,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -27086,6 +28006,9 @@
       "TIMESTAMPTZ",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "datatype_p0.timestamptz.test_timestamptz_storage_dup_key.test_timestamptz_storage_dup_key": {
@@ -27184,6 +28107,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -27358,6 +28284,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.insert_group_commit_into_max_filter_ratio.insert_group_commit_into_max_filter_ratio": {
@@ -27416,6 +28345,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.insert_group_commit_into_unique.insert_group_commit_into_unique": {
@@ -27437,6 +28369,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -27491,6 +28426,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -27582,6 +28520,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.insert_group_commit_with_large_data.insert_group_commit_with_large_data": {
@@ -27640,6 +28581,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.insert_group_commit_with_prepare_stmt.insert_group_commit_with_prepare_stmt": {
@@ -27659,6 +28603,12 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
+    "result": [
+      "binary_rows"
     ],
     "rpc": [
       "BackendService.get_stream_load_record",
@@ -27745,6 +28695,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "result": [
+      "binary_rows"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -27920,6 +28873,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.test_insert_nan.test_insert_nan": {
@@ -27936,6 +28892,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -28010,6 +28969,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.test_insert_row_count.test_insert_row_count": {
@@ -28027,6 +28989,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -28057,6 +29022,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.test_insert_tablet_sink.test_insert_tablet_sink": {
@@ -28082,6 +29050,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -28114,6 +29085,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.test_insert_timeout.test_insert_timeout": {
@@ -28144,6 +29118,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -28173,6 +29150,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.transaction.txn_insert_concurrent_insert.txn_insert_concurrent_insert": {
@@ -28233,6 +29213,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.transaction.txn_insert_concurrent_insert_mow.txn_insert_concurrent_insert_mow": {
@@ -28254,6 +29237,9 @@
       "EXCHANGE_NODE",
       "META_SCAN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.get_stream_load_record",
@@ -28294,6 +29280,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.transaction.txn_insert_values_with_schema_change.txn_insert_values_with_schema_change": {
@@ -28353,6 +29342,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.transaction.txn_insert_with_schema_change.txn_insert_with_schema_change": {
@@ -28408,6 +29400,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "insert_p0.transaction.txn_insert_with_specify_columns.txn_insert_with_specify_columns": {
@@ -28427,6 +29422,9 @@
       "FILE_SCAN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -28458,6 +29456,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "inverted_index_p0.analyzer.test_ngram_max_diff_custom_analyzer.test_ngram_max_diff_custom_analyzer": {
@@ -28579,6 +29580,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -28620,6 +29624,9 @@
       "EXCHANGE_NODE",
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -28663,6 +29670,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -28704,6 +29714,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -28747,6 +29760,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -28789,6 +29805,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -28830,6 +29849,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -28875,6 +29897,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -28917,6 +29942,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -28956,6 +29984,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -28999,6 +30030,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -29041,6 +30075,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -29082,6 +30119,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -29137,6 +30177,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -29234,6 +30277,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.clean_label.test_clean_label.test_clean_label": {
@@ -29576,6 +30622,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.insert.load.load_test_query_db": {
@@ -29594,6 +30643,9 @@
       "EMPTY_SET_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -29635,6 +30687,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.insert.test_insert.test_insert": {
@@ -29667,6 +30722,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -29704,6 +30762,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.insert.test_insert_random_distribution_table.test_insert_random_distribution_table": {
@@ -29813,6 +30874,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.insert.test_insert_strict_mode_and_filter_ratio_custom.test_insert_strict_mode_and_filter_ratio_custom": {
@@ -29872,6 +30936,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.merge_into.test_merge_into.test_merge_into": {
@@ -29899,6 +30966,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -29932,6 +31002,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.mysql_load.test_mysql_load_skip_lines.test_mysql_load_skip_lines": {
@@ -29983,6 +31056,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.mysql_load.test_mysql_load_strict_mode_and_filter_ratio.test_mysql_load_strict_mode_and_filter_ratio": {
@@ -30037,6 +31113,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.mysql_load.test_mysql_load_trim_quotes.test_mysql_load_trim_quotes": {
@@ -30088,6 +31167,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.mysql_load.test_mysql_load_unified.test_mysql_load_unified": {
@@ -30337,6 +31419,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -30504,6 +31589,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -30586,6 +31674,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape": {
@@ -30710,6 +31801,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_get_stream_load_state.test_get_stream_load_state": {
@@ -30749,6 +31843,9 @@
       "EMPTY_SET_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -31097,6 +32194,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_load_with_transfer_encoding.test_load_with_transfer_encoding": {
@@ -31265,6 +32365,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast": {
@@ -31323,6 +32426,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_stream_load_empty_field_as_null.test_stream_load_empty_field_as_null": {
@@ -31374,6 +32480,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_stream_load_err_log_limit.test_stream_load_err_log_limit": {
@@ -31527,6 +32636,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -31619,6 +32731,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_stream_load_with_aes_encrypt.test_stream_load_with_aes_encrypt": {
@@ -31675,6 +32790,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "load_p0.stream_load.test_stream_load_with_filtered_rows.test_stream_load_with_filtered_rows": {
@@ -31802,6 +32920,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "mysql_compatibility_p0.metadata.metadata": {
@@ -32070,6 +33191,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -32178,6 +33302,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -32260,6 +33387,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -32408,6 +33538,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.authorization.column_authorization.column_authorization": {
@@ -32423,6 +33556,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -32572,6 +33708,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.cache.mv_with_sql_cache.mv_with_sql_cache": {
@@ -32594,6 +33733,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.get_stream_load_record",
@@ -32637,6 +33779,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.cache.prepare_stmt_with_sql_cache.prepare_stmt_with_sql_cache": {
@@ -32654,6 +33799,9 @@
       "DATA_GEN_SCAN_NODE",
       "META_SCAN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "result": [
+      "binary_rows"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -32683,6 +33831,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.colocate.test_multi_cast_colocate.test_multi_cast_colocate": {
@@ -33298,6 +34449,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.ddl.describe.describe_command.describe_command": {
@@ -33373,6 +34527,9 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
     ],
+    "schema_table": [
+      "partitions"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -33439,6 +34596,10 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "global_variables",
+      "session_variables"
     ],
     "sink": [
       "RESULT_SINK"
@@ -33511,6 +34672,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.ddl.use.use_command_nereids.use_command_nereids": {
@@ -33550,6 +34714,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -33582,6 +34749,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.delete.delete_cte_ck.nereids_delete_cte_ck": {
@@ -33609,6 +34779,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -33641,6 +34814,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.delete.delete_using.nereids_delete_using": {
@@ -33662,6 +34838,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -33694,6 +34873,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.delta_row.delta_row.delta_row": {
@@ -33729,6 +34911,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -34116,6 +35301,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -34761,6 +35949,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -34829,6 +36020,9 @@
       "REPEAT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -34949,6 +36143,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -35094,6 +36291,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -35184,6 +36384,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -35229,6 +36432,9 @@
       "TINYINT",
       "VARCHAR",
       "VARIANT"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.hint.test_leading.test_leading": {
@@ -35451,6 +36657,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.insert_auth.nereids_insert_auth": {
@@ -35495,6 +36704,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.insert_cte.insert_cte": {
@@ -35513,6 +36725,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -35545,6 +36760,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.insert_values.nereids_insert_into_values": {
@@ -35570,6 +36788,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -35633,6 +36854,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -35667,6 +36891,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.partial_update_complex.nereids_partial_update_native_insert_stmt_complex": {
@@ -35689,6 +36916,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -35722,6 +36952,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.partial_update_seq_col.nereids_partial_update_native_insert_seq_col": {
@@ -35742,6 +36975,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -35795,6 +37031,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -35836,6 +37075,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.type_cast_duplicate.nereids_insert_duplicate": {
@@ -35899,6 +37141,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.type_cast_unique.nereids_insert_unique_type_cast": {
@@ -35920,6 +37165,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -35961,6 +37209,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.insert_into_table.unique.nereids_insert_unique": {
@@ -35982,6 +37233,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -36023,6 +37277,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.intersect.test_intersect.test_intersect": {
@@ -36034,6 +37291,9 @@
       "INTERSECT_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -36089,6 +37349,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -36574,6 +37837,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -36609,6 +37875,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -36648,6 +37917,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -36724,6 +37996,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -36757,6 +38032,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -36823,6 +38101,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -37046,6 +38327,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -37111,6 +38395,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -37170,6 +38457,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -37231,6 +38521,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -37294,6 +38587,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -37366,6 +38662,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -37489,6 +38788,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -37606,6 +38908,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -37639,6 +38944,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.join.test_mark_join.test_mark_join": {
@@ -38051,6 +39359,9 @@
       "SELECT_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -38124,6 +39435,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -38341,6 +39655,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -38801,6 +40118,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -38857,6 +40177,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -39238,6 +40561,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -39616,6 +40942,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -39647,6 +40976,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.session_variable.test_variable_between.test_variable_between": {
@@ -39700,6 +41032,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -40050,6 +41385,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.show.test_nereids_show_data_skew.test_nereids_show_data_skew": {
@@ -40371,6 +41709,9 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "columns"
+    ],
     "sink": [
       "RESULT_SINK"
     ],
@@ -40481,6 +41822,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.sql_functions.aggregate_functions.test_aggregate_collect.test_aggregate_collect": {
@@ -40540,6 +41884,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.sql_functions.aggregate_functions.test_aggregate_percentile_no_cast.test_aggregate_percentile_no_cast": {
@@ -40622,6 +41969,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -40681,6 +42031,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -40726,6 +42079,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -40829,6 +42185,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -40881,6 +42240,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -40939,6 +42301,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -41000,6 +42365,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -41047,6 +42415,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -41101,6 +42472,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -41296,6 +42670,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -41415,6 +42792,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -41976,6 +43356,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -42109,6 +43492,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -42210,6 +43596,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -42447,6 +43836,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -42538,6 +43930,9 @@
       "TABLE_FUNCTION_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -42596,6 +43991,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -42793,6 +44191,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -42849,6 +44250,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -42878,6 +44282,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.sql_functions.window_functions.test_ntile_function.test_ntile_function": {
@@ -43028,6 +44435,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -43206,6 +44616,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -43244,6 +44657,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.stats.col_stats.column_stats.column_stats": {
@@ -43430,6 +44846,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.stats.col_stats.hot_value_str_to_date.hot_value_str_to_date": {
@@ -43620,6 +45039,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.get_stream_load_record",
       "BackendService.submit_tasks",
@@ -43657,6 +45079,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.stats.partition_key_minmax.partition_key_minmax": {
@@ -43838,6 +45263,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.subquery.test_correlated_filter_removed.test_correlated_filter_removed": {
@@ -43966,6 +45394,10 @@
       "TABLE_FUNCTION_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS",
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -44048,6 +45480,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -44176,6 +45611,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "columns",
+      "tables"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -44232,6 +45671,17 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "character_sets",
+      "collations",
+      "columns",
+      "global_variables",
+      "schemata",
+      "session_variables",
+      "tables",
+      "user_privileges",
+      "views"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -44267,6 +45717,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -44519,6 +45972,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -44888,6 +46344,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.test_unlock_tables_command.test_unlock_tables_command": {
@@ -44952,6 +46411,9 @@
       "SELECT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -45041,6 +46503,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -45122,6 +46587,9 @@
       "OLAP_SCAN_NODE",
       "SELECT_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.exec_plan_fragment_prepare",
@@ -45286,6 +46754,10 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS",
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -45352,6 +46824,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -45384,6 +46859,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.update.update_unique_table.update_unique_table": {
@@ -45409,6 +46887,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -45441,6 +46922,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.variables_persist.load.load": {
@@ -45612,6 +47096,9 @@
       "PBackendService.update_cache",
       "http.stream_load"
     ],
+    "schema_table": [
+      "session_variables"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -45635,6 +47122,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.variables_persist.test_sync_mv.test_sync_mv": {
@@ -45834,6 +47324,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "nereids_p0.wide_table.sql.wide_table.wide_table": {
@@ -45894,6 +47387,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -45942,6 +47438,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -45998,6 +47497,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -46041,6 +47543,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "point_query_p0.test_point_query_partition.test_point_query_partition": {
@@ -46153,6 +47658,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -46225,6 +47733,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -46264,6 +47775,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "point_query_p0.test_rowstore_ck.test_rowstore_ck": {
@@ -46305,6 +47819,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -46340,6 +47857,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "point_query_p0.test_rowstore_query.test_rowstore": {
@@ -46356,6 +47876,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -46401,6 +47924,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -46472,6 +47998,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -46507,6 +48036,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "point_query_p0.test_update.test_update": {
@@ -46525,6 +48057,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -46555,6 +48090,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.aggregate.agg_on_view.agg_on_view": {
@@ -46679,6 +48217,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -46724,6 +48265,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.aggregate.aggregate_function_kurt.aggregate_function_kurt": {
@@ -46777,6 +48321,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.aggregate.aggregate_function_skew.aggregate_function_skew": {
@@ -46830,6 +48377,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.aggregate.aggregate_groupby_null.aggregate_groupby_null": {
@@ -46853,6 +48403,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -47021,6 +48574,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.get_stream_load_record",
       "BackendService.submit_tasks",
@@ -47154,6 +48710,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -47257,6 +48817,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -47311,6 +48874,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -47878,6 +49444,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -48068,6 +49638,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -48307,6 +49881,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -48327,6 +49905,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.aggregate.test_regr_slope.test_regr_slope": {
@@ -48385,6 +49966,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.bi_p0.datagrip.datagrip": {
@@ -48424,6 +50008,22 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "column_privileges",
+      "columns",
+      "events",
+      "key_column_usage",
+      "parameters",
+      "partitions",
+      "procs_priv",
+      "routines",
+      "statistics",
+      "table_constraints",
+      "table_privileges",
+      "tables",
+      "triggers",
+      "views"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -48482,6 +50082,11 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "columns",
+      "tables",
+      "user"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -48520,6 +50125,10 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -48582,6 +50191,9 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
     ],
+    "schema_table": [
+      "active_queries"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -48603,6 +50215,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.cache.query_cache.query_cache": {
@@ -48628,6 +50243,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -48703,6 +50321,10 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
       "http.stream_load"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -48837,6 +50459,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -48866,6 +50491,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.dry_run.dry_run.dry_run": {
@@ -49076,6 +50704,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -49165,6 +50796,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.grouping_sets.test_grouping_sets.test_grouping_sets": {
@@ -49199,6 +50833,9 @@
       "REPEAT_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -49239,6 +50876,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.having.having_between.test_having_between": {
@@ -49368,6 +51008,9 @@
       "EXCHANGE_NODE",
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -49701,6 +51344,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -49804,6 +51450,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -49910,6 +51559,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -49979,6 +51631,10 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
       "http.stream_load"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -50158,6 +51814,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "MULTI_CAST_DATA_STREAM_SINK",
@@ -50246,6 +51906,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -50278,6 +51941,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -50323,6 +51989,9 @@
       "EXCHANGE_NODE",
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -50399,6 +52068,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -50436,6 +52108,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -50498,6 +52173,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -50540,6 +52219,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -50761,6 +52443,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -50835,6 +52521,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.join.test_join.test_join": {
@@ -50889,6 +52578,10 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS",
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -50905,6 +52598,10 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache",
       "http.stream_load"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51061,6 +52758,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -51183,6 +52883,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -51233,6 +52937,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51349,6 +53056,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -51454,6 +53164,9 @@
       "SCHEMA_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -51464,6 +53177,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51504,6 +53220,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -51573,6 +53292,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51695,6 +53418,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -51747,6 +53474,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -51968,6 +53698,9 @@
       "SELECT_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "FrontendService.fetchSchemaTableData",
       "PBackendService.cancel_plan_fragment",
@@ -51977,6 +53710,10 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -52042,6 +53779,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -52121,6 +53861,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.large_wide_table.large_wide_table.large_wide_table": {
@@ -52153,6 +53896,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -52632,6 +54379,10 @@
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -52725,6 +54476,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -52783,6 +54537,9 @@
       "SCHEMA_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "FrontendService.fetchSchemaTableData",
       "PBackendService.cancel_plan_fragment",
@@ -52791,6 +54548,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -52932,6 +54692,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "sql_block_rule_status"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -52978,6 +54741,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks",
+      "view_dependency"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -53146,6 +54913,9 @@
     "plan_node": [
       "UNION_NODE"
     ],
+    "result": [
+      "binary_rows"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -53189,6 +54959,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -53203,6 +54977,9 @@
       "INVALID_TYPE",
       "STRING",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.session_variable.test_skip_missing_version.test_skip_missing_version": {
@@ -53282,6 +55059,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -53292,6 +55072,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -53343,6 +55127,9 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "session_variables"
+    ],
     "sink": [
       "RESULT_SINK"
     ],
@@ -53373,6 +55160,9 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "session_variables"
+    ],
     "sink": [
       "RESULT_SINK"
     ],
@@ -53398,6 +55188,9 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "session_variables"
     ],
     "sink": [
       "RESULT_SINK"
@@ -53831,6 +55624,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -53953,6 +55750,9 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "OLAP_TABLE_SINK",
@@ -54114,6 +55914,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.aggregate_functions.test_aggregate_bit.test_aggregate_bit": {
@@ -54150,6 +55953,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -54171,6 +55977,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.aggregate_functions.test_aggregate_collect.test_aggregate_collect": {
@@ -54215,6 +56024,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -54243,6 +56056,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.aggregate_functions.test_aggregate_histogram.test_aggregate_histogram": {
@@ -54284,6 +56100,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -54310,6 +56129,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.aggregate_functions.test_aggregate_push_down_agg.test_aggregate_push_down_agg": {
@@ -54423,6 +56245,9 @@
       "AGGREGATION_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -54652,6 +56477,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -54722,6 +56550,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -54794,6 +56625,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.cast_function.test_cast_with_scale_type.test_cast_with_scale_type": {
@@ -54863,6 +56697,9 @@
       "SCHEMA_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "FrontendService.fetchSchemaTableData",
       "PBackendService.cancel_plan_fragment",
@@ -54871,6 +56708,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -54916,6 +56756,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -55061,6 +56904,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -55113,6 +56959,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -55168,6 +57017,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -55230,6 +57082,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "FrontendService.fetchSchemaTableData",
       "PBackendService.cancel_plan_fragment",
@@ -55239,6 +57094,9 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -55278,6 +57136,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -55333,6 +57194,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -55489,6 +57353,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.datetime_functions.test_date_floor_ceil.test_date_floor_ceil": {
@@ -55521,6 +57388,9 @@
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries"
+    ],
     "sink": [
       "RESULT_SINK"
     ],
@@ -55551,6 +57421,9 @@
       "SCHEMA_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -55563,6 +57436,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "http.stream_load"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -55653,6 +57529,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -55714,6 +57593,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -55826,6 +57708,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -55847,6 +57732,9 @@
       "TIMESTAMPTZ",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.datetime_functions.test_time_diff.test_time_diff": {
@@ -55869,6 +57757,10 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "RESULT_SINK"
@@ -55911,6 +57803,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -56031,6 +57926,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -56090,6 +57988,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -56145,6 +58046,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -56213,6 +58117,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -56319,6 +58226,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -56350,6 +58260,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.ip_functions.test_ipv6_num_to_string_function.test_ipv6_num_to_string_function": {
@@ -56372,6 +58285,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -56422,6 +58338,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -56484,6 +58403,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -56660,6 +58582,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.math_functions.test_format_round.test_format_round": {
@@ -56813,6 +58738,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -57045,6 +58974,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -57109,6 +59042,10 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS",
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -57148,6 +59085,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.math_functions.test_triangle.test_triangle": {
@@ -58218,6 +60158,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -58327,6 +60271,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -58382,6 +60330,9 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -58691,6 +60642,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.string_functions.test_next_day.test_next_day": {
@@ -58745,6 +60699,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.string_functions.test_parse_data_size_nullable.test_parse_data_size_nullable": {
@@ -58836,6 +60793,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -58856,6 +60817,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.string_functions.test_regexp_chinese.test_regexp_chinese": {
@@ -58978,6 +60942,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -59039,6 +61006,9 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "OLAP_TABLE_SINK",
@@ -59083,6 +61053,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -59154,6 +61127,10 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -59320,6 +61297,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -59471,6 +61451,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.string_functions.test_url_decode.test_url_decode": {
@@ -59665,6 +61648,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.struct_functions.test_struct_functions_by_literal.test_struct_functions_by_literal": {
@@ -59798,6 +61784,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.test_template_three_args.test_template_three_args": {
@@ -59851,6 +61840,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.test_template_two_args.test_template_two_args": {
@@ -59909,6 +61901,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.sql_functions.test_years_add.test_years_add": {
@@ -61120,6 +63115,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -61278,6 +63276,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -61289,6 +63290,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -61317,6 +63322,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "query_p0.stats.query_stats_test.query_stats_test": {
@@ -61332,6 +63340,9 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "backend_active_tasks"
     ],
     "sink": [
       "RESULT_SINK"
@@ -61383,6 +63394,9 @@
       "SELECT_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "FrontendService.fetchSchemaTableData",
       "PBackendService.cancel_plan_fragment",
@@ -61391,6 +63405,10 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -61434,6 +63452,9 @@
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "metadata_name_ids"
     ],
     "sink": [
       "RESULT_SINK"
@@ -61489,6 +63510,13 @@
       "PBackendService.fetch_data",
       "http.stream_load"
     ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks",
+      "columns",
+      "tables",
+      "workload_group_resource_usage"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -61539,6 +63567,11 @@
       "PBackendService.exec_plan_fragment_prepare",
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks",
+      "rowsets"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -61609,6 +63642,60 @@
       "PBackendService.exec_plan_fragment_start",
       "PBackendService.fetch_data"
     ],
+    "schema_table": [
+      "active_queries",
+      "authentication_integrations",
+      "backend_active_tasks",
+      "backend_configuration",
+      "backend_kerberos_ticket_cache",
+      "backend_ms_rpc_table_throttlers",
+      "backend_tablets",
+      "be_compaction_tasks",
+      "blackhole",
+      "catalog_meta_cache_statistics",
+      "character_sets",
+      "collations",
+      "column_data_sizes",
+      "column_privileges",
+      "column_statistics",
+      "columns",
+      "engines",
+      "events",
+      "file_cache_info",
+      "file_cache_statistics",
+      "files",
+      "global_variables",
+      "key_column_usage",
+      "load_jobs",
+      "metadata_name_ids",
+      "parameters",
+      "partitions",
+      "processlist",
+      "profiling",
+      "referential_constraints",
+      "role_mappings",
+      "routine_load_jobs",
+      "routines",
+      "rowsets",
+      "schema_privileges",
+      "schemata",
+      "session_variables",
+      "sql_block_rule_status",
+      "statistics",
+      "table_constraints",
+      "table_options",
+      "table_privileges",
+      "table_properties",
+      "tables",
+      "triggers",
+      "user_privileges",
+      "view_dependency",
+      "views",
+      "workload_group_privileges",
+      "workload_group_resource_usage",
+      "workload_groups",
+      "workload_policy"
+    ],
     "sink": [
       "DATA_STREAM_SINK",
       "RESULT_SINK"
@@ -61650,6 +63737,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "AGG_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -61797,6 +63887,9 @@
       "PARTITION_SORT_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -61938,6 +64031,9 @@
       "OLAP_TABLE_SINK",
       "RESULT_SINK"
     ],
+    "sort": [
+      "two_phase_read"
+    ],
     "task": [
       "CREATE",
       "PUBLISH_VERSION",
@@ -61993,6 +64089,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -62040,6 +64139,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -62113,6 +64215,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.fetchSchemaTableData",
@@ -62124,6 +64229,10 @@
       "PBackendService.fetch_cache",
       "PBackendService.fetch_data",
       "PBackendService.update_cache"
+    ],
+    "schema_table": [
+      "active_queries",
+      "backend_active_tasks"
     ],
     "sink": [
       "DATA_STREAM_SINK",
@@ -62266,6 +64375,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -62624,6 +64736,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "AGG_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -62668,6 +64783,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -62710,6 +64828,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -62871,6 +64992,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -62902,6 +65026,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_add_rename_column.test_add_rename_column": {
@@ -62918,6 +65045,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -62948,6 +65078,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_alter_colocate_table.test_alter_colocate_table": {
@@ -63012,6 +65145,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_alter_table_column_nullable.test_alter_table_column_nullable": {
@@ -63068,6 +65204,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_alter_table_column_rename.test_alter_table_column_rename": {
@@ -63114,6 +65253,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_alter_table_column_with_delete.test_alter_table_column_with_delete": {
@@ -63132,6 +65274,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -63164,6 +65309,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_alter_uniq_null.test_alter_uniq_null": {
@@ -63210,6 +65358,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_delete_schema_change.test_delete_schema_change": {
@@ -63265,6 +65416,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_delete_schema_change_2.test_delete_schema_chang_2": {
@@ -63319,6 +65473,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_keys_schema_change.test_dup_keys_schema_change": {
@@ -63380,6 +65537,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_mv_schema_change.test_dup_mv_schema_change": {
@@ -63441,6 +65601,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_rollup_schema_change.test_dup_rollup_schema_change": {
@@ -63502,6 +65665,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_schema_key_change_modify.test_dup_schema_key_change_modify": {
@@ -63564,6 +65730,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_schema_key_change_modify1.test_dup_schema_key_change_modify1": {
@@ -63622,6 +65791,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_schema_key_drop.test_dup_schema_key_drop": {
@@ -63687,6 +65859,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_schema_value_modify.test_dup_schema_value_modify": {
@@ -63711,6 +65886,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -63752,6 +65930,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_dup_vals_schema_change.test_dup_vals_schema_change": {
@@ -63811,6 +65992,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_enable_light_schema_change.test_enable_light_schema_change": {
@@ -63828,6 +66012,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -63867,6 +66054,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_light_schema_change_default.test_lsc_default": {
@@ -63931,6 +66121,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_move_column_with_cast.test_move_column_with_cast": {
@@ -63978,6 +66171,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_new_schema_change.test_new_schema_change": {
@@ -64013,6 +66209,9 @@
       "INT",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_random_ordered_bucket_columns.test_random_ordered_bucket_columns": {
@@ -64030,6 +66229,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64061,6 +66263,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_rename_single_col_tbl.test_rename_single_col_tbl": {
@@ -64100,6 +66305,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_schema_change.test_schema_change": {
@@ -64119,6 +66327,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64153,6 +66364,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_schema_change_auto_inc.test_schema_change_auto_inc": {
@@ -64173,6 +66387,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64206,6 +66423,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_schema_change_mow_with_empty_rowset.test_schema_change_mow_with_empty_rowset": {
@@ -64228,6 +66448,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64268,6 +66491,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_schema_change_with_empty_rowset.test_schema_change_with_empty_rowset": {
@@ -64292,6 +66518,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64336,6 +66565,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_type_length_change.test_type_length_change": {
@@ -64386,6 +66618,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_delete_sign_schema_change.test_uniq_delete_sign_schema_change": {
@@ -64403,6 +66638,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64434,6 +66672,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_keys_schema_change.test_uniq_keys_schema_change": {
@@ -64455,6 +66696,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64492,6 +66736,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_mv_schema_change.test_uniq_mv_schema_change": {
@@ -64513,6 +66760,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64552,6 +66802,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_rollup_schema_change.test_uniq_rollup_schema_change": {
@@ -64573,6 +66826,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64613,6 +66869,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_seq_col_schema_change.test_uniq_seq_col_schema_change": {
@@ -64630,6 +66889,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64661,6 +66923,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_uniq_vals_schema_change.test_uniq_vals_schema_change": {
@@ -64682,6 +66947,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64719,6 +66987,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_unique_schema_key_change_drop.test_unique_schema_key_change_drop": {
@@ -64793,6 +67064,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -64833,6 +67107,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_update_schema_change.test_update_schema_change": {
@@ -64852,6 +67129,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -64890,6 +67170,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "schema_change_p0.test_varchar_schema_change.test_varchar_schema_change": {
@@ -64957,6 +67240,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.flexible.downgrade.load.test_flexible_partial_update_downgrade_base_data": {
@@ -65003,6 +67289,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.flexible.legacy.test_f_2pc_schema_change.test_f_2pc_schema_change": {
@@ -65019,6 +67308,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65057,6 +67349,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.flexible.publish.test_auto_inc_replica_consistency.test_auto_inc_replica_consistency": {
@@ -65077,6 +67372,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65136,6 +67434,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65171,6 +67472,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.flexible.test_flexible_partial_update_default_value.test_flexible_partial_update_default_value": {
@@ -65196,6 +67500,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65232,6 +67539,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.flexible.upgrade.load.test_flexible_partial_update_upgrade_base_data": {
@@ -65269,6 +67579,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.key_bounds.test_key_bounds_truncation_basic.test_key_bounds_truncation_basic": {
@@ -65328,6 +67641,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65382,6 +67698,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65435,6 +67754,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65471,6 +67793,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_p_seq_publish_read_from_old.test_p_seq_publish_read_from_old": {
@@ -65488,6 +67813,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65541,6 +67869,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65576,6 +67907,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_after_delete.test_partial_update_after_delete": {
@@ -65592,6 +67926,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65622,6 +67959,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_auto_inc.test_partial_update_auto_inc": {
@@ -65644,6 +67984,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65697,6 +68040,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65746,6 +68092,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65781,6 +68130,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_delete_sign.test_partial_update_delete_sign": {
@@ -65798,6 +68150,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65849,6 +68204,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -65906,6 +68264,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65954,6 +68315,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -65983,6 +68347,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_merge_type.test_partial_update_merge_type": {
@@ -66001,6 +68368,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66035,6 +68405,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_mow_with_sync_mv.test_partial_update_mow_with_sync_mv": {
@@ -66103,6 +68476,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66132,6 +68508,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_native_insert_stmt_complex.test_partial_update_native_insert_stmt_complex": {
@@ -66154,6 +68533,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66186,6 +68568,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_only_keys.test_partial_update_only_keys": {
@@ -66205,6 +68590,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66236,6 +68624,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_orc.test_primary_key_partial_update_orc": {
@@ -66252,6 +68643,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66303,6 +68697,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66352,6 +68749,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66403,6 +68803,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66439,6 +68842,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_seq_col.test_primary_key_partial_update_seq_col": {
@@ -66459,6 +68865,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.get_stream_load_record",
@@ -66517,6 +68926,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66571,6 +68983,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66602,6 +69017,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_seq_read_from_old.test_partial_update_seq_read_from_old": {
@@ -66621,6 +69039,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66652,6 +69073,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_seq_type.test_primary_key_partial_update_seq_type": {
@@ -66672,6 +69096,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66730,6 +69157,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66785,6 +69215,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -66842,6 +69275,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66896,6 +69332,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -66925,6 +69364,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_partial_update_with_row_column.test_primary_key_partial_update_with_row_column": {
@@ -66947,6 +69389,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -67000,6 +69445,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -67029,6 +69477,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.partial_update.test_update_on_current_timestamp.test_mow_update_on_current_timestamp": {
@@ -67050,6 +69501,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -67102,6 +69556,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -67135,6 +69592,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.ssb_unique_load_zstd.four.load_four_step.load_four_step": {
@@ -67157,6 +69617,9 @@
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -67190,6 +69653,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.ssb_unique_load_zstd.one.load_one_step.load_one_step": {
@@ -67208,6 +69674,9 @@
       "AGGREGATION_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -67274,6 +69743,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -67308,6 +69780,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.ssb_unique_load_zstd.two.load_two_step.load_two_step": {
@@ -67327,6 +69802,9 @@
       "EMPTY_SET_NODE",
       "EXCHANGE_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -67361,6 +69839,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.ssb_unique_sql_zstd.load.load": {
@@ -67406,6 +69887,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67447,6 +69931,9 @@
       "EXCHANGE_NODE",
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -67490,6 +69977,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -67531,6 +70021,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -67574,6 +70067,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment",
@@ -67616,6 +70112,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67657,6 +70156,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -67702,6 +70204,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67744,6 +70249,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67783,6 +70291,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -67826,6 +70337,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67867,6 +70381,9 @@
       "HASH_JOIN_NODE",
       "OLAP_SCAN_NODE",
       "SORT_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
@@ -67910,6 +70427,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "PBackendService.cancel_plan_fragment",
       "PBackendService.exec_plan_fragment_prepare",
@@ -67945,6 +70465,9 @@
       "OLAP_SCAN_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -67974,6 +70497,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.test_mow_time_series_compaction.test_mow_time_series_compaction": {
@@ -68021,6 +70547,9 @@
     "plan_node": [
       "OLAP_SCAN_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -68080,6 +70609,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -68115,6 +70647,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.test_primary_key_simple_case.test_primary_key_simple_case": {
@@ -68138,6 +70673,9 @@
       "OLAP_SCAN_NODE",
       "SORT_NODE",
       "UNION_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
@@ -68189,6 +70727,9 @@
       "SORT_NODE",
       "UNION_NODE"
     ],
+    "read": [
+      "UNIQUE_KEYS"
+    ],
     "rpc": [
       "BackendService.submit_tasks",
       "FrontendService.finishTask",
@@ -68218,6 +70759,9 @@
       "STRING",
       "TINYINT",
       "VARCHAR"
+    ],
+    "write": [
+      "INSERT_SELECT"
     ]
   },
   "unique_with_mow_p0.test_unique_mow_sequence.test_unique_mow_sequence": {
@@ -68234,6 +70778,9 @@
     ],
     "plan_node": [
       "OLAP_SCAN_NODE"
+    ],
+    "read": [
+      "UNIQUE_KEYS"
     ],
     "rpc": [
       "BackendService.submit_tasks",
