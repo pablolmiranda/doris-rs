@@ -337,3 +337,8 @@ fn shapes_a_e_h_match_the_reference() {
 fn shapes_b_c_match_the_reference() {
     check(&['A', 'B', 'C', 'E', 'H']);
 }
+
+#[test]
+fn shapes_d_i_j_k_match_the_reference() {
+    check(&['A', 'B', 'C', 'D', 'E', 'H', 'I', 'J', 'K']);
+}

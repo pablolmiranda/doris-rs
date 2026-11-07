@@ -339,6 +339,10 @@ fn check_node(n: &TPlanNode, children: usize) -> Result<(), ExecError> {
             check_exprs(&s.sort_info.ordering_exprs, false)?;
             check_exprs(s.sort_info.sort_tuple_slot_exprs.iter().flatten(), false)?;
         }
+        P::AGGREGATION_NODE => {
+            let a = n.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
+            crate::aggregate::Aggregation::from_thrift(a)?;
+        }
         P::MATERIALIZATION_NODE => {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
             check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;

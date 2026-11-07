@@ -96,6 +96,7 @@ impl Instance<'_> {
             P::UNION_NODE => self.constants(t)?,
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
+            P::AGGREGATION_NODE => self.aggregate(t)?,
             P::MATERIALIZATION_NODE => self.materialize(t)?,
             _ => {
                 return Err(ExecError::Unsupported {
@@ -284,6 +285,15 @@ impl Instance<'_> {
             return Ok(input);
         }
         Ok(Chunk { block: self.typed(input.block, &slots)?, slots })
+    }
+
+    fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let a = t.node.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        let block = crate::aggregate::Aggregation::from_thrift(a)?.run(&child)?;
+        let tuple = if a.need_finalize { a.output_tuple_id } else { a.intermediate_tuple_id };
+        let slots = self.plan.desc.tuple_slots(tuple)?.to_vec();
+        Ok(Chunk { block: self.typed(block, &slots)?, slots })
     }
 
     fn sort(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
