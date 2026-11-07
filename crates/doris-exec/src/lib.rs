@@ -2,11 +2,13 @@
 //! (`INSERT … VALUES`, stream load), evaluating their constant and cast expressions, and the
 //! OLAP table sink that routes rows to tablets, writes rowsets and commits them.
 
+pub mod block;
 pub mod error_log;
 pub mod expr;
 pub mod file_scan;
 pub mod fragment;
 pub mod route;
+pub mod row_text;
 pub mod sink;
 pub mod value;
 
