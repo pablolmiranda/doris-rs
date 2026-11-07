@@ -229,7 +229,9 @@ fn json_path<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json:
 /// object where no slot matched is filtered.
 fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool], body: &[u8]) -> Vec<Result<SourceRow, RowError>> {
     let attrs = params.file_attributes.clone().unwrap_or_default();
-    let paths: Option<Vec<String>> = attrs.jsonpaths.as_deref().filter(|s| !s.is_empty()).and_then(|s| serde_json::from_str(s).ok());
+    // `[]` is no jsonpaths: fields are found by column name
+    let paths: Option<Vec<String>> =
+        attrs.jsonpaths.as_deref().filter(|s| !s.is_empty()).and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).filter(|p| !p.is_empty());
     let root = attrs.json_root.clone().filter(|s| !s.is_empty());
     let text = String::from_utf8_lossy(body);
     let mut docs: Vec<Result<serde_json::Value, RowError>> = Vec::new();

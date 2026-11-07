@@ -314,7 +314,11 @@ impl Instance<'_> {
     fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let a = t.node.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
         let child = self.child(t, 0)?;
-        let block = crate::aggregate::Aggregation::from_thrift(a)?.run(&child)?;
+        let mut block = crate::aggregate::Aggregation::from_thrift(a)?.run(&child)?;
+        // the FE pushed the limit of an ORDER BY on the group keys into the aggregation
+        if let (Some(info), Some(l)) = (&a.agg_sort_info_by_group_key, limit(t.node.limit)) {
+            block = crate::aggregate::top_groups(block, info, l);
+        }
         let tuple = if a.need_finalize { a.output_tuple_id } else { a.intermediate_tuple_id };
         let slots = self.plan.desc.tuple_slots(tuple)?.to_vec();
         Ok(Chunk { block: self.typed(block, &slots)?, slots })

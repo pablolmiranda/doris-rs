@@ -223,3 +223,17 @@ fn an_unknown_aggregate_is_refused() {
     let err = AggSpec::from_expr(&e).expect_err("ndv is not supported").to_string();
     assert!(err.contains("function ndv"), "{err}");
 }
+
+#[test]
+fn a_limit_with_a_group_key_order_keeps_the_top_groups() {
+    // SELECT count(*), k ... GROUP BY k ORDER BY k DESC LIMIT 2: the FE pushes the limit into the
+    // aggregation with agg_sort_info_by_group_key; the groups kept are the top keys, not any two
+    use doris_exec::aggregate::top_groups;
+    use doris_thrift::gen::plan_nodes::TSortInfo;
+    let int = ty(T::INT);
+    let rows: Vec<Vec<Datum>> = [1, 3, 0, 4, 2].iter().map(|k| vec![Datum::Int(*k), Datum::Int(5)]).collect();
+    let block = Block { types: vec![ct(&int), ct(&ty(T::BIGINT))], rows };
+    let info = TSortInfo::new(vec![slot(7, int.clone())], vec![false], vec![false], None, None);
+    let kept = top_groups(block, &info, 2);
+    assert_eq!(kept.rows, vec![vec![Datum::Int(4), Datum::Int(5)], vec![Datum::Int(3), Datum::Int(5)]]);
+}

@@ -236,7 +236,9 @@ impl Driver<'_> {
         let mut want = self.want[&id].clone();
         want.sort_by_key(|r| (r.status.status_code == 0, r.packet_seq.unwrap_or(0), r.eos == Some(true)));
         let reference = outcome(&want);
-        let m = compare(&r.suite, query, ordered(&plan), &got, &reference);
+        // REPLAY_EXACT: compare every query's row order too (the strict gate compares it)
+        let exact = std::env::var_os("REPLAY_EXACT").is_some();
+        let m = compare(&r.suite, query, exact || ordered(&plan), &got, &reference);
         self.out.extend(m);
     }
 }

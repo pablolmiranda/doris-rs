@@ -347,3 +347,36 @@ fn a_gzip_body_that_expands_past_the_limit_fails_and_rolls_back() {
     assert!(reply_value(&r.reply, "Message").contains("streaming_load_max_mb"), "{}", r.reply);
     assert!(matches!(r.calls[..], [LoadCall::Begin(_), LoadCall::Put(_), LoadCall::Rollback(_)]), "{:?}", r.calls);
 }
+
+#[test]
+fn empty_jsonpaths_match_columns_by_name() {
+    // `jsonpaths: []` is no jsonpaths: fields are found by column name (load_json_with_jsonpath)
+    let s = stream_loads()
+        .into_iter()
+        .find(|s| {
+            matches!(s.end, LoadEnd::Commit(..))
+                && !noise(s)
+                && s.headers.get("format").is_some_and(|f| f.eq_ignore_ascii_case("json"))
+                && s.headers.get("jsonpaths").is_none_or(|p| p.is_empty())
+                && run(s).is_some_and(|r| reply_value(&r.reply, "NumberLoadedRows") != "0")
+        })
+        .expect("a committed JSON load without jsonpaths");
+    let plain = run(&s).unwrap();
+    let mut empty = s.clone();
+    empty.headers.insert("jsonpaths".into(), "[]".into());
+    let params = empty.put.1.pipeline_params.as_mut().unwrap();
+    let ranges = params.local_params.iter_mut().flatten().flat_map(|l| l.per_node_scan_ranges.values_mut()).flatten();
+    let in_ranges = ranges.filter_map(|r| r.scan_range.ext_scan_range.as_mut().and_then(|e| e.file_scan_range.as_mut()).and_then(|f| f.params.as_mut()));
+    let mut set = 0;
+    for p in params.file_scan_params.iter_mut().flat_map(|m| m.values_mut()).chain(in_ranges) {
+        if let Some(a) = p.file_attributes.as_mut() {
+            a.jsonpaths = Some("[]".into());
+            set += 1;
+        }
+    }
+    assert!(set > 0, "no file attributes to set");
+    let r = run(&empty).unwrap();
+    for key in ["Status", "NumberTotalRows", "NumberLoadedRows", "NumberFilteredRows"] {
+        assert_eq!(reply_value(&r.reply, key), reply_value(&plain.reply, key), "{key}: {}", r.reply);
+    }
+}

@@ -679,3 +679,10 @@ fn num_datum(v: Num, ret: &ColType) -> Result<Datum, ExecError> {
         }
     })
 }
+
+/// An aggregation's limit with `agg_sort_info_by_group_key`: the `limit` groups first in that
+/// order of the leading group keys (`AggSinkOperatorX`'s sort limit), not any `limit` groups.
+pub fn top_groups(block: Block, info: &doris_thrift::gen::plan_nodes::TSortInfo, limit: usize) -> Block {
+    let keys = crate::sort::keys(info, &(0..info.is_asc_order.len()).collect::<Vec<_>>());
+    crate::sort::top_n(block, &keys, 0, Some(limit))
+}
