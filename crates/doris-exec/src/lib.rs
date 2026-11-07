@@ -5,9 +5,12 @@
 pub mod block;
 pub mod error_log;
 pub mod eval;
+pub mod exchange;
 pub mod expr;
 pub mod file_scan;
 pub mod fragment;
+pub mod pipeline;
+pub mod query;
 pub mod route;
 pub mod row_text;
 pub mod sink;
@@ -23,6 +26,15 @@ pub enum ExecError {
     /// A body over the BE's size limit (`EXCEEDED_LIMIT`).
     #[error("{0}")]
     ExceededLimit(String),
+    /// A read the storage refused or failed.
+    #[error("{0}")]
+    Storage(#[from] doris_storage::StorageError),
+    /// The query was cancelled, by the FE or by another of its instances failing.
+    #[error("{0}")]
+    Cancelled(String),
+    /// A query that failed while it ran (an overflow, a malformed value).
+    #[error("{0}")]
+    Internal(String),
 }
 
 /// A row the sink filters: the C++ error message, and the source line (empty for VALUES).

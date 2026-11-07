@@ -16,7 +16,7 @@ fn start() -> (tokio::runtime::Runtime, SocketAddr, SocketAddr) {
         let brpc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addrs = (http.local_addr().unwrap(), brpc.local_addr().unwrap());
         tokio::spawn(doris_be::http::serve(http, None));
-        tokio::spawn(doris_be::brpc::serve(brpc, None));
+        tokio::spawn(doris_be::brpc::serve(brpc, Default::default()));
         addrs
     });
     (rt, http, brpc)

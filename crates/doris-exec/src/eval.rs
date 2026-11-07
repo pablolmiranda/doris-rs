@@ -488,3 +488,20 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
         .collect();
     Ok(Block { types, rows })
 }
+
+fn same_storage(a: &ColType, b: &ColType) -> bool {
+    let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
+    (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A value of type `from` as a value of type `to` (a slot's type), cast when they differ.
+pub fn coerce(d: Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    if d == Datum::Null || same_storage(from, to) || to.ptype == T::NULL_TYPE {
+        return Ok(d);
+    }
+    let v = expr::cast(datum_value(&d, from), to);
+    if v == Value::Null {
+        return Ok(Datum::Null);
+    }
+    as_datum(&v, to)
+}

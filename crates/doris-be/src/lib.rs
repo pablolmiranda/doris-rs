@@ -10,6 +10,7 @@ pub mod heartbeat;
 pub mod http;
 pub mod load;
 pub mod master;
+pub mod query;
 pub mod report;
 pub mod status;
 pub mod sweeper;

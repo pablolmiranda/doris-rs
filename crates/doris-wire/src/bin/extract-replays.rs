@@ -7,6 +7,8 @@
 //! - its needs fall within M4's supported features plus M5's (spec §8);
 //! - every tablet it scans or writes is created in the suite, or belongs to the FE's statistics
 //!   table (created synthetically by the replay);
+//! - it reads no unique- or aggregate-key table but the FE's statistics table, and asks for
+//!   no binary-protocol rows (both outside M5);
 //! - it holds between 1 and 40 result queries, and at least one fetch the reference ended with eos.
 //!
 //! `nereids_p0.system.test_query_sys_tables` comes first, cut after the eos fetch of its sixth
@@ -260,6 +262,20 @@ fn candidate(
         }
         if method.starts_with("exec_plan_fragment") && method != "exec_plan_fragment_start" {
             let p = plan(r).ok_or("undecodable plan")?;
+            for f in p.params_list.iter().flatten() {
+                // outside M5: binary-protocol rows (prepared statements), merge-on-read key reads
+                if f.query_options.as_ref().and_then(|o| o.mysql_row_binary_format) == Some(true) {
+                    return Err("binary rows".into());
+                }
+                for n in f.fragment.iter().flat_map(|x| x.plan.iter()).flat_map(|x| &x.nodes) {
+                    if let Some(o) = &n.olap_scan_node {
+                        let stats = o.table_name.as_deref().is_some_and(|t| t.split('(').next() == Some(STATS_TABLE));
+                        if !stats && o.key_type.is_some_and(|k| k != doris_thrift::gen::types::TKeysType::DUP_KEYS) {
+                            return Err("non-duplicate-key scan".into());
+                        }
+                    }
+                }
+            }
             if is_result_query(&p) {
                 results += 1;
                 if let Some(c) = shape_letter(&shape(&p)) {

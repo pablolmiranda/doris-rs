@@ -235,3 +235,190 @@ pub fn aggregate(
     n.agg_expr = Some(TAggregateExpr::new(is_merge, Some(param_types)));
     over(n, args)
 }
+
+// ---- query plans ---------------------------------------------------------------------------
+
+use doris_proto::doris::PExecPlanFragmentRequest;
+use doris_thrift::gen::agent_service::{TCreateTabletReq, TTabletSchema};
+use doris_thrift::gen::descriptors::{TColumn, TSlotDescriptor};
+use doris_thrift::gen::palo_internal_service::{TPipelineFragmentParams, TPipelineFragmentParamsList};
+use doris_thrift::gen::types::{TColumnType, TKeysType, TStorageType, TUniqueId};
+use thrift::protocol::{TCompactOutputProtocol, TSerializable};
+
+use crate::replays::{self, plan_list, shape, Step};
+
+/// A column of a hand-made table: its name, type and nullability.
+#[derive(Debug, Clone)]
+pub struct Col {
+    pub name: String,
+    pub ty: TTypeDesc,
+    pub nullable: bool,
+}
+
+pub fn col(name: &str, ty: TTypeDesc, nullable: bool) -> Col {
+    Col { name: name.to_string(), ty, nullable }
+}
+
+/// The corpus query the scan plans are cloned from: a one-fragment OLAP scan into the result
+/// sink (the FE's statistics read), with its exec request.
+pub fn template() -> (PExecPlanFragmentRequest, TPipelineFragmentParams) {
+    for r in replays::all() {
+        for s in &r.steps {
+            let Step::ExecPlanFragment { request, .. } = s else { continue };
+            let Some(list) = plan_list(request) else { continue };
+            if shape(&list) == "OLAP_SCAN->RESULT" {
+                let p = list.params_list.unwrap().remove(0);
+                return (request.clone(), p);
+            }
+        }
+    }
+    panic!("no OLAP_SCAN->RESULT query in the replays");
+}
+
+/// The thrift column of a hand-made table column; unique ids are positions.
+pub fn tcolumn(template: &TColumn, i: usize, c: &Col) -> TColumn {
+    let s = c.ty.types.as_ref().unwrap()[0].scalar_type.clone().unwrap();
+    TColumn {
+        column_name: c.name.clone(),
+        column_type: TColumnType::new(s.type_, s.len, None, s.precision, s.scale, None, None),
+        aggregation_type: None,
+        is_key: Some(i == 0),
+        is_allow_null: Some(c.nullable),
+        default_value: None,
+        col_unique_id: Some(i as i32),
+        ..template.clone()
+    }
+}
+
+/// CREATE for a duplicate-key tablet of these columns, the first one the key.
+pub fn create_tablet(tablet_id: i64, columns: Vec<TColumn>, keys: TKeysType, version: i64) -> TCreateTabletReq {
+    let short_keys = columns.iter().filter(|c| c.is_key == Some(true)).count().clamp(1, 3) as i16;
+    let schema = TTabletSchema::new(
+        short_keys,
+        0,
+        keys,
+        TStorageType::COLUMN,
+        columns,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    TCreateTabletReq::new(
+        tablet_id,
+        schema,
+        Some(version),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
+/// `SELECT <columns> FROM <tablet>` at `version`, one fragment: an OLAP scan into the result
+/// sink. Slots 0.. are the columns in order, in tuple 0; the instance id is the query id + 1.
+pub fn scan_query(query_id: TUniqueId, tablet_id: i64, version: i64, columns: &[Col], batch_size: i32) -> TPipelineFragmentParams {
+    let (_, mut p) = template();
+    p.query_id = query_id.clone();
+    p.fragment_id = Some(0);
+    p.need_wait_execution_trigger = Some(false);
+    if let Some(o) = p.query_options.as_mut() {
+        o.batch_size = Some(batch_size);
+    }
+    let desc = p.desc_tbl.as_mut().unwrap();
+    let slot0 = desc.slot_descriptors.as_ref().unwrap()[0].clone();
+    desc.slot_descriptors = Some(
+        columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| TSlotDescriptor {
+                id: i as i32,
+                parent: 0,
+                slot_type: c.ty.clone(),
+                col_name: c.name.clone(),
+                col_unique_id: Some(i as i32),
+                null_indicator_bit: if c.nullable { 0 } else { -1 },
+                primitive_type: c.ty.types.as_ref().and_then(|t| t[0].scalar_type.as_ref()).map(|s| s.type_),
+                ..slot0.clone()
+            })
+            .collect(),
+    );
+    desc.tuple_descriptors.truncate(1);
+    desc.tuple_descriptors[0].id = 0;
+    let fragment = p.fragment.as_mut().unwrap();
+    let plan = fragment.plan.as_mut().unwrap();
+    plan.nodes.truncate(1);
+    let node = &mut plan.nodes[0];
+    node.node_id = 0;
+    node.row_tuples = vec![0];
+    node.conjuncts = None;
+    node.projections = None;
+    node.output_tuple_id = None;
+    node.limit = -1;
+    let scan = node.olap_scan_node.as_mut().unwrap();
+    let col0 = scan.columns_desc.as_ref().unwrap()[0].clone();
+    scan.tuple_id = 0;
+    scan.key_type = Some(TKeysType::DUP_KEYS);
+    scan.enable_unique_key_merge_on_write = Some(false);
+    scan.columns_desc = Some(columns.iter().enumerate().map(|(i, c)| tcolumn(&col0, i, c)).collect());
+    scan.output_column_unique_ids = Some((0..columns.len() as i32).collect());
+    fragment.output_exprs = Some(columns.iter().enumerate().map(|(i, c)| slot(i as i32, c.ty.clone())).collect());
+    let mut local = p.local_params.as_ref().unwrap()[0].clone();
+    local.fragment_instance_id = TUniqueId { hi: query_id.hi, lo: query_id.lo + 1 };
+    let mut range = local.per_node_scan_ranges.values().next().unwrap()[0].clone();
+    let pr = range.scan_range.palo_scan_range.as_mut().unwrap();
+    pr.tablet_id = tablet_id;
+    pr.version = version.to_string();
+    local.per_node_scan_ranges = [(0, vec![range])].into_iter().collect();
+    p.local_params = Some(vec![local]);
+    p
+}
+
+/// The exec request of a fragment list, as the FE sends it (compact Thrift, version 3).
+pub fn exec_request(params: Vec<TPipelineFragmentParams>) -> PExecPlanFragmentRequest {
+    let (mut req, _) = template();
+    let list = TPipelineFragmentParamsList::new(params, None, None, None, None, None, None, None, None, None, None, None, None, None);
+    let mut buf = Vec::new();
+    list.write_to_out_protocol(&mut TCompactOutputProtocol::new(&mut buf)).expect("write to a Vec");
+    req.request = Some(buf);
+    req.compact = Some(true);
+    req
+}
