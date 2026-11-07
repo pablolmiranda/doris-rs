@@ -1,0 +1,62 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_err_log_limit_table/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 4eef853d-cb87-4ca0-9a7b-38aee9543af0
+column_separator: ,
+columns: k1, k2, k3
+Expect: 100-Continue
+Content-Length: 299
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc
+1,abc

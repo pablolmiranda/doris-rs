@@ -1,0 +1,61 @@
+c	k	v	s
+c0100	100	-1599995800	row 01400 
+c0100	100	-99991300	row 02900 xxxxxxxxxxxxxxxxxxxx
+c0100	100	1400013200	row 04400 
+c0100	100	2900017700	row 05900 xxxxxxxxxxxxxxxxxxxx
+c0100	600	-2099997300	row 00900 xxxxxxxxxxxxxxxxxxxx
+c0100	600	-599992800	row 02400 
+c0100	600	900011700	row 03900 xxxxxxxxxxxxxxxxxxxx
+c0100	600	2400016200	row 05400 
+c0100	1100	-2599998800	row 00400 
+c0100	1100	-1099994300	row 01900 xxxxxxxxxxxxxxxxxxxx
+c0100	1100	400010200	row 03400 
+c0100	1100	1900014700	row 04900 xxxxxxxxxxxxxxxxxxxx
+c0101	91	-1920996763	row 01079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	91	-420992263	row 02579 xxxxxxxxxxxxxxxxxxx
+c0101	91	1079012237	row 04079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	91	2579016737	row 05579 xxxxxxxxxxxxxxxxxxx
+c0101	591	-2420998263	row 00579 xxxxxxxxxxxxxxxxxxx
+c0101	591	-920993763	row 02079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	591	579010737	row 03579 xxxxxxxxxxxxxxxxxxx
+c0101	591	2079015237	row 05079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	1091	-2920999763	row 00079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	1091	-1420995263	row 01579 xxxxxxxxxxxxxxxxxxx
+c0101	1091	79009237	row 03079 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0101	1091	1579013737	row 04579 xxxxxxxxxxxxxxxxxxx
+c0102	82	-2241997726	row 00758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0102	82	-741993226	row 02258 xxxxxxxxxxxxxxxxxx
+c0102	82	758011274	row 03758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0102	82	2258015774	row 05258 xxxxxxxxxxxxxxxxxx
+c0102	582	-2741999226	row 00258 xxxxxxxxxxxxxxxxxx
+c0102	582	-1241994726	row 01758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0102	582	258009774	row 03258 xxxxxxxxxxxxxxxxxx
+c0102	582	1758014274	row 04758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0102	1082	-1741996226	row 01258 xxxxxxxxxxxxxxxxxx
+c0102	1082	-241991726	row 02758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0102	1082	1258012774	row 04258 xxxxxxxxxxxxxxxxxx
+c0102	1082	2758017274	row 05758 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	73	-2562998689	row 00437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	73	-1062994189	row 01937 xxxxxxxxxxxxxxxxx
+c0103	73	437010311	row 03437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	73	1937014811	row 04937 xxxxxxxxxxxxxxxxx
+c0103	573	-1562995689	row 01437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	573	-62991189	row 02937 xxxxxxxxxxxxxxxxx
+c0103	573	1437013311	row 04437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	573	2937017811	row 05937 xxxxxxxxxxxxxxxxx
+c0103	1073	-2062997189	row 00937 xxxxxxxxxxxxxxxxx
+c0103	1073	-562992689	row 02437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0103	1073	937011811	row 03937 xxxxxxxxxxxxxxxxx
+c0103	1073	2437016311	row 05437 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	64	-2883999652	row 00116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	64	-1383995152	row 01616 xxxxxxxxxxxxxxxx
+c0104	64	116009348	row 03116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	64	1616013848	row 04616 xxxxxxxxxxxxxxxx
+c0104	564	-1883996652	row 01116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	564	-383992152	row 02616 xxxxxxxxxxxxxxxx
+c0104	564	1116012348	row 04116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	564	2616016848	row 05616 xxxxxxxxxxxxxxxx
+c0104	1064	-2383998152	row 00616 xxxxxxxxxxxxxxxx
+c0104	1064	-883993652	row 02116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+c0104	1064	616010848	row 03616 xxxxxxxxxxxxxxxx
+c0104	1064	2116015348	row 05116 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

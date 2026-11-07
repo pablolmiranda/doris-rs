@@ -1,0 +1,24 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_new_change_column_order_mm/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: f562195d-5ab8-47a2-9719-a1b754720ca1
+column_separator: ,
+columns: k1, k3, k2, k4, k6, k5
+memtable_on_sink_node: true
+Expect: 100-Continue
+Content-Length: 375
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+10000,aa,4444,5555555,3.14,111.111
+10001,bb,3333,666,5.32,222.222
+10002,cc,2222,453,4.321,333.333
+10003,dd,1111,-3241,1.34,444.444
+10004,ee,-9999,21342,1.22,555.555
+10005,ff,8888,64562,9.133,666.666
+10006,gg,-7777,-12313342,8.100,777.777
+10007,hh,6666,314234,34.124,888.888
+10008,ii,-5555,1341,342.120,999.999
+10009,jj,4444,-123,11.22,111.111
+10010,kk,-3333,12314,13,222.222

@@ -1,0 +1,29 @@
+PUT /api/regression_test_load_p0_stream_load/tbl_test_load_json_null_to_nullable/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 448cc32c-f233-425f-ba48-51ebea19001f
+strip_outer_array: true
+read_json_by_line: 
+format: json
+columns: 
+jsonpaths: 
+json_root: 
+where: 
+fuzzy_parse: 
+column_separator: 
+max_filter_ratio: 1
+Expect: 100-Continue
+Content-Length: 231
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+[
+    {"k1": "h", "v1": "h"},
+    {"k1": "hello", "v1": "hello"},
+    {"k1": "hello,hello", "v1": "hello,hello"},
+    {"k1": "仓", "v1": "安"},
+    {"k1": "H", "v1": "H"},
+    {"k1": "", "v1": ""},
+    {"k1": null, "v1": null}
+]

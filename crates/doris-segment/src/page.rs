@@ -93,7 +93,13 @@ fn decompress(codec: CompressionTypePb, input: &[u8]) -> Result<Vec<u8>, Error> 
             Ok(out)
         }
         CompressionTypePb::Zstd => {
-            zstd::decode_all(input).map_err(|e| Error::Decompress(format!("zstd: {e}")))
+            // pure Rust (ruzstd): no C library in the storage crates
+            let mut out = Vec::new();
+            ruzstd::decoding::StreamingDecoder::new(input)
+                .map_err(|e| Error::Decompress(format!("zstd: {e}")))?
+                .read_to_end(&mut out)
+                .map_err(|e| Error::Decompress(format!("zstd: {e}")))?;
+            Ok(out)
         }
         CompressionTypePb::NoCompression => Err(Error::Corrupt(
             "page body length differs from uncompressed_size but codec is NO_COMPRESSION".into(),

@@ -1,233 +1,288 @@
 [
  {
+  "feature": "read:UNIQUE_KEYS",
+  "alone": 52,
+  "total": 444
+ },
+ {
+  "feature": "function:like",
+  "alone": 36,
+  "total": 62
+ },
+ {
+  "feature": "plan_node:HASH_JOIN_NODE",
+  "alone": 31,
+  "total": 218
+ },
+ {
+  "feature": "write:INSERT_SELECT",
+  "alone": 18,
+  "total": 200
+ },
+ {
+  "feature": "type:TIMESTAMPTZ",
+  "alone": 7,
+  "total": 29
+ },
+ {
+  "feature": "type:DECIMAL256",
+  "alone": 6,
+  "total": 34
+ },
+ {
+  "feature": "read:AGG_KEYS",
+  "alone": 5,
+  "total": 84
+ },
+ {
+  "feature": "plan_node:ANALYTIC_EVAL_NODE",
+  "alone": 5,
+  "total": 68
+ },
+ {
+  "feature": "plan_node:INTERSECT_NODE",
+  "alone": 5,
+  "total": 20
+ },
+ {
+  "feature": "plan_node:CROSS_JOIN_NODE",
+  "alone": 4,
+  "total": 88
+ },
+ {
+  "feature": "function:if",
+  "alone": 3,
+  "total": 63
+ },
+ {
+  "feature": "schema_table:backend_active_tasks",
+  "alone": 3,
+  "total": 57
+ },
+ {
+  "feature": "sink:GROUP_COMMIT_BLOCK_SINK",
+  "alone": 3,
+  "total": 8
+ },
+ {
+  "feature": "function:concat",
+  "alone": 2,
+  "total": 35
+ },
+ {
+  "feature": "plan_node:EXCEPT_NODE",
+  "alone": 2,
+  "total": 19
+ },
+ {
+  "feature": "rpc:PBackendService.tablet_fetch_data",
+  "alone": 2,
+  "total": 11
+ },
+ {
+  "feature": "type:DATETIME",
+  "alone": 1,
+  "total": 356
+ },
+ {
+  "feature": "task:ALTER",
+  "alone": 1,
+  "total": 41
+ },
+ {
+  "feature": "sink:MULTI_CAST_DATA_STREAM_SINK",
+  "alone": 1,
+  "total": 39
+ },
+ {
+  "feature": "function:length",
+  "alone": 1,
+  "total": 32
+ },
+ {
+  "feature": "function:round",
+  "alone": 1,
+  "total": 30
+ },
+ {
+  "feature": "function:ifnull",
+  "alone": 1,
+  "total": 25
+ },
+ {
+  "feature": "task:REALTIME_PUSH",
+  "alone": 1,
+  "total": 24
+ },
+ {
+  "feature": "type:VARIANT",
+  "alone": 1,
+  "total": 17
+ },
+ {
+  "feature": "type:DECIMALV2",
+  "alone": 1,
+  "total": 11
+ },
+ {
+  "feature": "function:date_format",
+  "alone": 1,
+  "total": 9
+ },
+ {
+  "feature": "rpc:http./api/update_config",
+  "alone": 1,
+  "total": 8
+ },
+ {
+  "feature": "function:money_format",
+  "alone": 1,
+  "total": 7
+ },
+ {
+  "feature": "function:regexp",
+  "alone": 1,
+  "total": 7
+ },
+ {
+  "feature": "result:binary_rows",
+  "alone": 1,
+  "total": 7
+ },
+ {
+  "feature": "function:percentile",
+  "alone": 1,
+  "total": 6
+ },
+ {
+  "feature": "function:non_nullable",
+  "alone": 1,
+  "total": 4
+ },
+ {
+  "feature": "function:split_by_string",
+  "alone": 1,
+  "total": 4
+ },
+ {
+  "feature": "function:window_funnel_v2",
+  "alone": 1,
+  "total": 4
+ },
+ {
+  "feature": "rpc:FrontendService.createPartition",
+  "alone": 1,
+  "total": 4
+ },
+ {
+  "feature": "rpc:FrontendService.getAutoIncrementRange",
+  "alone": 1,
+  "total": 4
+ },
+ {
+  "feature": "function:avg_weighted",
+  "alone": 1,
+  "total": 3
+ },
+ {
+  "feature": "function:bin",
+  "alone": 1,
+  "total": 3
+ },
+ {
+  "feature": "function:to_date",
+  "alone": 1,
+  "total": 3
+ },
+ {
+  "feature": "task:PUSH_STORAGE_POLICY",
+  "alone": 1,
+  "total": 3
+ },
+ {
+  "feature": "task:UPDATE_TABLET_META_INFO",
+  "alone": 1,
+  "total": 3
+ },
+ {
+  "feature": "function:find_in_set",
+  "alone": 1,
+  "total": 2
+ },
+ {
+  "feature": "function:parse_data_size",
+  "alone": 1,
+  "total": 2
+ },
+ {
+  "feature": "function:regr_intercept",
+  "alone": 1,
+  "total": 2
+ },
+ {
+  "feature": "function:regr_slope",
+  "alone": 1,
+  "total": 2
+ },
+ {
+  "feature": "function:corr",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:corr_welford",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:covar",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:covar_samp",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:format_round",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:retention",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:weekofyear",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:width_bucket",
+  "alone": 1,
+  "total": 1
+ },
+ {
+  "feature": "function:xor",
+  "alone": 1,
+  "total": 1
+ },
+ {
   "feature": "rpc:BackendService.check_storage_format",
   "alone": 1,
   "total": 1
  },
  {
-  "feature": "type:VARCHAR",
-  "alone": 0,
-  "total": 1396
+  "feature": "sink:RESULT_FILE_SINK",
+  "alone": 1,
+  "total": 1
  },
  {
-  "feature": "expr:SLOT_REF",
-  "alone": 0,
-  "total": 1378
- },
- {
-  "feature": "type:BIGINT",
-  "alone": 0,
-  "total": 1357
- },
- {
-  "feature": "rpc:PBackendService.cancel_plan_fragment",
-  "alone": 0,
-  "total": 1355
- },
- {
-  "feature": "sink:RESULT_SINK",
-  "alone": 0,
-  "total": 1334
- },
- {
-  "feature": "rpc:PBackendService.fetch_data",
-  "alone": 0,
-  "total": 1331
- },
- {
-  "feature": "type:BOOLEAN",
-  "alone": 0,
-  "total": 1269
- },
- {
-  "feature": "plan_node:OLAP_SCAN_NODE",
-  "alone": 0,
-  "total": 1263
- },
- {
-  "feature": "type:TINYINT",
-  "alone": 0,
-  "total": 1263
- },
- {
-  "feature": "type:INT",
-  "alone": 0,
-  "total": 1256
- },
- {
-  "feature": "type:STRING",
-  "alone": 0,
-  "total": 1245
- },
- {
-  "feature": "type:DATETIMEV2",
-  "alone": 0,
-  "total": 1224
- },
- {
-  "feature": "plan_node:EXCHANGE_NODE",
-  "alone": 0,
-  "total": 1202
- },
- {
-  "feature": "rpc:PBackendService.exec_plan_fragment_prepare",
-  "alone": 0,
-  "total": 1202
- },
- {
-  "feature": "rpc:PBackendService.exec_plan_fragment_start",
-  "alone": 0,
-  "total": 1202
- },
- {
-  "feature": "sink:DATA_STREAM_SINK",
-  "alone": 0,
-  "total": 1201
- },
- {
-  "feature": "expr:INT_LITERAL",
-  "alone": 0,
-  "total": 1146
- },
- {
-  "feature": "expr:BINARY_PRED",
-  "alone": 0,
-  "total": 1125
- },
- {
-  "feature": "function:eq",
-  "alone": 0,
-  "total": 1096
- },
- {
-  "feature": "plan_node:SORT_NODE",
-  "alone": 0,
-  "total": 971
- },
- {
-  "feature": "type:INVALID_TYPE",
-  "alone": 0,
-  "total": 946
- },
- {
-  "feature": "rpc:PBackendService.exec_plan_fragment",
-  "alone": 0,
-  "total": 918
- },
- {
-  "feature": "expr:STRING_LITERAL",
-  "alone": 0,
-  "total": 914
- },
- {
-  "feature": "rpc:BackendService.submit_tasks",
-  "alone": 0,
-  "total": 903
- },
- {
-  "feature": "rpc:FrontendService.finishTask",
-  "alone": 0,
-  "total": 890
- },
- {
-  "feature": "task:CREATE",
-  "alone": 0,
-  "total": 880
- },
- {
-  "feature": "task:PUBLISH_VERSION",
-  "alone": 0,
-  "total": 791
- },
- {
-  "feature": "task:UPDATE_VISIBLE_VERSION",
-  "alone": 0,
-  "total": 759
- },
- {
-  "feature": "plan_node:UNION_NODE",
-  "alone": 0,
-  "total": 742
- },
- {
-  "feature": "rpc:FrontendService.reportExecStatus",
-  "alone": 0,
-  "total": 729
- },
- {
-  "feature": "type:DATEV2",
-  "alone": 0,
-  "total": 729
- },
- {
-  "feature": "sink:OLAP_TABLE_SINK",
-  "alone": 0,
-  "total": 724
- },
- {
-  "feature": "rpc:PBackendService.update_cache",
-  "alone": 0,
-  "total": 679
- },
- {
-  "feature": "type:DOUBLE",
-  "alone": 0,
-  "total": 652
- },
- {
-  "feature": "type:CHAR",
-  "alone": 0,
-  "total": 593
- },
- {
-  "feature": "type:SMALLINT",
-  "alone": 0,
-  "total": 556
- },
- {
-  "feature": "type:LARGEINT",
-  "alone": 0,
-  "total": 531
- },
- {
-  "feature": "expr:FUNCTION_CALL",
-  "alone": 0,
-  "total": 530
- },
- {
-  "feature": "type:DECIMAL128I",
-  "alone": 0,
-  "total": 493
- },
- {
-  "feature": "type:FLOAT",
-  "alone": 0,
-  "total": 492
- },
- {
-  "feature": "expr:AGG_EXPR",
-  "alone": 0,
-  "total": 395
- },
- {
-  "feature": "plan_node:AGGREGATION_NODE",
-  "alone": 0,
-  "total": 379
- },
- {
-  "feature": "expr:CAST_EXPR",
-  "alone": 0,
-  "total": 364
- },
- {
-  "feature": "expr:NULL_LITERAL",
-  "alone": 0,
-  "total": 360
- },
- {
-  "feature": "type:DATETIME",
-  "alone": 0,
-  "total": 356
+  "feature": "sort:two_phase_read",
+  "alone": 1,
+  "total": 1
  },
  {
   "feature": "type:DATE",
@@ -235,149 +290,14 @@
   "total": 350
  },
  {
-  "feature": "expr:DATE_LITERAL",
-  "alone": 0,
-  "total": 348
- },
- {
-  "feature": "plan_node:MATERIALIZATION_NODE",
-  "alone": 0,
-  "total": 260
- },
- {
-  "feature": "function:substring",
-  "alone": 0,
-  "total": 236
- },
- {
-  "feature": "rpc:FrontendService.streamLoadPut",
-  "alone": 0,
-  "total": 221
- },
- {
-  "feature": "plan_node:HASH_JOIN_NODE",
-  "alone": 0,
-  "total": 218
- },
- {
-  "feature": "function:count",
-  "alone": 0,
-  "total": 215
- },
- {
-  "feature": "rpc:FrontendService.loadTxnCommit",
-  "alone": 0,
-  "total": 211
- },
- {
-  "feature": "rpc:http.stream_load",
-  "alone": 0,
-  "total": 210
- },
- {
-  "feature": "rpc:FrontendService.loadTxnBegin",
-  "alone": 0,
-  "total": 208
- },
- {
-  "feature": "type:DECIMAL64",
-  "alone": 0,
-  "total": 178
- },
- {
-  "feature": "expr:DECIMAL_LITERAL",
-  "alone": 0,
-  "total": 175
- },
- {
-  "feature": "type:DECIMAL32",
-  "alone": 0,
-  "total": 172
- },
- {
   "feature": "expr:ARITHMETIC_EXPR",
   "alone": 0,
   "total": 169
  },
  {
-  "feature": "function:sum",
-  "alone": 0,
-  "total": 145
- },
- {
-  "feature": "expr:COMPOUND_PRED",
-  "alone": 0,
-  "total": 144
- },
- {
-  "feature": "expr:FLOAT_LITERAL",
-  "alone": 0,
-  "total": 137
- },
- {
-  "feature": "function:is_null_pred",
-  "alone": 0,
-  "total": 130
- },
- {
-  "feature": "plan_node:EMPTY_SET_NODE",
-  "alone": 0,
-  "total": 119
- },
- {
-  "feature": "function:is_not_null_pred",
-  "alone": 0,
-  "total": 117
- },
- {
-  "feature": "function:lt",
-  "alone": 0,
-  "total": 114
- },
- {
-  "feature": "expr:BOOL_LITERAL",
-  "alone": 0,
-  "total": 110
- },
- {
-  "feature": "function:gt",
-  "alone": 0,
-  "total": 108
- },
- {
-  "feature": "function:le",
-  "alone": 0,
-  "total": 94
- },
- {
   "feature": "function:multiply",
   "alone": 0,
   "total": 92
- },
- {
-  "feature": "function:ge",
-  "alone": 0,
-  "total": 90
- },
- {
-  "feature": "plan_node:CROSS_JOIN_NODE",
-  "alone": 0,
-  "total": 88
- },
- {
-  "feature": "plan_node:SCHEMA_SCAN_NODE",
-  "alone": 0,
-  "total": 87
- },
- {
-  "feature": "expr:LARGE_INT_LITERAL",
-  "alone": 0,
-  "total": 84
- },
- {
-  "feature": "function:max",
-  "alone": 0,
-  "total": 77
  },
  {
   "feature": "rpc:FrontendService.fetchSchemaTableData",
@@ -390,74 +310,19 @@
   "total": 74
  },
  {
-  "feature": "expr:IN_PRED",
-  "alone": 0,
-  "total": 73
- },
- {
   "feature": "function:add",
   "alone": 0,
   "total": 73
  },
  {
-  "feature": "function:min",
+  "feature": "schema_table:active_queries",
   "alone": 0,
-  "total": 69
- },
- {
-  "feature": "plan_node:ANALYTIC_EVAL_NODE",
-  "alone": 0,
-  "total": 68
- },
- {
-  "feature": "function:ne",
-  "alone": 0,
-  "total": 66
- },
- {
-  "feature": "function:if",
-  "alone": 0,
-  "total": 63
- },
- {
-  "feature": "function:like",
-  "alone": 0,
-  "total": 62
+  "total": 59
  },
  {
   "feature": "function:divide",
   "alone": 0,
   "total": 47
- },
- {
-  "feature": "task:DROP",
-  "alone": 0,
-  "total": 44
- },
- {
-  "feature": "rpc:PBackendService.fetch_cache",
-  "alone": 0,
-  "total": 43
- },
- {
-  "feature": "plan_node:SELECT_NODE",
-  "alone": 0,
-  "total": 41
- },
- {
-  "feature": "task:ALTER",
-  "alone": 0,
-  "total": 41
- },
- {
-  "feature": "type:NULL_TYPE",
-  "alone": 0,
-  "total": 41
- },
- {
-  "feature": "sink:MULTI_CAST_DATA_STREAM_SINK",
-  "alone": 0,
-  "total": 39
  },
  {
   "feature": "rpc:PBackendService.get_wal_queue_size",
@@ -470,24 +335,9 @@
   "total": 37
  },
  {
-  "feature": "function:avg",
-  "alone": 0,
-  "total": 36
- },
- {
   "feature": "function:mod",
   "alone": 0,
   "total": 36
- },
- {
-  "feature": "function:concat",
-  "alone": 0,
-  "total": 35
- },
- {
-  "feature": "type:DECIMAL256",
-  "alone": 0,
-  "total": 34
  },
  {
   "feature": "function:ndv",
@@ -500,49 +350,14 @@
   "total": 33
  },
  {
-  "feature": "function:length",
-  "alone": 0,
-  "total": 32
- },
- {
   "feature": "rpc:http./api/compaction/run",
   "alone": 0,
   "total": 32
  },
  {
-  "feature": "function:round",
-  "alone": 0,
-  "total": 30
- },
- {
   "feature": "rpc:http./api/compaction/run_status",
   "alone": 0,
   "total": 29
- },
- {
-  "feature": "type:TIMESTAMPTZ",
-  "alone": 0,
-  "total": 29
- },
- {
-  "feature": "function:ifnull",
-  "alone": 0,
-  "total": 25
- },
- {
-  "feature": "task:REALTIME_PUSH",
-  "alone": 0,
-  "total": 24
- },
- {
-  "feature": "rpc:FrontendService.loadTxnRollback",
-  "alone": 0,
-  "total": 22
- },
- {
-  "feature": "function:multi_distinct_count",
-  "alone": 0,
-  "total": 21
  },
  {
   "feature": "function:nullable",
@@ -555,24 +370,9 @@
   "total": 21
  },
  {
-  "feature": "task:CLEAR_TRANSACTION_TASK",
-  "alone": 0,
-  "total": 21
- },
- {
   "feature": "function:coalesce",
   "alone": 0,
   "total": 20
- },
- {
-  "feature": "plan_node:INTERSECT_NODE",
-  "alone": 0,
-  "total": 20
- },
- {
-  "feature": "plan_node:EXCEPT_NODE",
-  "alone": 0,
-  "total": 19
  },
  {
   "feature": "type:IPV6",
@@ -585,17 +385,7 @@
   "total": 17
  },
  {
-  "feature": "rpc:BackendService.get_stream_load_record",
-  "alone": 0,
-  "total": 17
- },
- {
   "feature": "type:IPV4",
-  "alone": 0,
-  "total": 17
- },
- {
-  "feature": "type:VARIANT",
   "alone": 0,
   "total": 17
  },
@@ -670,21 +460,6 @@
   "total": 11
  },
  {
-  "feature": "rpc:FrontendService.getDbNames",
-  "alone": 0,
-  "total": 11
- },
- {
-  "feature": "rpc:PBackendService.tablet_fetch_data",
-  "alone": 0,
-  "total": 11
- },
- {
-  "feature": "type:DECIMALV2",
-  "alone": 0,
-  "total": 11
- },
- {
   "feature": "function:abs",
   "alone": 0,
   "total": 10
@@ -705,11 +480,6 @@
   "total": 10
  },
  {
-  "feature": "function:date_format",
-  "alone": 0,
-  "total": 9
- },
- {
   "feature": "function:hex",
   "alone": 0,
   "total": 9
@@ -721,16 +491,6 @@
  },
  {
   "feature": "function:unhex",
-  "alone": 0,
-  "total": 9
- },
- {
-  "feature": "rpc:FrontendService.describeTables",
-  "alone": 0,
-  "total": 9
- },
- {
-  "feature": "rpc:FrontendService.getTableNames",
   "alone": 0,
   "total": 9
  },
@@ -770,16 +530,6 @@
   "total": 8
  },
  {
-  "feature": "rpc:http./api/update_config",
-  "alone": 0,
-  "total": 8
- },
- {
-  "feature": "sink:GROUP_COMMIT_BLOCK_SINK",
-  "alone": 0,
-  "total": 8
- },
- {
   "feature": "type:TIMEV2",
   "alone": 0,
   "total": 8
@@ -795,17 +545,7 @@
   "total": 7
  },
  {
-  "feature": "function:money_format",
-  "alone": 0,
-  "total": 7
- },
- {
   "feature": "function:multi_distinct_sum",
-  "alone": 0,
-  "total": 7
- },
- {
-  "feature": "function:regexp",
   "alone": 0,
   "total": 7
  },
@@ -821,11 +561,6 @@
  },
  {
   "feature": "plan_node:ASSERT_NUM_ROWS_NODE",
-  "alone": 0,
-  "total": 7
- },
- {
-  "feature": "rpc:FrontendService.showVariables",
   "alone": 0,
   "total": 7
  },
@@ -860,11 +595,6 @@
   "total": 6
  },
  {
-  "feature": "function:percentile",
-  "alone": 0,
-  "total": 6
- },
- {
   "feature": "function:random",
   "alone": 0,
   "total": 6
@@ -881,11 +611,6 @@
  },
  {
   "feature": "plan_node:FILE_SCAN_NODE",
-  "alone": 0,
-  "total": 6
- },
- {
-  "feature": "rpc:FrontendService.listTableStatus",
   "alone": 0,
   "total": 6
  },
@@ -1015,11 +740,6 @@
   "total": 4
  },
  {
-  "feature": "function:non_nullable",
-  "alone": 0,
-  "total": 4
- },
- {
   "feature": "function:nullif",
   "alone": 0,
   "total": 4
@@ -1035,11 +755,6 @@
   "total": 4
  },
  {
-  "feature": "function:split_by_string",
-  "alone": 0,
-  "total": 4
- },
- {
   "feature": "function:stddev_samp",
   "alone": 0,
   "total": 4
@@ -1051,21 +766,6 @@
  },
  {
   "feature": "function:variance_samp",
-  "alone": 0,
-  "total": 4
- },
- {
-  "feature": "function:window_funnel_v2",
-  "alone": 0,
-  "total": 4
- },
- {
-  "feature": "rpc:FrontendService.createPartition",
-  "alone": 0,
-  "total": 4
- },
- {
-  "feature": "rpc:FrontendService.getAutoIncrementRange",
   "alone": 0,
   "total": 4
  },
@@ -1096,16 +796,6 @@
  },
  {
   "feature": "function:atan2",
-  "alone": 0,
-  "total": 3
- },
- {
-  "feature": "function:avg_weighted",
-  "alone": 0,
-  "total": 3
- },
- {
-  "feature": "function:bin",
   "alone": 0,
   "total": 3
  },
@@ -1240,11 +930,6 @@
   "total": 3
  },
  {
-  "feature": "function:to_date",
-  "alone": 0,
-  "total": 3
- },
- {
   "feature": "function:to_ipv4",
   "alone": 0,
   "total": 3
@@ -1260,17 +945,12 @@
   "total": 3
  },
  {
-  "feature": "rpc:http./api/_load_error_log",
+  "feature": "schema_table:partitions",
   "alone": 0,
   "total": 3
  },
  {
-  "feature": "task:PUSH_STORAGE_POLICY",
-  "alone": 0,
-  "total": 3
- },
- {
-  "feature": "task:UPDATE_TABLET_META_INFO",
+  "feature": "schema_table:views",
   "alone": 0,
   "total": 3
  },
@@ -1396,11 +1076,6 @@
  },
  {
   "feature": "function:factorial",
-  "alone": 0,
-  "total": 2
- },
- {
-  "feature": "function:find_in_set",
   "alone": 0,
   "total": 2
  },
@@ -1540,11 +1215,6 @@
   "total": 2
  },
  {
-  "feature": "function:parse_data_size",
-  "alone": 0,
-  "total": 2
- },
- {
   "feature": "function:parse_to_variant",
   "alone": 0,
   "total": 2
@@ -1571,16 +1241,6 @@
  },
  {
   "feature": "function:regexp_replace_one",
-  "alone": 0,
-  "total": 2
- },
- {
-  "feature": "function:regr_intercept",
-  "alone": 0,
-  "total": 2
- },
- {
-  "feature": "function:regr_slope",
   "alone": 0,
   "total": 2
  },
@@ -1716,6 +1376,86 @@
  },
  {
   "feature": "rpc:http./api/meta/{op}/{tablet_id}",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:be_compaction_tasks",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:column_privileges",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:events",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:key_column_usage",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:metadata_name_ids",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:parameters",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:routines",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:rowsets",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:sql_block_rule_status",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:statistics",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:table_constraints",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:table_privileges",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:triggers",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:user_privileges",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:view_dependency",
+  "alone": 0,
+  "total": 2
+ },
+ {
+  "feature": "schema_table:workload_group_resource_usage",
   "alone": 0,
   "total": 2
  },
@@ -1870,16 +1610,6 @@
   "total": 1
  },
  {
-  "feature": "function:corr",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:corr_welford",
-  "alone": 0,
-  "total": 1
- },
- {
   "feature": "function:cos",
   "alone": 0,
   "total": 1
@@ -1891,16 +1621,6 @@
  },
  {
   "feature": "function:count_substrings",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:covar",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:covar_samp",
   "alone": 0,
   "total": 1
  },
@@ -2051,11 +1771,6 @@
  },
  {
   "feature": "function:format_number",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:format_round",
   "alone": 0,
   "total": 1
  },
@@ -2520,11 +2235,6 @@
   "total": 1
  },
  {
-  "feature": "function:retention",
-  "alone": 0,
-  "total": 1
- },
- {
   "feature": "function:right",
   "alone": 0,
   "total": 1
@@ -2865,11 +2575,6 @@
   "total": 1
  },
  {
-  "feature": "function:weekofyear",
-  "alone": 0,
-  "total": 1
- },
- {
   "feature": "function:weeks_add",
   "alone": 0,
   "total": 1
@@ -2881,16 +2586,6 @@
  },
  {
   "feature": "function:weeks_sub",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:width_bucket",
-  "alone": 0,
-  "total": 1
- },
- {
-  "feature": "function:xor",
   "alone": 0,
   "total": 1
  },
@@ -2980,7 +2675,137 @@
   "total": 1
  },
  {
-  "feature": "sink:RESULT_FILE_SINK",
+  "feature": "schema_table:authentication_integrations",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:backend_configuration",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:backend_kerberos_ticket_cache",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:backend_ms_rpc_table_throttlers",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:backend_tablets",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:blackhole",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:catalog_meta_cache_statistics",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:column_data_sizes",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:column_statistics",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:engines",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:file_cache_info",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:file_cache_statistics",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:files",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:load_jobs",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:processlist",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:procs_priv",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:profiling",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:referential_constraints",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:role_mappings",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:routine_load_jobs",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:schema_privileges",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:table_options",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:table_properties",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:user",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:workload_group_privileges",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:workload_groups",
+  "alone": 0,
+  "total": 1
+ },
+ {
+  "feature": "schema_table:workload_policy",
   "alone": 0,
   "total": 1
  },

@@ -1,0 +1,11 @@
+PUT /api/regression_test_datatype_p0_decimalv3/test_decimal256_zonemap_index/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: afa22d74-780d-4755-a005-eed8ffac8228
+column_separator: ,
+Expect: 100-Continue
+Content-Length: 338861
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+

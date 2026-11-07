@@ -93,6 +93,54 @@ fn collect(debug: &str, names: &HashMap<(String, i32), String>, needs: &mut Need
     }
 }
 
+/// The FE's statistics table: the corpus's reads of it are all empty, so they need no merge.
+const STATS_TABLE: &str = "column_statistics";
+
+/// Plan features the node, sink and expression types do not show (kind: values):
+/// - `read`: the keys type of a scanned table that needs a merge on read (UNIQUE_KEYS,
+///   AGG_KEYS), but the FE's statistics table;
+/// - `write`: INSERT_SELECT, a table sink fed by anything but constants;
+/// - `result`: binary_rows (the MySQL binary protocol);
+/// - `sort`: two_phase_read (the v1 lazy read of a top-n);
+/// - `schema_table`: each information_schema table scanned.
+pub fn plan_needs(list: &TPipelineFragmentParamsList) -> Needs {
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    use doris_thrift::gen::plan_nodes::TPlanNodeType;
+    use doris_thrift::gen::types::TKeysType;
+    let mut needs = Needs::new();
+    let mut add = |kind: &'static str, v: &str| {
+        needs.entry(kind).or_default().insert(v.to_string());
+    };
+    for p in list.params_list.iter().flatten() {
+        let Some(f) = p.fragment.as_ref() else { continue };
+        let nodes = f.plan.as_ref().map(|p| p.nodes.as_slice()).unwrap_or_default();
+        if p.query_options.as_ref().and_then(|o| o.mysql_row_binary_format) == Some(true) {
+            add("result", "binary_rows");
+        }
+        let writes = f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK);
+        if writes && nodes.iter().any(|n| n.node_type != TPlanNodeType::UNION_NODE) {
+            add("write", "INSERT_SELECT");
+        }
+        for n in nodes {
+            if let Some(o) = &n.olap_scan_node {
+                let stats = o.table_name.as_deref().is_some_and(|t| t.split('(').next() == Some(STATS_TABLE));
+                match o.key_type {
+                    Some(TKeysType::UNIQUE_KEYS) if !stats => add("read", "UNIQUE_KEYS"),
+                    Some(TKeysType::AGG_KEYS) => add("read", "AGG_KEYS"),
+                    _ => {}
+                }
+            }
+            if n.sort_node.as_ref().is_some_and(|s| s.sort_info.use_two_phase_read == Some(true)) {
+                add("sort", "two_phase_read");
+            }
+            if let Some(s) = &n.schema_scan_node {
+                add("schema_table", &s.table_name.to_ascii_lowercase());
+            }
+        }
+    }
+    needs
+}
+
 const REPORT: &str = "reportExecStatus";
 
 fn plan_list(r: &SuiteRecord) -> Result<TPipelineFragmentParamsList, String> {
@@ -165,7 +213,11 @@ pub fn needs_of(records: &[SuiteRecord]) -> Result<Needs, String> {
             collect(&format!("{args:?}"), &names, &mut needs);
         }
         if is_plan_request(r) {
-            collect(&format!("{:?}", plan_list(r)?), &names, &mut needs);
+            let list = plan_list(r)?;
+            collect(&format!("{list:?}"), &names, &mut needs);
+            for (kind, values) in plan_needs(&list) {
+                needs.entry(kind).or_default().extend(values);
+            }
         }
     }
     Ok(needs)

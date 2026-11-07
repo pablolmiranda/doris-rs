@@ -78,6 +78,14 @@ class UnusualReplyTests(unittest.TestCase):
         with self.assertRaises(mysql_wire.DecodeError):
             mysql_wire.decode_session(c2s, s2c[:-3])
 
+    def test_last_command_the_server_never_answered_is_no_reply(self):
+        # A target that hangs until the client gives up: the command is sent, nothing comes back.
+        c2s, s2c = f.session([([f.query("select 1")], f.resultset([f.coldef("a")], [["1"]])),
+                              ([f.query("delete from t where a = 1")], [])])
+        exchanges = mysql_wire.decode_session(c2s, s2c)
+        self.assertEqual(exchanges[-1]["statement"], "delete from t where a = 1")
+        self.assertEqual(exchanges[-1]["reply"], {"type": "no_reply"})
+
 
 class PreparedStatementTests(unittest.TestCase):
     def test_execute_carries_statement_params_and_binary_rows(self):

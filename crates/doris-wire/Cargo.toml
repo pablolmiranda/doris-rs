@@ -10,6 +10,7 @@ rust-version.workspace = true
 unsafe_code = "forbid"
 
 [dependencies]
+doris-fixtures = { workspace = true }
 doris-proto = { workspace = true }
 doris-thrift = { workspace = true }
 flate2 = { workspace = true }

@@ -17,6 +17,7 @@ use doris_thrift::gen::status::TStatus;
 use thrift::{ApplicationError, ApplicationErrorKind};
 
 use crate::agent::AgentService;
+use crate::load::LoadService;
 use crate::master::MasterInfo;
 use crate::status;
 
@@ -24,11 +25,18 @@ pub struct BackendHandler {
     agent: AgentService,
     tablets: Arc<Mutex<TabletManager>>,
     master: MasterInfo,
+    load: Option<LoadService>,
 }
 
 impl BackendHandler {
     pub fn new(agent: AgentService, tablets: Arc<Mutex<TabletManager>>, master: MasterInfo) -> BackendHandler {
-        BackendHandler { agent, tablets, master }
+        BackendHandler { agent, tablets, master, load: None }
+    }
+
+    /// With the load service, which keeps the stream load records.
+    pub fn with_load(mut self, load: LoadService) -> BackendHandler {
+        self.load = Some(load);
+        self
     }
 
     fn unsupported(&self, method: &str) -> TStatus {
@@ -116,8 +124,12 @@ impl BackendServiceSyncHandler for BackendHandler {
         Ok(TScanCloseResult { status: self.unsupported("close_scanner") })
     }
 
-    fn handle_get_stream_load_record(&self, _t: i64) -> thrift::Result<TStreamLoadRecordResult> {
-        exception("get_stream_load_record")
+    /// `BackendService::get_stream_load_record`: the records finished after the FE's last one.
+    fn handle_get_stream_load_record(&self, last_stream_record_time: i64) -> thrift::Result<TStreamLoadRecordResult> {
+        guard("get_stream_load_record", || {
+            let records = self.load.as_ref().map(|l| l.stream_load_records(last_stream_record_time)).unwrap_or_default();
+            Ok(TStreamLoadRecordResult { stream_load_record: records })
+        })
     }
 
     fn handle_check_storage_format(&self) -> thrift::Result<TCheckStorageFormatResult> {
