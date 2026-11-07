@@ -23,4 +23,6 @@ big_range: SELECT * FROM m4.big WHERE c >= 'c0100' AND c < 'c0105' ORDER BY c, k
 big_null_key: SELECT * FROM m4.big WHERE c IS NULL ORDER BY k, v, s
 big_value: SELECT c, k, v FROM m4.big WHERE v BETWEEN 0 AND 50000000 ORDER BY c, k, v
 big_head_unordered: SELECT * FROM m4.big LIMIT 20
+zstd_all: SELECT * FROM m5.zstd ORDER BY k, v, s, d
+zstd_count: SELECT COUNT(*), COUNT(v), COUNT(s), COUNT(d) FROM m5.zstd
 join: SELECT b.k, b.v, r.dt, r.v FROM m4.buckets b JOIN m4.ranged r ON b.k = r.k ORDER BY b.k, b.v, r.dt, r.v

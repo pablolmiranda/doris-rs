@@ -21,5 +21,6 @@ fs4 = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 doris-fixtures = { workspace = true }
+doris-exec = { workspace = true }
 doris-proto = { workspace = true, features = ["json"] }
 serde_json = { workspace = true }

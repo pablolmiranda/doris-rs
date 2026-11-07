@@ -198,6 +198,7 @@ dependencies = [
 name = "doris-storage"
 version = "0.1.0"
 dependencies = [
+ "doris-exec",
  "doris-fixtures",
  "doris-proto",
  "doris-rocks",

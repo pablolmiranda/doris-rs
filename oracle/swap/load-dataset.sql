@@ -39,3 +39,9 @@ INSERT INTO m4.ranged VALUES ('2023-06-01', 1, 'p1 a'), ('2023-12-31', 2, 'p1 b'
 CREATE TABLE m4.big (c CHAR(8), k INT, v BIGINT, s VARCHAR(64)) DUPLICATE KEY(c, k)
   DISTRIBUTED BY HASH(k) BUCKETS 2 PROPERTIES ('replication_num' = '1');
 -- stream_load m4.big big.csv column_separator=,
+
+-- M5: one bucket and one load past the 256 KB flush threshold, so the C++ BE writes ZSTD pages.
+CREATE DATABASE m5;
+CREATE TABLE m5.zstd (k INT, v BIGINT, s VARCHAR(32), d DOUBLE) DUPLICATE KEY(k)
+  DISTRIBUTED BY HASH(k) BUCKETS 1 PROPERTIES ('replication_num' = '1');
+-- stream_load m5.zstd zstd.csv column_separator=,

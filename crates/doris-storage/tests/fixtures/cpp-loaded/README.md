@@ -2,7 +2,7 @@
 
 The reference C++ BE (apache/doris:all-in-one-4.1.5) after the M4 load dataset
 (`oracle/swap/load-dataset.sql`): INSERT … VALUES and CSV/JSON stream loads into four
-duplicate-key tables. Captured by `make -C oracle loaded-fixture` (`oracle/swap/capture-loaded.sh`).
+duplicate-key tables, and `m5.zstd`: one 20,000-row load whose pages the BE compresses with ZSTD. Captured by `make -C oracle loaded-fixture` (`oracle/swap/capture-loaded.sh`).
 
 - `meta/`, `stream_load/`: the BE's RocksDB databases after a graceful stop
 - `data/`: the tablet directories with their segment files

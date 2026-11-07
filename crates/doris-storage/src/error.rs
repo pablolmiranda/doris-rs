@@ -37,6 +37,13 @@ pub enum StorageError {
     VersionExists { tablet_id: i64, version: i64 },
     #[error("doris-rs does not support {what} yet")]
     Unsupported { what: String },
+    /// `VersionGraph::capture_consistent_versions`: no rowsets reach the version.
+    #[error("fail to find path in version_graph. spec_version: 0-{version} (tablet {tablet_id})")]
+    MissedVersion { tablet_id: i64, version: i64 },
+    /// A read doris-rs refuses rather than answer wrongly (delete predicates, merge-on-read
+    /// keys, columns or encodings it does not read yet).
+    #[error("doris-rs cannot read tablet {tablet_id} yet: {what}")]
+    UnsupportedRead { tablet_id: i64, what: String },
     #[error("no storage root is configured")]
     NoDataDir,
     #[error("{path}: bad tablet header: {source}")]
