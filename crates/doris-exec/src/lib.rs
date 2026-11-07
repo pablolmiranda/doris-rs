@@ -4,6 +4,7 @@
 
 pub mod block;
 pub mod error_log;
+pub mod eval;
 pub mod expr;
 pub mod file_scan;
 pub mod fragment;

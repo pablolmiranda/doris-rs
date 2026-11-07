@@ -105,7 +105,7 @@ pub fn cast(v: Value, to: &ColType) -> Value {
 }
 
 /// `substring(str, pos, len)`, positions in UTF-8 characters, 1-based.
-fn substring(args: &[Value]) -> Value {
+pub fn substring(args: &[Value]) -> Value {
     let (Some(Value::Str(s)), Some(Value::Int(pos)), Some(Value::Int(len))) = (args.first(), args.get(1), args.get(2)) else {
         return Value::Null;
     };
