@@ -311,6 +311,10 @@ impl QueryService {
                     )
                 });
                 self.inner.exchanges.cancel(id, why.clone());
+                // the query may have ended (and forgotten its exchanges) since the check
+                if q.finished.load(std::sync::atomic::Ordering::SeqCst) {
+                    self.inner.exchanges.forget(id);
+                }
                 q.fail(pstatus(CANCELLED, Some(why)));
             }
         }
@@ -405,6 +409,9 @@ impl Inner {
             }
         });
         let failed = first_error.into_inner().unwrap_or_else(|e| e.into_inner());
+        // ended before the FE can see the outcome, so its cancel finds nothing to stop
+        q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.exchanges.forget(id);
         match failed {
             None => {
                 let mut b = q.buffer();
@@ -417,8 +424,6 @@ impl Inner {
                 self.report_failure(plan, &e, &msg);
             }
         }
-        self.exchanges.forget(id);
-        q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// One `reportExecStatus` per fragment (`PipelineFragmentContext::send_report`).
