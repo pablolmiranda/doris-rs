@@ -334,3 +334,93 @@ fn exchange_sender_counts_must_match_the_plan() {
     // the plan as the FE sent it is accepted
     assert_eq!(env().query.prepare(&encode(&list)).status.status_code, 0);
 }
+
+#[test]
+fn multicast_sender_counts_must_match_the_plan() {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    let is_multicast = |p: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParams| {
+        p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.type_ == TDataSinkType::MULTI_CAST_DATA_STREAM_SINK)
+    };
+    let (req, list) = replays::load("correctness_p0.test_subquery_grouping.test_subquery_grouping")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request)
+                .filter(|l| l.params_list.iter().flatten().any(is_multicast))
+                .map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("a multicast plan");
+    let encode = |list: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        let mut r = req.clone();
+        r.request = exec_request(list.params_list.clone().unwrap()).request;
+        r
+    };
+    // the exchanges a consumer feeds
+    let fed: Vec<i32> = list
+        .params_list
+        .iter()
+        .flatten()
+        .filter(|p| is_multicast(p))
+        .flat_map(|p| p.fragment.as_ref().unwrap().output_sink.as_ref().unwrap().multi_cast_stream_sink.as_ref().unwrap().sinks.clone().unwrap_or_default())
+        .map(|s| s.dest_node_id)
+        .collect();
+    assert!(!fed.is_empty());
+    let mut l = list.clone();
+    let receiver = l.params_list.as_mut().unwrap().iter_mut().find(|p| fed.iter().any(|n| p.per_exch_num_senders.contains_key(n))).expect("a consumer");
+    receiver.per_exch_num_senders.retain(|n, _| !fed.contains(n));
+    let r = env().query.prepare(&encode(&l));
+    assert_ne!(r.status.status_code, 0, "a missing sender count was accepted");
+    assert!(r.status.error_msgs.iter().any(|m| m.contains("sender")), "{:?}", r.status);
+    let r = env().query.prepare(&encode(&list));
+    assert_eq!(r.status.status_code, 0, "{:?}", r.status);
+}
+
+#[test]
+fn a_multicast_consumer_must_be_runnable() {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    use doris_thrift::gen::data_sinks::{TDataSinkType, TMultiCastDataStreamSink};
+    use doris_thrift::gen::partitions::TPartitionType;
+    let (req, list) = replays::load("correctness_p0.test_subquery_grouping.test_subquery_grouping")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request)
+                .filter(|l| {
+                    l.params_list.iter().flatten().any(|p| {
+                        p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.type_ == TDataSinkType::MULTI_CAST_DATA_STREAM_SINK)
+                    })
+                })
+                .map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("a multicast plan");
+    let refused = |change: &dyn Fn(&mut TMultiCastDataStreamSink), want: &str| {
+        let mut l = list.clone();
+        let m = l
+            .params_list
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .filter_map(|p| p.fragment.as_mut().and_then(|f| f.output_sink.as_mut()).and_then(|s| s.multi_cast_stream_sink.as_mut()))
+            .next()
+            .unwrap();
+        change(m);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        let st = env().query.prepare(&r).status;
+        assert_ne!(st.status_code, 0, "{want}: accepted");
+        assert!(st.error_msgs.iter().any(|e| e.contains(want)), "{want}: {st:?}");
+    };
+    refused(&|m| m.sinks.as_mut().unwrap()[0].output_partition.type_ = TPartitionType::RANGE_PARTITIONED, "a multicast consumer partitioned as");
+    refused(
+        &|m| {
+            let s = &mut m.sinks.as_mut().unwrap()[0];
+            s.output_exprs = Some(vec![doris_fixtures::build::int(1, doris_fixtures::build::ty(doris_thrift::gen::types::TPrimitiveType::INT))]);
+            s.output_tuple_id = None;
+        },
+        "output tuple",
+    );
+    refused(&|m| m.destinations.as_mut().unwrap().truncate(0), "multicast sink with");
+}

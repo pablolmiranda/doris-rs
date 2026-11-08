@@ -73,3 +73,15 @@ fn sys_tables_stops_before_the_set() {
         other => panic!("last step is not a fetch: {other:?}"),
     }
 }
+
+const CTE: &str = "correctness_p0.test_subquery_grouping.test_subquery_grouping";
+
+#[test]
+fn a_cte_replay_has_a_multicast_sink() {
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    let r = replays::load(CTE);
+    let multicast = r.queries().iter().flat_map(|q| q.params_list.clone().unwrap_or_default()).any(|p| {
+        p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.type_ == TDataSinkType::MULTI_CAST_DATA_STREAM_SINK)
+    });
+    assert!(multicast, "{CTE} has no multicast sink");
+}

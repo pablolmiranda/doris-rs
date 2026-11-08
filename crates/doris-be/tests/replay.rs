@@ -355,6 +355,13 @@ fn sys_tables_matches_the_reference_up_to_the_set() {
 }
 
 #[test]
+fn a_cte_matches_the_reference() {
+    let r = replays::load("correctness_p0.test_subquery_grouping.test_subquery_grouping");
+    let m = replay(&r);
+    assert!(m.is_empty(), "{m:#?}");
+}
+
+#[test]
 fn every_replay_matches_the_reference() {
     let mut all = Vec::new();
     let rs = replays::all();

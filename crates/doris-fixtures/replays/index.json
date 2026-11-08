@@ -58,5 +58,6 @@
   "datatype_p0.decimalv3.test_dup_tab_decimalv3.test_dup_tab_decimalv3",
   "query_p0.common_sub_expression.dist_expr_list.dist_expr_list.dist_expr_list",
   "nereids_p0.eliminate_outer_join.eliminate_outer_join.eliminate_outer_join",
-  "correctness_p0.test_rand_filter.test_rand_filter"
+  "correctness_p0.test_rand_filter.test_rand_filter",
+  "correctness_p0.test_subquery_grouping.test_subquery_grouping"
 ]
