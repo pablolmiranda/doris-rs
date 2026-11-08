@@ -5,7 +5,7 @@
 //! doris-rs does not run, so that nothing of a refused query runs.
 use std::collections::{BTreeMap, HashMap};
 
-use doris_thrift::gen::data_sinks::{TDataSink, TDataSinkType, TPlanFragmentDestination};
+use doris_thrift::gen::data_sinks::{TDataSink, TDataSinkType, TDataStreamSink, TPlanFragmentDestination};
 use doris_thrift::gen::descriptors::TDescriptorTable;
 use doris_thrift::gen::exprs::TExpr;
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
@@ -356,6 +356,22 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     Ok(())
 }
 
+/// How many of a fragment's stream sinks send to exchange `node` in instance `to`: its stream
+/// sink, or each consumer of its multicast sink.
+fn feeds(g: &FragmentPlan, node: i32, to: &TUniqueId) -> usize {
+    let hits = |s: &TDataStreamSink, d: &[TPlanFragmentDestination]| s.dest_node_id == node && d.iter().any(|d| d.fragment_instance_id == *to);
+    match g.sink.type_ {
+        TDataSinkType::DATA_STREAM_SINK => g.sink.stream_sink.as_ref().is_some_and(|s| hits(s, &g.destinations)) as usize,
+        TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => g
+            .sink
+            .multi_cast_stream_sink
+            .as_ref()
+            .map(|m| m.sinks.iter().flatten().zip(m.destinations.iter().flatten()).filter(|(s, d)| hits(s, d)).count())
+            .unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// Every exchange waits for as many senders as the plan has: each instance of a fragment whose
 /// stream sink names the exchange and one of its instances among its destinations. A wrong count
 /// would drop rows (too few) or wait forever (too many).
@@ -364,13 +380,7 @@ fn check_senders(plan: &QueryPlan) -> Result<(), ExecError> {
         for n in f.root.nodes().into_iter().filter(|n| n.node_type == P::EXCHANGE_NODE) {
             let declared = f.per_exch_num_senders.get(&n.node_id).copied();
             for r in &f.instances {
-                let senders: usize = plan
-                    .fragments
-                    .iter()
-                    .filter(|g| g.sink.stream_sink.as_ref().is_some_and(|s| s.dest_node_id == n.node_id))
-                    .filter(|g| g.destinations.iter().any(|d| d.fragment_instance_id == r.id))
-                    .map(|g| g.instances.len())
-                    .sum();
+                let senders: usize = plan.fragments.iter().map(|g| g.instances.len() * feeds(g, n.node_id, &r.id)).sum();
                 if declared != Some(senders as i32) {
                     return Err(ExecError::BadRequest(format!(
                         "exchange node {} expects {declared:?} senders, the plan has {senders}",
@@ -381,6 +391,13 @@ fn check_senders(plan: &QueryPlan) -> Result<(), ExecError> {
         }
     }
     Ok(())
+}
+
+fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
+    check_partition(s.output_partition.type_, what)?;
+    check_exprs(s.output_partition.partition_exprs.iter().flatten(), false)?;
+    check_exprs(s.output_exprs.iter().flatten(), false)?;
+    check_exprs(s.conjuncts.iter().flatten(), false)
 }
 
 /// Checks every fragment holds only what doris-rs runs; names the first thing it does not.
@@ -400,10 +417,25 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
                     .stream_sink
                     .as_ref()
                     .ok_or_else(|| ExecError::BadRequest("DATA_STREAM_SINK without its parameters".into()))?;
-                check_partition(s.output_partition.type_, "a DATA_STREAM_SINK")?;
-                check_exprs(s.output_partition.partition_exprs.iter().flatten(), false)?;
-                check_exprs(s.output_exprs.iter().flatten(), false)?;
-                check_exprs(s.conjuncts.iter().flatten(), false)?;
+                check_stream_sink(s, "a DATA_STREAM_SINK")?;
+            }
+            TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => {
+                let m = f
+                    .sink
+                    .multi_cast_stream_sink
+                    .as_ref()
+                    .ok_or_else(|| ExecError::BadRequest("MULTI_CAST_DATA_STREAM_SINK without its parameters".into()))?;
+                let (sinks, destinations) = (m.sinks.as_deref().unwrap_or_default(), m.destinations.as_deref().unwrap_or_default());
+                if sinks.is_empty() || sinks.len() != destinations.len() {
+                    return Err(ExecError::BadRequest(format!(
+                        "a multicast sink with {} consumers and {} destination lists",
+                        sinks.len(),
+                        destinations.len()
+                    )));
+                }
+                for s in sinks {
+                    check_stream_sink(s, "a multicast consumer")?;
+                }
             }
             other => return Err(unsupported(sink_type_name(other))),
         }

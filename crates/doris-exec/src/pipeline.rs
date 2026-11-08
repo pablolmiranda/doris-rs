@@ -4,14 +4,14 @@
 use doris_segment::writer::Datum;
 use doris_storage::reader::{ColTypeRef, ScanColumn};
 use doris_storage::StorageError;
-use doris_thrift::gen::data_sinks::TDataSinkType;
+use doris_thrift::gen::data_sinks::{TDataSinkType, TDataStreamSink, TMultiCastDataStreamSink, TPlanFragmentDestination};
 use doris_thrift::gen::exprs::TExpr;
 use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
 
 use crate::block::Block;
 use crate::eval::{coerce, eval_column, filter, SlotMap};
 use crate::exchange::{Chunk, ExchangeKey, Exchanges};
-use crate::query::{FragmentPlan, InstancePlan, PlanTree, QueryPlan};
+use crate::query::{DescTable, FragmentPlan, InstancePlan, PlanTree, QueryPlan};
 use crate::sort::{cmp_rows, keys};
 use crate::ExecError;
 
@@ -145,28 +145,7 @@ impl Instance<'_> {
 
     /// Values in the types of a tuple's slots.
     fn typed(&self, block: Block, slots: &[i32]) -> Result<Block, ExecError> {
-        let to: Vec<_> = slots
-            .iter()
-            .map(|s| self.plan.desc.slot(*s).map(|s| s.ty.clone()))
-            .collect::<Result<_, _>>()?;
-        if to.len() != block.types.len() {
-            return Err(ExecError::BadRequest(format!(
-                "{} values for a tuple of {} slots",
-                block.types.len(),
-                to.len()
-            )));
-        }
-        let Block { types, rows } = block;
-        let rows = rows
-            .into_iter()
-            .map(|r| {
-                r.into_iter()
-                    .zip(types.iter().zip(&to))
-                    .map(|(d, (from, to))| coerce(d, from, to))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Block { types: to, rows })
+        typed(&self.plan.desc, block, slots)
     }
 
     fn scan(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
@@ -422,26 +401,17 @@ impl Instance<'_> {
                     .stream_sink
                     .as_ref()
                     .ok_or_else(|| ExecError::BadRequest("DATA_STREAM_SINK without its parameters".into()))?;
-                let mut out = out;
-                if let Some(c) = s.conjuncts.as_ref().filter(|c| !c.is_empty()) {
-                    out.block = filter(c, out.block, &slot_map(&out.slots))?;
-                }
-                if let (Some(exprs), Some(tuple)) = (s.output_exprs.as_ref(), s.output_tuple_id) {
-                    let slots = self.plan.desc.tuple_slots(tuple)?.to_vec();
-                    out = Chunk {
-                        block: self.typed(project(exprs, &out)?, &slots)?,
-                        slots,
-                    };
-                }
-                let keys: Vec<ExchangeKey> = f
-                    .destinations
-                    .iter()
-                    .map(|d| ExchangeKey { query: qid(self.plan), instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id })
-                    .collect();
-                let parts = partition(out, &s.output_partition, keys.len(), self.instance.sender_id)?;
-                for (key, part) in keys.iter().zip(parts) {
-                    self.ctx.exchanges.send(key, part);
-                    self.ctx.exchanges.end(key);
+                let out = consumer_copy(out, s, &self.plan.desc)?;
+                self.send(s, &f.destinations, out)
+            }
+            TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => {
+                let m = f
+                    .sink
+                    .multi_cast_stream_sink
+                    .as_ref()
+                    .ok_or_else(|| ExecError::BadRequest("MULTI_CAST_DATA_STREAM_SINK without its parameters".into()))?;
+                for (s, destinations, copy) in multicast(&out, m, &self.plan.desc)? {
+                    self.send(&s, &destinations, copy)?;
                 }
                 Ok(())
             }
@@ -450,6 +420,79 @@ impl Instance<'_> {
             }),
         }
     }
+
+    /// A stream sink's rows, partitioned over its destinations: each gets its part and this
+    /// sender's end.
+    fn send(&self, s: &TDataStreamSink, destinations: &[TPlanFragmentDestination], out: Chunk) -> Result<(), ExecError> {
+        let keys: Vec<ExchangeKey> = destinations
+            .iter()
+            .map(|d| ExchangeKey { query: qid(self.plan), instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id })
+            .collect();
+        let parts = partition(out, &s.output_partition, keys.len(), self.instance.sender_id)?;
+        for (key, part) in keys.iter().zip(parts) {
+            self.ctx.exchanges.send(key, part);
+            self.ctx.exchanges.end(key);
+        }
+        Ok(())
+    }
+}
+
+/// Values in the types of a tuple's slots.
+pub fn typed(desc: &DescTable, block: Block, slots: &[i32]) -> Result<Block, ExecError> {
+    let to: Vec<_> = slots
+        .iter()
+        .map(|s| desc.slot(*s).map(|s| s.ty.clone()))
+        .collect::<Result<_, _>>()?;
+    if to.len() != block.types.len() {
+        return Err(ExecError::BadRequest(format!(
+            "{} values for a tuple of {} slots",
+            block.types.len(),
+            to.len()
+        )));
+    }
+    let Block { types, rows } = block;
+    let rows = rows
+        .into_iter()
+        .map(|r| {
+            r.into_iter()
+                .zip(types.iter().zip(&to))
+                .map(|(d, (from, to))| coerce(d, from, to))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Block { types: to, rows })
+}
+
+/// A stream sink's own copy of the rows: its conjuncts first, then its output exprs onto its
+/// output tuple (MultiCastDataStreamerSourceOperatorX::get_block; the exchange sink does the same).
+fn consumer_copy(mut out: Chunk, s: &TDataStreamSink, desc: &DescTable) -> Result<Chunk, ExecError> {
+    if let Some(c) = s.conjuncts.as_ref().filter(|c| !c.is_empty()) {
+        out.block = filter(c, out.block, &slot_map(&out.slots))?;
+    }
+    if let (Some(exprs), Some(tuple)) = (s.output_exprs.as_ref(), s.output_tuple_id) {
+        let slots = desc.tuple_slots(tuple)?.to_vec();
+        out = Chunk { block: typed(desc, project(exprs, &out)?, &slots)?, slots };
+    }
+    Ok(out)
+}
+
+/// A multicast sink's consumers (a CTE used more than once): each with its stream sink, its
+/// destinations and its own copy of the fragment's output.
+pub fn multicast(out: &Chunk, m: &TMultiCastDataStreamSink, desc: &DescTable) -> Result<Vec<(TDataStreamSink, Vec<TPlanFragmentDestination>, Chunk)>, ExecError> {
+    let sinks = m.sinks.clone().unwrap_or_default();
+    let destinations = m.destinations.clone().unwrap_or_default();
+    if sinks.is_empty() || sinks.len() != destinations.len() {
+        return Err(ExecError::BadRequest(format!(
+            "a multicast sink with {} consumers and {} destination lists",
+            sinks.len(),
+            destinations.len()
+        )));
+    }
+    sinks
+        .into_iter()
+        .zip(destinations)
+        .map(|(s, d)| consumer_copy(out.clone(), &s, desc).map(|c| (s, d, c)))
+        .collect()
 }
 
 fn limit(l: i64) -> Option<usize> {
