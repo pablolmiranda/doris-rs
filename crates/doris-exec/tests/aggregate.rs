@@ -237,3 +237,18 @@ fn a_limit_with_a_group_key_order_keeps_the_top_groups() {
     let kept = top_groups(block, &info, 2);
     assert_eq!(kept.rows, vec![vec![Datum::Int(4), Datum::Int(5)], vec![Datum::Int(3), Datum::Int(5)]]);
 }
+
+#[test]
+fn a_sum_to_a_lower_scale_is_refused() {
+    // Doris sums a decimal at its own scale; a lower result scale would need rounding doris-rs does not do
+    let d = scalar(T::DECIMAL32, -1, 9, 2);
+    let err = Aggregation {
+        group_by: vec![],
+        functions: vec![spec("sum", scalar(T::DECIMAL128I, -1, 38, 1), vec![d.clone()], false, vec![slot(1, d.clone())])],
+        finalize: true,
+    }
+    .run(&input(&d, &ints(&[Some(155)])))
+    .expect_err("scale 2 to 1")
+    .to_string();
+    assert!(err.contains("lower scale"), "{err}");
+}

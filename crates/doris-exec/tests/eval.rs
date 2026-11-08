@@ -266,3 +266,17 @@ fn datetime_casts_round_to_the_lower_scale() {
         vec![Some("2022-12-01 22:23:25.000".into()), Some("2023-01-01 00:00:00.000".into()), Some("2022-12-01 22:23:24.123".into()), None]
     );
 }
+
+#[test]
+fn text_against_a_number_is_refused() {
+    // the FE casts both sides to one type; a comparison it left mixed has no order doris-rs knows
+    let (block, slots) = typed_block();
+    let vs = scalar(T::VARCHAR, 10, 0, 0);
+    for e in [
+        binary("eq", slot(5, vs.clone()), int(1, ty(T::INT))),
+        in_list(slot(1, ty(T::INT)), vec![string("1")], false),
+    ] {
+        let err = filter(&[e], block.clone(), &slots).expect_err("text against a number").to_string();
+        assert!(err.contains("text against"), "{err}");
+    }
+}

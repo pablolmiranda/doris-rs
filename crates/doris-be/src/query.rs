@@ -171,6 +171,27 @@ impl QueryService {
         });
         {
             let mut queries = self.queries();
+            // one (query, fragment) per BE, as FragmentMgr::exec_plan_fragment; a query sent in
+            // more than one request is not one doris-rs runs
+            if let Some(held) = queries.get(&id) {
+                let (code, msg) = match q.plan.fragments.iter().find(|f| held.plan.fragments.iter().any(|h| h.fragment_id == f.fragment_id)) {
+                    Some(f) => (
+                        INTERNAL_ERROR,
+                        format!(
+                            "({})[INTERNAL_ERROR]exec_plan_fragment query_id({:x}-{:x}) input duplicated fragment_id({})",
+                            self.inner.master.localhost(),
+                            id.0,
+                            id.1,
+                            f.fragment_id
+                        ),
+                    ),
+                    None => (
+                        NOT_IMPLEMENTED_ERROR,
+                        format!("({})[NOT_IMPLEMENTED_ERROR]a query sent in more than one request", self.inner.master.localhost()),
+                    ),
+                };
+                return reply(pstatus(code, Some(msg)));
+            }
             for k in keys {
                 queries.insert(k, q.clone());
             }
@@ -217,10 +238,15 @@ impl QueryService {
             }
             *started = true;
         }
-        let inner = self.inner.clone();
-        let spawned = std::thread::Builder::new().name("query".into()).spawn(move || inner.execute(&q));
+        let (inner, ran) = (self.inner.clone(), q.clone());
+        let spawned = std::thread::Builder::new().name("query".into()).spawn(move || inner.execute(&ran));
         if let Err(e) = spawned {
-            eprintln!("doris-rs be: cannot start a query: {e}");
+            // nothing will run: the FE's fetch gets the error instead of waiting out its timeout
+            q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            q.fail(pstatus(
+                INTERNAL_ERROR,
+                Some(format!("({})[INTERNAL_ERROR]cannot start the query: {e}", self.inner.master.localhost())),
+            ));
         }
     }
 

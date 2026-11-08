@@ -285,6 +285,23 @@ fn a_failed_query_leaves_no_state() {
 }
 
 #[test]
+fn a_repeated_prepare_is_refused() {
+    let env = env();
+    let v = table(&env, 1010, kv(2));
+    let q = qid(10);
+    let req = exec_request(vec![prepared(scan_query(q.clone(), 1010, v, &columns(), 4064))]);
+    assert_eq!(env.query.prepare(&req).status.status_code, 0);
+    // as FragmentMgr::exec_plan_fragment: one (query, fragment) per BE
+    let again = env.query.prepare(&req);
+    assert_ne!(again.status.status_code, 0);
+    let msg = again.status.error_msgs.join(" ");
+    assert!(msg.contains("input duplicated fragment_id"), "{msg}");
+    // the first query is untouched
+    start(&env.query, &q);
+    assert_eq!(rows(&fetch_all(&env.query, &q)).len(), 2);
+}
+
+#[test]
 fn exchange_sender_counts_must_match_the_plan() {
     use doris_fixtures::replays::{self, plan_list, shape, Step};
     // a two-fragment corpus plan: SORT(OLAP_SCAN) -> merge | EXCHANGE -> RESULT

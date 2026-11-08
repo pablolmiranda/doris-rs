@@ -336,6 +336,11 @@ fn number(d: &Datum, t: &ColType, to_scale: i32) -> Result<Option<Num>, ExecErro
         Datum::Bool(b) => Some(Num::Int(i128::from(*b))),
         Datum::Int(v) => {
             let from = if is_decimal(t) { t.scale } else { 0 };
+            if to_scale < from {
+                return Err(ExecError::Unsupported {
+                    what: format!("a sum of scale {from} to a lower scale {to_scale}"),
+                });
+            }
             let v = if to_scale > from {
                 10i128
                     .checked_pow((to_scale - from) as u32)
