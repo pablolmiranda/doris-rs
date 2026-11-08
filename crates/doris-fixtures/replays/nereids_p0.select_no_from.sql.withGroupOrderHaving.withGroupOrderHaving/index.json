@@ -1,0 +1,32 @@
+[
+  {
+    "file": "0000.bin",
+    "method": "exec_plan_fragment_prepare",
+    "reply": "0000.reply.bin",
+    "service": "PBackendService"
+  },
+  {
+    "file": "0001.bin",
+    "method": "fetch_data",
+    "reply": "0001.reply.bin",
+    "service": "PBackendService"
+  },
+  {
+    "file": "0002.bin",
+    "method": "exec_plan_fragment_start",
+    "reply": "0002.reply.bin",
+    "service": "PBackendService"
+  },
+  {
+    "file": "0003.bin",
+    "method": "fetch_data",
+    "reply": "0003.reply.bin",
+    "service": "PBackendService"
+  },
+  {
+    "file": "0004.bin",
+    "method": "cancel_plan_fragment",
+    "reply": "0004.reply.bin",
+    "service": "PBackendService"
+  }
+]
