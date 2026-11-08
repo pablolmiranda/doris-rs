@@ -85,3 +85,28 @@ fn a_cte_replay_has_a_multicast_sink() {
     });
     assert!(multicast, "{CTE} has no multicast sink");
 }
+
+const SET_OPS: [&str; 4] = [
+    "correctness_p0.test_set_operation.test_set_operation",
+    "nereids_p0.test_filter_pushdown_set.test_filter_pushdown_set",
+    "query_p0.set_operations.set_with_null.set_with_null.set_with_null",
+    "query_p0.set_operations.test_pullup_predicate_null.test_pullup_predicate_null",
+];
+
+#[test]
+fn set_op_replays_have_intersect_and_except() {
+    use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
+    let fragments: Vec<_> = SET_OPS
+        .iter()
+        .flat_map(|s| replays::load(s).queries())
+        .flat_map(|q| q.params_list.unwrap_or_default())
+        .collect();
+    let has = |t: P| fragments.iter().any(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| n.node_type == t));
+    assert!(has(P::INTERSECT_NODE), "no INTERSECT_NODE");
+    assert!(has(P::EXCEPT_NODE), "no EXCEPT_NODE");
+    let parallel = fragments.iter().any(|p| {
+        p.local_params.as_ref().is_some_and(|l| l.len() > 1)
+            && p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| matches!(n.node_type, P::INTERSECT_NODE | P::EXCEPT_NODE))
+    });
+    assert!(parallel, "no set node runs in more than one instance");
+}
