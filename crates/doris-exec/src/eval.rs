@@ -292,6 +292,7 @@ fn eval_at(
             let op = comparison(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
             let [(ta, a), (tb, b)] =
                 <[_; 2]>::try_from(kids).map_err(|_| bad("comparison needs two arguments"))?;
+            refuse_mixed(&ta, &tb)?;
             let out = a.iter().zip(&b).map(|(x, y)| {
                 compare(x, &ta, y, &tb).map(|o| match op {
                     "eq" => o == Ordering::Equal,
@@ -347,6 +348,9 @@ fn eval_at(
             let mut kids = kids.into_iter();
             let (tv, vals) = kids.next().ok_or_else(|| bad("IN without its value"))?;
             let list: Vec<(ColType, Vec<Datum>)> = kids.collect();
+            for (tl, _) in &list {
+                refuse_mixed(&tv, tl)?;
+            }
             let out = (0..rows).map(|r| {
                 if vals[r] == Datum::Null {
                     return None;
@@ -465,6 +469,19 @@ pub fn compare(a: &Datum, ta: &ColType, b: &Datum, tb: &ColType) -> Option<Order
         (Key::Bytes(x), _) => x.cmp(datum_bytes(b, tb).as_slice()),
         (_, Key::Bytes(y)) => datum_bytes(a, ta).as_slice().cmp(y),
     })
+}
+
+/// Text compared with a number: the FE casts both sides to one type, so a comparison it left
+/// mixed is refused rather than ordered by text.
+fn refuse_mixed(a: &ColType, b: &ColType) -> Result<(), ExecError> {
+    let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
+    let null = |t: &ColType| t.ptype == T::NULL_TYPE;
+    if text(a) != text(b) && !null(a) && !null(b) {
+        return Err(ExecError::Unsupported {
+            what: format!("a comparison of text against {}", if text(a) { b.type_name() } else { a.type_name() }),
+        });
+    }
+    Ok(())
 }
 
 fn datum_bytes(d: &Datum, t: &ColType) -> Vec<u8> {

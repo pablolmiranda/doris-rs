@@ -97,7 +97,8 @@ from 476 to 370; the supplement takes it to 348. It gains a group,
 false and fails on the reference before it resets it, so later tables get v1 DATE columns. The
 `wait_timeout=31000` group is gone: the nereids `test_query_sys_tables` now runs past the
 statement that sets it. `test_move_column_with_cast` left the out ratchet: it needs
-`task:ALTER` and had passed in only one run of six.
+`task:ALTER` and had passed in only one run of six. `m5-full-3` (2026-11-08), on the final
+code, gave the same numbers; `test_move_column_with_cast` passed in it and stays off the ratchets.
 
 The older directory-level gate also works against any target:
 
@@ -124,6 +125,9 @@ make readback-check  # the C++ BE reads doris-rs's loads as its own; last line: 
 make meta-fixtures   # re-capture the C++ BE's meta/ databases (crates/doris-rocks/tests/fixtures)
 make loaded-fixture  # re-capture the C++ BE after the M4 load dataset (crates/doris-storage/tests/fixtures/cpp-loaded)
 ```
+
+Both checks stop at once, naming the process, if a BE left running (`make rust-be`, an
+earlier check) holds ports 9050, 9060, 8060 or 8040.
 
 **Swap check.** After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot
 before it (clocks, the binary's version and the deployment facts aside), its tablet report diff
