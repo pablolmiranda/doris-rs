@@ -59,5 +59,9 @@
   "query_p0.common_sub_expression.dist_expr_list.dist_expr_list.dist_expr_list",
   "nereids_p0.eliminate_outer_join.eliminate_outer_join.eliminate_outer_join",
   "correctness_p0.test_rand_filter.test_rand_filter",
-  "correctness_p0.test_subquery_grouping.test_subquery_grouping"
+  "correctness_p0.test_subquery_grouping.test_subquery_grouping",
+  "correctness_p0.test_set_operation.test_set_operation",
+  "nereids_p0.test_filter_pushdown_set.test_filter_pushdown_set",
+  "query_p0.set_operations.set_with_null.set_with_null.set_with_null",
+  "query_p0.set_operations.test_pullup_predicate_null.test_pullup_predicate_null"
 ]

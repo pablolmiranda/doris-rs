@@ -349,11 +349,151 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
             check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;
         }
+        // const_expr_lists and first_materialized_child_idx are ignored, as C++ ignores them; the
+        // tuple, types and distribution are checked in check_plan (check_sets)
+        P::INTERSECT_NODE | P::EXCEPT_NODE => check_exprs(set_node(n)?.2.iter().flatten(), false)?,
         _ => return Err(unsupported(name)),
     }
     check_exprs(n.conjuncts.iter().flatten(), false)?;
     check_exprs(n.projections.iter().flatten(), false)?;
     Ok(())
+}
+
+/// An INTERSECT_NODE's or EXCEPT_NODE's kind, tuple and result expr lists (one per child, all of
+/// one length).
+pub fn set_node(n: &TPlanNode) -> Result<(crate::set_op::SetKind, i32, &[Vec<TExpr>]), ExecError> {
+    use crate::set_op::SetKind;
+    let name = node_type_name(n.node_type);
+    let missing = || ExecError::BadRequest(format!("{name} without its parameters"));
+    let (kind, tuple, lists) = match n.node_type {
+        P::INTERSECT_NODE => n.intersect_node.as_ref().map(|s| (SetKind::Intersect, s.tuple_id, &s.result_expr_lists)).ok_or_else(missing)?,
+        P::EXCEPT_NODE => n.except_node.as_ref().map(|s| (SetKind::Except, s.tuple_id, &s.result_expr_lists)).ok_or_else(missing)?,
+        _ => return Err(ExecError::BadRequest(format!("{name} is not a set node"))),
+    };
+    if n.num_children < 2 {
+        let what = if n.num_children == 1 { "child" } else { "children" };
+        return Err(ExecError::BadRequest(format!("a set node with {} {what}; it needs at least 2", n.num_children)));
+    }
+    if lists.len() != n.num_children as usize {
+        return Err(ExecError::BadRequest(format!("an {name} with {} children and {} result expr lists", n.num_children, lists.len())));
+    }
+    if lists.iter().any(|l| l.len() != lists[0].len()) {
+        return Err(ExecError::BadRequest(format!("an {name} with result expr lists of different lengths")));
+    }
+    Ok((kind, tuple, lists))
+}
+
+/// The set nodes of a fragment's tree, against the plan:
+/// - their result exprs fill the node's tuple, each in its slot's type. C++ probes every child
+///   with child 0's hash method, so the types must match; only nullability may differ;
+/// - in a fragment of several instances, equal rows must meet in one instance. Every child is
+///   an exchange; child 0 is fed by hash-partitioned streams, and the others by hash-partitioned
+///   or unpartitioned ones. doris-rs has no local shuffle, so a colocated node is refused.
+fn check_sets(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), ExecError> {
+    for c in &t.children {
+        check_sets(c, f, plan)?;
+    }
+    if !matches!(t.node.node_type, P::INTERSECT_NODE | P::EXCEPT_NODE) {
+        return Ok(());
+    }
+    let name = node_type_name(t.node.node_type);
+    let (_, tuple, lists) = set_node(&t.node)?;
+    let slots = plan.desc.tuple_slots(tuple)?;
+    if lists[0].is_empty() {
+        return Err(ExecError::BadRequest(format!("an {name} with no result exprs")));
+    }
+    if slots.len() != lists[0].len() {
+        return Err(ExecError::BadRequest(format!(
+            "an {name} with result expr lists of {} exprs for a tuple of {} slots",
+            lists[0].len(),
+            slots.len()
+        )));
+    }
+    for list in lists {
+        for (e, id) in list.iter().zip(slots) {
+            let slot = &plan.desc.slot(*id)?.ty;
+            let Some(ty) = e.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, slot.nullable)) else {
+                return Err(unsupported(format!("an {name} result expr of a type doris-rs does not run")));
+            };
+            if (ty.ptype, ty.precision, ty.scale) != (slot.ptype, slot.precision, slot.scale) {
+                return Err(unsupported(format!(
+                    "an {name} result expr of type {} for a slot of type {}",
+                    ty.type_name(),
+                    slot.type_name()
+                )));
+            }
+        }
+    }
+    let n = f.instances.len();
+    if n <= 1 {
+        return Ok(());
+    }
+    let colocate = t.node.intersect_node.as_ref().and_then(|s| s.is_colocate).or(t.node.except_node.as_ref().and_then(|s| s.is_colocate));
+    if colocate == Some(true) {
+        return Err(unsupported(format!("an {name} colocated over {n} instances")));
+    }
+    for (i, (c, keys)) in t.children.iter().zip(lists).enumerate() {
+        let keys = slot_ids(keys);
+        match c.node.node_type {
+            // a nested set node's rows are partitioned by its own keys: the parent's must be them
+            P::INTERSECT_NODE | P::EXCEPT_NODE => {
+                let (_, inner, _) = set_node(&c.node)?;
+                if keys.as_deref() != Some(plan.desc.tuple_slots(inner)?) {
+                    return Err(unsupported(format!("an {name} over a set node on other keys in {n} instances")));
+                }
+            }
+            P::EXCHANGE_NODE => {
+                for (p, exprs) in feeding_sinks(plan, c.node.node_id) {
+                    let hashed = p == TPartitionType::HASH_PARTITIONED;
+                    if !(hashed || (i > 0 && p == TPartitionType::UNPARTITIONED)) {
+                        return Err(unsupported(format!("an {name} child fed by a {} stream in {n} instances", partition_name(p))));
+                    }
+                    if hashed && (keys.is_none() || slot_ids(exprs) != keys) {
+                        return Err(unsupported(format!("an {name} child hashed on other exprs than its keys in {n} instances")));
+                    }
+                }
+            }
+            other => {
+                let child = node_type_name(other);
+                let a = if child.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
+                return Err(unsupported(format!("an {name} over {a} {child} in {n} instances")));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The slot ids of exprs that are all plain slot refs.
+fn slot_ids(exprs: &[TExpr]) -> Option<Vec<i32>> {
+    exprs
+        .iter()
+        .map(|e| match e.nodes.as_slice() {
+            [n] if n.node_type == doris_thrift::gen::exprs::TExprNodeType::SLOT_REF => n.slot_ref.as_ref().map(|r| r.slot_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The partition type and exprs of every stream sink (or multicast consumer) that sends to
+/// exchange `node`.
+fn feeding_sinks(plan: &QueryPlan, node: i32) -> Vec<(TPartitionType, &[TExpr])> {
+    let mut out = Vec::new();
+    for g in &plan.fragments {
+        let sinks: Vec<&TDataStreamSink> = match g.sink.type_ {
+            TDataSinkType::DATA_STREAM_SINK => g.sink.stream_sink.iter().collect(),
+            TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => g.sink.multi_cast_stream_sink.iter().flat_map(|m| m.sinks.iter().flatten()).collect(),
+            _ => Vec::new(),
+        };
+        for s in sinks.into_iter().filter(|s| s.dest_node_id == node) {
+            out.push((s.output_partition.type_, s.output_partition.partition_exprs.as_deref().unwrap_or_default()));
+        }
+    }
+    out
+}
+
+fn partition_name(p: TPartitionType) -> String {
+    const NAMES: &[&str] = &["UNPARTITIONED", "RANDOM", "HASH_PARTITIONED", "RANGE_PARTITIONED", "LIST_PARTITIONED", "BUCKET_SHFFULE_HASH_PARTITIONED"];
+    usize::try_from(p.0).ok().and_then(|i| NAMES.get(i)).map_or_else(|| format!("{p:?}"), |s| s.to_string())
 }
 
 /// How many of a fragment's stream sinks send to exchange `node` in instance `to`: its stream
@@ -456,6 +596,9 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
             }
             other => return Err(unsupported(sink_type_name(other))),
         }
+    }
+    for f in &plan.fragments {
+        check_sets(&f.root, f, plan)?;
     }
     check_senders(plan)?;
     for s in plan.desc.slots.values() {
