@@ -100,6 +100,11 @@ statement that sets it. `test_move_column_with_cast` left the out ratchet: it ne
 `task:ALTER` and had passed in only one run of six. `m5-full-3` (2026-11-08), on the final
 code, gave the same numbers; `test_move_column_with_cast` passed in it and stays off the ratchets.
 
+After Milestone 6 story 1 (CTEs: the `MULTI_CAST_DATA_STREAM_SINK`; run `m6-s1-full-2`,
+2026-11-08): 349 eligible suites, all passing both gates; 379 Epic 1 suites pass the out gate
+(212 of those that reach the BE) and 277 the strict gate (197). The one new suite is
+`correctness_p0.test_subquery_grouping`; the other CTE suites also need joins or arithmetic.
+
 The older directory-level gate also works against any target:
 
 ```
