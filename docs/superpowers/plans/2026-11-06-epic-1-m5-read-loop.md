@@ -65,6 +65,11 @@ The tasks below are the plan as written. Implementation changed these:
   - `m5-full-2`, the final run: 348 eligible, failing 0 on both gates. Out passes 378 (211
     reaching the BE), strict 276 (196). `test_move_column_with_cast` left the out ratchet: it
     needs `task:ALTER` and had passed in only one run of six.
+  - After the PR opened, four deferred minors were fixed: text compared with a number and a
+    decimal sum to a lower scale are refused (they could answer wrongly); a repeated prepare is
+    refused as the C++ BE refuses it; a query whose thread cannot start fails at once. The
+    swap and readback checks name a BE left holding their ports, and round c's replies are
+    counted.
   - `m5-full-2` ran on 8bef912. The review fixes after it (query and exchange state forgotten
     once served, sender counts checked, the cancel/finish race) change no reply.
 

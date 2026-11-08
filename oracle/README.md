@@ -125,6 +125,9 @@ make meta-fixtures   # re-capture the C++ BE's meta/ databases (crates/doris-roc
 make loaded-fixture  # re-capture the C++ BE after the M4 load dataset (crates/doris-storage/tests/fixtures/cpp-loaded)
 ```
 
+Both checks stop at once, naming the process, if a BE left running (`make rust-be`, an
+earlier check) holds ports 9050, 9060, 8060 or 8040.
+
 **Swap check.** After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot
 before it (clocks, the binary's version and the deployment facts aside), its tablet report diff
 counts every tablet on the backend, and no DROP or CLONE arrives. Each binary inserts rows into

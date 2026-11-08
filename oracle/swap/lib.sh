@@ -31,8 +31,19 @@ vm_ip() {
 
 # A fresh FE-only cluster, an empty root, and no internal table that would receive data
 # (audit log, statistics): a tablet with data would make doris-rs refuse the root.
+# A BE left running (make rust-be, an earlier check) holds the ports: both binaries would then
+# fail to start and the check would only see a backend that never becomes alive.
+ports_free() {
+  local port held
+  for port in 9050 9060 8060 8040; do
+    held="$({ lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true; } | awk 'NR == 2 {print $1 " (pid " $2 ")"}')"
+    [[ -z "${held}" ]] || die "port ${port} is held by ${held}; stop it first"
+  done
+}
+
 swap_up() {
   docker rm -f "${CPP}" >/dev/null 2>&1 || true
+  ports_free
   make -C "${ORACLE}" fe-down >/dev/null 2>&1 || true
   rm -rf "${SWAP_ROOT}" "${SWAP_LOGS}" && mkdir -p "${SWAP_ROOT}" "${SWAP_LOGS}"
   make -C "${ORACLE}" fe-up >&2

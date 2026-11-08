@@ -95,6 +95,10 @@ done
 compare a "${OUT}/R2"
 compare b "${OUT}/RS1"
 compare c "${OUT}/RS2"
-[[ "$(ls "${OUT}/RS1" | wc -l)" -eq "$(($(ls "${OUT}/R1" | wc -l) - 1))" ]] || fail "b: doris-rs answered $(ls "${OUT}/RS1" | wc -l | tr -d ' ') queries"
+# doris-rs answers every query but the join, in both rounds
+for round in b:RS1 c:RS2; do
+  [[ "$(ls "${OUT}/${round#*:}" | wc -l)" -eq "$(($(ls "${OUT}/R1" | wc -l) - 1))" ]] ||
+    fail "${round%%:*}: doris-rs answered $(ls "${OUT}/${round#*:}" | wc -l | tr -d ' ') queries"
+done
 say "the C++ BE read doris-rs's writes as its own, and doris-rs answered as the C++ BE"
 echo "readback check: PASS"
