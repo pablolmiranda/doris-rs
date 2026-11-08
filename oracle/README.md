@@ -105,6 +105,15 @@ After Milestone 6 story 1 (CTEs: the `MULTI_CAST_DATA_STREAM_SINK`; run `m6-s1-f
 (212 of those that reach the BE) and 277 the strict gate (197). The one new suite is
 `correctness_p0.test_subquery_grouping`; the other CTE suites also need joins or arithmetic.
 
+After Milestone 6 story 2 (INTERSECT / EXCEPT: `INTERSECT_NODE`, `EXCEPT_NODE`; run
+`m6-s2-full-1`, 2026-11-08): 364 eligible suites, all passing both gates; 395 Epic 1 suites pass
+the out gate (228 of those that reach the BE) and 293 the strict gate (213). There are 16 new
+passes: the 15 newly eligible suites, and `intersect_nullable_not_nullable`. That suite stays
+ineligible only for its `active_queries` and `backend_active_tasks` system-table reads. Result
+order is child 0's first-seen order, with a one-column NULL row first, as C++ gives it.
+`set_operation_exprid_reuse` (not yet eligible) has two replies, #18 and #27, that follow C++'s
+hash order; first-seen order happens to match them today.
+
 The older directory-level gate also works against any target:
 
 ```

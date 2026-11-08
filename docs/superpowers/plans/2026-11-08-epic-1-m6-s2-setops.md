@@ -14,6 +14,46 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-epic-1-m6-query-breadth-design.md` §2, §3, §5.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **Typed before keying.** Each child's projected rows are typed onto the node's tuple before
+  they are keyed, not only the result. Values then compare at one type (a decimal's scale, say).
+- **Prepare checks** (`query::set_node`, `query::check_sets`), from the final review. Each of
+  these is refused at prepare:
+  - a node with fewer than 2 children, no parameters, or a result expr list per child that
+    doesn't match;
+  - lists of different lengths, empty lists, or lists not as wide as the tuple;
+  - an expr whose type (ptype, precision, scale) differs from its slot's.
+- **Several instances.** In a fragment of more than one instance, doris-rs refuses a set node
+  whose equal rows might reach different instances (C++ adds a local shuffle there). Refused:
+  - a colocated node;
+  - a child that is not an exchange, or not a nested set node keyed on its own output;
+  - an exchange fed by a sink that isn't hashed on exactly the node's keys. UNPARTITIONED is
+    accepted for a probe child.
+- **One copy of each key.** `set_rows` keeps one map from key to row, and each probe child marks
+  the rows it finds.
+- **Added tests from the final review:**
+  - `set_op` tests for NaN and FLOAT -0.0, a two-column all-NULL row keeping its place, and keys
+    that must not run together;
+  - every `a_set_node_must_be_well_formed` mutation, on both node types;
+  - `a_set_node_needs_its_children_to_be_exchanges_in_several_instances` and
+    `a_nested_set_node_must_be_keyed_on_its_output`;
+  - `a_limit_on_a_set_node_applies_after_the_set_operation`.
+- **Not done:** slot nullability is not checked against the child exprs; C++ errors on a
+  mismatch the FE does not send. Runtime filters and `const_expr_lists` are ignored, as in
+  Research.
+- **Known order dependency.** Two replies of `set_operation_exprid_reuse` (#18 and #27, keys of
+  two columns) follow C++'s hash order. First-seen order matches them today; the story that makes
+  that suite eligible must check them.
+- **The full run.** `m6-s2-full-1`, on the final code: 364 eligible, 0 failing either gate; 395
+  suites pass the out gate and 293 the strict gate. There are 16 new passes, the 15 newly
+  eligible suites and `intersect_nullable_not_nullable`, and nothing was lost.
+  `test_move_column_with_cast` stays off the ratchets. Two suites (`test_cumu_compaction_with_delete`,
+  `test_index_compaction_empty_segments`) each hung 30 minutes on a DELETE. The finishTask
+  type bug behind that is fixed separately, in PR #31.
+
 ## Research
 
 **The C++ BE** (`exec/operator/set_sink_operator.cpp`, `set_probe_sink_operator.cpp`,
@@ -192,12 +232,12 @@ every node type shares.
 - Modify: `oracle/scores/epic1-out.txt`, `oracle/scores/epic1-strict.txt` (from the run)
 - Modify: `oracle/README.md` (an M6 story 2 paragraph), this plan (As built)
 
-- [ ] **Step 1:** Make sure no BE holds the ports. Then reset the FE (`make fe-down`, remove
+- [x] **Step 1:** Make sure no BE holds the ports. Then reset the FE (`make fe-down`, remove
   `/tmp/doris-rs-oracle/storage`, `make fe-up`), start `make rust-be` with nohup, and run
   `RUN_ID=m6-s2-full-1 make epic-check TARGET=rust`. Expected: `eligible: 364; failing
   out-gate: 0; failing strict: 0`. Triage any failure with superpowers:systematic-debugging.
-- [ ] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
+- [x] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
   `test_move_column_with_cast`. Run `make -C oracle test`, `readback-check` and `swap-check`.
   Expected: all PASS.
-- [ ] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
-- [ ] **Step 4: Commit** ("M6 s2: gate, docs, As built").
+- [x] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
+- [x] **Step 4: Commit** ("M6 s2: gate, docs, As built").
