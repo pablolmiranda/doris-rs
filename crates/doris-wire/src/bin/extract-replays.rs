@@ -380,8 +380,11 @@ fn write(out: &Path, c: &Candidate) {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let out = PathBuf::from(args.next().expect("usage: extract-replays OUT_DIR [N]"));
-    let want: usize = args.next().map(|n| n.parse().expect("N")).unwrap_or(60);
+    let out = PathBuf::from(args.next().expect("usage: extract-replays OUT_DIR [N | --only SUITE...]"));
+    let rest: Vec<String> = args.collect();
+    // --only: add the named suites to OUT_DIR, leaving its other replays as they are
+    let only: Option<BTreeSet<String>> = (rest.first().map(String::as_str) == Some("--only")).then(|| rest[1..].iter().cloned().collect());
+    let want: usize = if only.is_some() { 0 } else { rest.first().map(|n| n.parse().expect("N")).unwrap_or(60) };
     let oracle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oracle");
     let supported: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(oracle.join("scores/epic1-supported.json"))
@@ -410,7 +413,7 @@ fn main() {
             .to_string_lossy()
             .trim_end_matches(".bin.gz")
             .to_string();
-        if !gate.contains(&suite) {
+        if !gate.contains(&suite) || only.as_ref().is_some_and(|o| !o.contains(&suite)) {
             continue;
         }
         let mut records = read_suite(&path).expect("read suite");
@@ -436,6 +439,10 @@ fn main() {
                 .or_default() += 1;
             }
         }
+    }
+    if let Some(only) = only {
+        add_only(&out, &found, &only, &why);
+        return;
     }
     found.sort_by_key(|c| (c.suite != SYS_TABLES, c.bytes));
 
@@ -510,4 +517,22 @@ fn main() {
         all_fns
     );
     eprintln!("rejected: {why:?}");
+}
+
+/// Writes the named suites into `out` and appends them to its index; any that is not replayable
+/// stops the run.
+fn add_only(out: &Path, found: &[Candidate], only: &BTreeSet<String>, why: &BTreeMap<String, usize>) {
+    let kept: BTreeSet<&str> = found.iter().map(|c| c.suite.as_str()).collect();
+    let missing: Vec<&String> = only.iter().filter(|s| !kept.contains(s.as_str())).collect();
+    assert!(missing.is_empty(), "not replayable: {missing:?} (rejections: {why:?})");
+    let index_path = out.join("index.json");
+    let mut index: Vec<String> = serde_json::from_str(&std::fs::read_to_string(&index_path).expect("index.json")).expect("index");
+    for c in found {
+        write(out, c);
+        if !index.contains(&c.suite) {
+            index.push(c.suite.clone());
+        }
+    }
+    std::fs::write(index_path, serde_json::to_string_pretty(&index).unwrap() + "\n").expect("write index");
+    eprintln!("added {} replays; {} in all", found.len(), index.len());
 }
