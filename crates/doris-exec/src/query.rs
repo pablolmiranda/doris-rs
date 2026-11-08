@@ -10,7 +10,7 @@ use doris_thrift::gen::descriptors::TDescriptorTable;
 use doris_thrift::gen::exprs::TExpr;
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
 use doris_thrift::gen::partitions::TPartitionType;
-use doris_thrift::gen::plan_nodes::{TPlanNode, TPlanNodeType as P};
+use doris_thrift::gen::plan_nodes::{TPlanNode, TPlanNodeType as P, TSortInfo, TopNAlgorithm};
 use doris_thrift::gen::types::{TNetworkAddress, TUniqueId};
 
 use crate::eval::check_nodes;
@@ -353,6 +353,10 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
                 crate::analytic::check_frame(&crate::analytic::WindowFn::from_expr(f)?, &frame)?;
             }
         }
+        P::PARTITION_SORT_NODE => {
+            let (p, info, _, _) = partition_sort_node(n)?;
+            check_exprs(p.iter().chain(&info.ordering_exprs).chain(info.sort_tuple_slot_exprs.iter().flatten()), false)?;
+        }
         P::MATERIALIZATION_NODE => {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
             check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;
@@ -471,6 +475,23 @@ fn check_sets(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), Ex
     Ok(())
 }
 
+/// A PARTITION_SORT_NODE's partition exprs, sort, algorithm and per-partition limit. With
+/// `has_global_limit` the algorithm is ROW_NUMBER, as in C++.
+pub fn partition_sort_node(n: &TPlanNode) -> Result<(&[TExpr], &TSortInfo, TopNAlgorithm, usize), ExecError> {
+    let p = n.partition_sort_node.as_ref().ok_or_else(|| ExecError::BadRequest("PARTITION_SORT_NODE without its parameters".into()))?;
+    let info = p.sort_info.as_ref().ok_or_else(|| ExecError::BadRequest("a PARTITION_SORT_NODE without its sort".into()))?;
+    let limit = p
+        .partition_inner_limit
+        .filter(|l| *l >= 0)
+        .ok_or_else(|| ExecError::BadRequest("a PARTITION_SORT_NODE without a limit of 0 or more".into()))?;
+    let algo = if p.has_global_limit == Some(true) {
+        TopNAlgorithm::ROW_NUMBER
+    } else {
+        p.top_n_algorithm.ok_or_else(|| ExecError::BadRequest("a PARTITION_SORT_NODE without its algorithm".into()))?
+    };
+    Ok((p.partition_exprs.as_deref().unwrap_or_default(), info, algo, limit as usize))
+}
+
 /// ANALYTIC_EVAL_NODE: one function per slot of its output tuple. In several instances, the
 /// rows of a partition must meet in one: the node is colocated (a bucket's rows are in one
 /// instance), or its input is hashed on a subset of its partition keys. A node with no
@@ -478,6 +499,14 @@ fn check_sets(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), Ex
 fn check_windows(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), ExecError> {
     for c in &t.children {
         check_windows(c, f, plan)?;
+    }
+    // a global phase's output is exact and sorted per partition over all instances, which needs
+    // the rows of a partition in one; no eligible suite has one
+    if let Some(p) = t.node.partition_sort_node.as_ref().filter(|_| t.node.node_type == P::PARTITION_SORT_NODE) {
+        let n = f.instances.len();
+        if n > 1 && p.ptopn_phase == Some(doris_thrift::gen::plan_nodes::TPartTopNPhase::TWO_PHASE_GLOBAL) {
+            return Err(unsupported(format!("a global PARTITION_SORT_NODE in {n} instances")));
+        }
     }
     let Some(a) = t.node.analytic_node.as_ref().filter(|_| t.node.node_type == P::ANALYTIC_EVAL_NODE) else {
         return Ok(());

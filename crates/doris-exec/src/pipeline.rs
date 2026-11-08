@@ -101,6 +101,7 @@ impl Instance<'_> {
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
             P::ANALYTIC_EVAL_NODE => self.analytic(t)?,
+            P::PARTITION_SORT_NODE => self.partition_sort(t)?,
             P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
             P::MATERIALIZATION_NODE => self.materialize(t)?,
             _ => {
@@ -377,16 +378,37 @@ impl Instance<'_> {
         let n = &t.node;
         let s = n.sort_node.as_ref().ok_or_else(|| ExecError::BadRequest("SORT_NODE without its parameters".into()))?;
         let child = self.child(t, 0)?;
-        let input = match (&s.sort_info.sort_tuple_slot_exprs, n.row_tuples.first()) {
+        let input = self.sort_input(n, &s.sort_info, child)?;
+        sorted(input, &s.sort_info.ordering_exprs, &s.sort_info, s.offset.unwrap_or(0).max(0) as usize, limit(n.limit))
+    }
+
+    /// A sort's input on its own tuple: its slot exprs over the child, or the child's columns by
+    /// position when there are none.
+    fn sort_input(&self, n: &doris_thrift::gen::plan_nodes::TPlanNode, info: &doris_thrift::gen::plan_nodes::TSortInfo, child: Chunk) -> Result<Chunk, ExecError> {
+        Ok(match (&info.sort_tuple_slot_exprs, n.row_tuples.first()) {
             (Some(exprs), Some(tuple)) => {
                 let slots = self.plan.desc.tuple_slots(*tuple)?.to_vec();
                 Chunk { block: self.typed(project(exprs, &child)?, &slots)?, slots }
             }
-            // no slot expressions: the sort tuple takes the child's columns by position
             (None, Some(tuple)) => self.relabel(child, *tuple)?,
             _ => child,
-        };
-        sorted(input, &s.sort_info.ordering_exprs, &s.sort_info, s.offset.unwrap_or(0).max(0) as usize, limit(n.limit))
+        })
+    }
+
+    /// PARTITION_SORT_NODE: each partition's top rows (`partition_sort`). The partition exprs
+    /// read the child; the ordering exprs read the node's own tuple.
+    fn partition_sort(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let n = &t.node;
+        let (p, info, algo, limit) = crate::query::partition_sort_node(n)?;
+        let child = self.child(t, 0)?;
+        let part = project(p, &child)?.rows;
+        let input = self.sort_input(n, info, child)?;
+        let key_block = project(&info.ordering_exprs, &input)?;
+        let ks = keys(info, &(0..info.ordering_exprs.len()).collect::<Vec<_>>());
+        let cmp = |a: usize, b: usize| cmp_rows(&key_block.rows[a], &key_block.rows[b], &key_block.types, &ks);
+        let Chunk { block: Block { types, rows }, slots } = input;
+        let rows = crate::partition_sort::partition_top_n(rows, &part, cmp, algo, limit);
+        Ok(Chunk { block: Block { types, rows }, slots })
     }
 
     fn materialize(&self, t: &PlanTree) -> Result<Chunk, ExecError> {

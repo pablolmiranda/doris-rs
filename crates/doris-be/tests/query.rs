@@ -708,3 +708,52 @@ fn a_window_node_must_be_runnable() {
     };
     refused_by(&prepare, &random, "an ANALYTIC_EVAL_NODE fed by a RANDOM stream in 4 instances");
 }
+
+/// A check_partitionkey plan with a PARTITION_SORT_NODE in 4 instances, with a function that
+/// changes the plan and prepares it.
+fn partition_sort_plan_prepare() -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    let wanted = |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        l.params_list.iter().flatten().any(|p| {
+            p.local_params.as_ref().is_some_and(|l| l.len() > 1)
+                && p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| n.node_type == TPlanNodeType::PARTITION_SORT_NODE)
+        })
+    };
+    let (req, list) = replays::load("nereids_p0.partition_topn.check_partitionkey.check_partitionkey")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(wanted).map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("a partition sort plan in 4 instances");
+    move |change| {
+        let mut l = list.clone();
+        change(&mut l);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    }
+}
+
+#[test]
+fn a_partition_sort_node_must_be_well_formed() {
+    use doris_thrift::gen::plan_nodes::TPartTopNPhase;
+    let prepare = partition_sort_plan_prepare();
+    let st = prepare(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    fn ps(l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList) -> &mut doris_thrift::gen::plan_nodes::TPlanNode {
+        set_node_of(l, TPlanNodeType::PARTITION_SORT_NODE)
+    }
+    refused_by(&prepare, &|l| ps(l).partition_sort_node = None, "PARTITION_SORT_NODE without its parameters");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().sort_info = None, "a PARTITION_SORT_NODE without its sort");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().partition_inner_limit = Some(-1), "without a limit of 0 or more");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().top_n_algorithm = None, "without its algorithm");
+    // the global phase's output must be exact and sorted per partition across all instances;
+    // no eligible suite has one
+    refused_by(
+        &prepare,
+        &|l| ps(l).partition_sort_node.as_mut().unwrap().ptopn_phase = Some(TPartTopNPhase::TWO_PHASE_GLOBAL),
+        "a global PARTITION_SORT_NODE in 4 instances",
+    );
+}
