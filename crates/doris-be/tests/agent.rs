@@ -160,3 +160,47 @@ fn finish_task_is_retried_three_times() {
     assert_eq!(be.fe.finishes().len(), 1);
     assert_eq!(be.fe.attempts(), 3);
 }
+
+/// A DELETE's push task, as the FE sends it (`PushTask`, `TTaskType::REALTIME_PUSH`).
+fn delete_task(fx: &Fixtures, signature: i64) -> doris_thrift::gen::agent_service::TAgentTaskRequest {
+    use doris_thrift::gen::agent_service::TPushReq;
+    use doris_thrift::gen::types::TPushType;
+    let mut task = fx.tasks()[0].clone();
+    task.task_type = TTaskType::REALTIME_PUSH;
+    task.signature = signature;
+    task.create_tablet_req = None;
+    task.push_req = Some(TPushReq::new(
+        10, 0, 3, 0, 300, TPushType::DELETE, None, None, None, None, Some(5), Some(9), None, None, None, None, None, None, None,
+    ));
+    task
+}
+
+#[test]
+fn a_delete_push_finishes_as_realtime_push_with_an_error() {
+    // push_callback: the finishTask keeps the task's own type, REALTIME_PUSH; the FE looks the
+    // task up by it, and a PUSH report is dropped ("cannot find task") and the DELETE hangs.
+    // finishRealtimePush also needs report_version, and a DELETE carries request_version.
+    let fx = Fixtures::m2();
+    let be = be();
+    first_heartbeat(&be, &fx);
+    assert_eq!(be.agent.submit_tasks(vec![delete_task(&fx, 88)]).status.status_code, TStatusCode::OK);
+    assert!(be.agent.wait_idle(Duration::from_secs(10)));
+    let finishes = be.fe.finishes();
+    let f = finishes.iter().find(|f| f.signature == 88).expect("finishTask");
+    assert_eq!(f.task_type, TTaskType::REALTIME_PUSH);
+    assert_eq!(f.task_status.status_code, TStatusCode::NOT_IMPLEMENTED_ERROR);
+    assert!(f.report_version.is_some(), "finishRealtimePush checks report_version");
+    assert_eq!(f.request_version, Some(3));
+    assert!(be.agent.running_tasks().values().all(|s| !s.contains(&88)), "{:?}", be.agent.running_tasks());
+}
+
+#[test]
+fn a_repeated_realtime_push_runs_once() {
+    // register_task_info keys on the task's own type, REALTIME_PUSH
+    let fx = Fixtures::m2();
+    let be = be();
+    first_heartbeat(&be, &fx);
+    be.agent.submit_tasks(vec![delete_task(&fx, 89), delete_task(&fx, 89)]);
+    assert!(be.agent.wait_idle(Duration::from_secs(10)));
+    assert_eq!(be.fe.finishes().iter().filter(|f| f.signature == 89).count(), 1);
+}

@@ -12,7 +12,7 @@ use doris_storage::{StorageError, TabletManager};
 use doris_thrift::gen::agent_service::{TAgentResult, TAgentTaskRequest};
 use doris_thrift::gen::master_service::{TFinishTaskRequest, TTabletInfo};
 use doris_thrift::gen::status::{TStatus, TStatusCode};
-use doris_thrift::gen::types::{TBackend, TTaskType};
+use doris_thrift::gen::types::{TBackend, TPushType, TTaskType};
 
 use crate::config::BeConfig;
 use crate::fe_client::FeClient;
@@ -63,10 +63,7 @@ impl AgentService {
             let st = status::error(TStatusCode::CANCELLED, "CANCELLED", &localhost, "Have not get FE Master heartbeat yet");
             return agent_result(st);
         }
-        for mut task in tasks {
-            if task.task_type == TTaskType::REALTIME_PUSH {
-                task.task_type = TTaskType::PUSH;
-            }
+        for task in tasks {
             if !self.inner.register(task.task_type, task.signature) {
                 continue; // a duplicate: already queued or running
             }
@@ -111,15 +108,18 @@ impl Inner {
         }
     }
 
-    /// One worker thread per task type, in arrival order.
+    /// One worker thread per task type, in arrival order. As in `AgentServer::submit_tasks`, a
+    /// REALTIME_PUSH goes to the PUSH worker but keeps its own type, which its finishTask and
+    /// its signature carry.
     fn enqueue(self: &Arc<Self>, task: TAgentTaskRequest) {
         *self.in_flight.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        let worker = if task.task_type == TTaskType::REALTIME_PUSH { TTaskType::PUSH } else { task.task_type };
         let mut workers = self.workers.lock().unwrap_or_else(|e| e.into_inner());
-        let sender = workers.entry(task.task_type.0).or_insert_with(|| {
+        let sender = workers.entry(worker.0).or_insert_with(|| {
             let (tx, rx) = channel::<TAgentTaskRequest>();
             let inner = Arc::clone(self);
             std::thread::Builder::new()
-                .name(format!("agent-{}", task_type_name(task.task_type)))
+                .name(format!("agent-{}", task_type_name(worker)))
                 .spawn(move || {
                     for task in rx {
                         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner.run(&task)));
@@ -143,6 +143,7 @@ impl Inner {
             TTaskType::DROP => self.drop_tablet(task),
             TTaskType::PUBLISH_VERSION => self.publish(task),
             TTaskType::CLEAR_TRANSACTION_TASK => self.clear_transaction(task),
+            TTaskType::PUSH | TTaskType::REALTIME_PUSH => self.push(task),
             // visible_version_callback: no finishTask, and (as in the C++ BE) the signature
             // stays registered.
             TTaskType::UPDATE_VISIBLE_VERSION => {
@@ -179,6 +180,19 @@ impl Inner {
         let mut req = self.finish_request(task, st);
         req.finish_tablet_infos = Some(infos);
         req.report_version = report_version;
+        self.finish(req);
+        self.remove(task.task_type, task.signature);
+    }
+
+    /// `push_callback`: loads and DELETEs by push are not supported, so each finishes with an
+    /// error the FE fails the job on, rather than waiting for a reply it never gets.
+    fn push(&self, task: &TAgentTaskRequest) {
+        let st = status::not_implemented(&self.master.localhost(), &format!("agent task {}", task_type_name(task.task_type)));
+        let mut req = self.finish_request(task, st);
+        if let Some(push) = task.push_req.as_ref().filter(|p| p.push_type == TPushType::DELETE) {
+            req.request_version = Some(push.version);
+        }
+        req.report_version = Some(self.tablets().report_version());
         self.finish(req);
         self.remove(task.task_type, task.signature);
     }
