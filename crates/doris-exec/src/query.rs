@@ -345,6 +345,14 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
             let a = n.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
             crate::aggregate::Aggregation::from_thrift(a)?;
         }
+        P::ANALYTIC_EVAL_NODE => {
+            let a = n.analytic_node.as_ref().ok_or_else(|| ExecError::BadRequest("ANALYTIC_EVAL_NODE without its parameters".into()))?;
+            let frame = crate::analytic::frame(a.window.as_ref())?;
+            check_exprs(a.partition_exprs.iter().chain(&a.order_by_exprs), false)?;
+            for f in &a.analytic_functions {
+                crate::analytic::check_frame(&crate::analytic::WindowFn::from_expr(f)?, &frame)?;
+            }
+        }
         P::MATERIALIZATION_NODE => {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
             check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;
@@ -461,6 +469,90 @@ fn check_sets(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), Ex
         }
     }
     Ok(())
+}
+
+/// ANALYTIC_EVAL_NODE: one function per slot of its output tuple. In several instances, the
+/// rows of a partition must meet in one: the node is colocated (a bucket's rows are in one
+/// instance), or its input is hashed on a subset of its partition keys. A node with no
+/// partition keys runs as one instance (the FE makes it serial).
+fn check_windows(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), ExecError> {
+    for c in &t.children {
+        check_windows(c, f, plan)?;
+    }
+    let Some(a) = t.node.analytic_node.as_ref().filter(|_| t.node.node_type == P::ANALYTIC_EVAL_NODE) else {
+        return Ok(());
+    };
+    let name = "ANALYTIC_EVAL_NODE";
+    let slots = plan.desc.tuple_slots(a.output_tuple_id)?;
+    if slots.len() != a.analytic_functions.len() {
+        return Err(ExecError::BadRequest(format!(
+            "an {name} with {} functions for a tuple of {} slots",
+            a.analytic_functions.len(),
+            slots.len()
+        )));
+    }
+    let n = f.instances.len();
+    if n <= 1 || a.is_colocate == Some(true) {
+        return Ok(());
+    }
+    if a.partition_exprs.is_empty() {
+        return Err(unsupported(format!("an {name} without partition keys in {n} instances")));
+    }
+    let keys = slot_ids(&a.partition_exprs).ok_or_else(|| unsupported(format!("an {name} with partition keys that are not slots in {n} instances")))?;
+    let child = t.children.first().ok_or_else(|| ExecError::BadRequest(format!("an {name} without its child")))?;
+    window_input(child, keys, plan, n)
+}
+
+/// Walks a window's input down to the exchange that feeds it, carrying the partition keys'
+/// slots: a sort maps its tuple's slots to its input's, and a window passes its input's through.
+fn window_input(t: &PlanTree, keys: Vec<i32>, plan: &QueryPlan, n: usize) -> Result<(), ExecError> {
+    let name = "ANALYTIC_EVAL_NODE";
+    let next = || t.children.first().ok_or_else(|| ExecError::BadRequest(format!("node {} without its child", t.node.node_id)));
+    match t.node.node_type {
+        P::ANALYTIC_EVAL_NODE => window_input(next()?, keys, plan, n),
+        P::SORT_NODE => {
+            let s = t.node.sort_node.as_ref().ok_or_else(|| ExecError::BadRequest("SORT_NODE without its parameters".into()))?;
+            let tuple = plan.desc.tuple_slots(*t.node.row_tuples.first().ok_or_else(|| ExecError::BadRequest("a SORT_NODE without its tuple".into()))?)?;
+            let child = next()?;
+            // without slot exprs, the sort tuple takes its input's columns by position
+            let from: Vec<Option<i32>> = match &s.sort_info.sort_tuple_slot_exprs {
+                Some(exprs) => exprs.iter().map(|e| slot_ids(std::slice::from_ref(e)).map(|v| v[0])).collect(),
+                None => output_slots(child, plan)?.into_iter().map(Some).collect(),
+            };
+            let mapped = keys
+                .iter()
+                .map(|k| tuple.iter().position(|s| s == k).and_then(|i| from.get(i).copied().flatten()))
+                .collect::<Option<Vec<i32>>>()
+                .ok_or_else(|| unsupported(format!("an {name} over a sort it can't see its partition keys through in {n} instances")))?;
+            window_input(child, mapped, plan, n)
+        }
+        P::EXCHANGE_NODE => {
+            for (p, exprs) in feeding_sinks(plan, t.node.node_id) {
+                if p != TPartitionType::HASH_PARTITIONED {
+                    return Err(unsupported(format!("an {name} fed by a {} stream in {n} instances", partition_name(p))));
+                }
+                match slot_ids(exprs) {
+                    Some(h) if !h.is_empty() && h.iter().all(|s| keys.contains(s)) => {}
+                    _ => return Err(unsupported(format!("an {name} hashed on other exprs than its partition keys in {n} instances"))),
+                }
+            }
+            Ok(())
+        }
+        other => {
+            let child = node_type_name(other);
+            let a = if child.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
+            Err(unsupported(format!("an {name} over {a} {child} in {n} instances")))
+        }
+    }
+}
+
+/// A node's output slots: the slots of its row tuples, in order.
+fn output_slots(t: &PlanTree, plan: &QueryPlan) -> Result<Vec<i32>, ExecError> {
+    let mut out = Vec::new();
+    for tuple in &t.node.row_tuples {
+        out.extend_from_slice(plan.desc.tuple_slots(*tuple)?);
+    }
+    Ok(out)
 }
 
 /// The slot ids of exprs that are all plain slot refs.
@@ -599,6 +691,7 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
     }
     for f in &plan.fragments {
         check_sets(&f.root, f, plan)?;
+        check_windows(&f.root, f, plan)?;
     }
     check_senders(plan)?;
     for s in plan.desc.slots.values() {

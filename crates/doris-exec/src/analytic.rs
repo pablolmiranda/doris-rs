@@ -1,0 +1,349 @@
+//! ANALYTIC_EVAL_NODE over rows already sorted by partition keys, then order keys, as the C++
+//! BE's analytic operators (`analytic_sink_operator.cpp`, `aggregate_function_window.h`)
+//! compute it:
+//! - a partition is a run of equal partition keys and a peer group a run of equal order keys,
+//!   where NULL equals NULL and floats compare by value (-0.0 = 0.0, NaN = NaN);
+//! - each row's frame is clamped to its partition, and an aggregate adds the frame's rows in row
+//!   order, so float sums agree bit for bit;
+//! - an empty frame gives NULL, but 0 for `count`.
+//!
+//! The FE forces each rank-family function's frame and never sends RANGE with offsets
+//! (`WindowFunctionChecker`); `check_plan` refuses both, so this module need not guess.
+use std::cmp::Ordering;
+
+use doris_segment::writer::Datum;
+use doris_thrift::gen::exprs::{TExpr, TExprNodeType as N};
+use doris_thrift::gen::plan_nodes::{TAnalyticWindow, TAnalyticWindowBoundary, TAnalyticWindowBoundaryType as B, TAnalyticWindowType as W};
+
+use crate::aggregate::{subtree_end, Accumulator, AggSpec};
+use crate::eval::{check_read, compare, AGGREGATES};
+use crate::value::ColType;
+use crate::ExecError;
+
+/// A row's frame, by kind. Offsets count rows from the current one: PRECEDING n is -n.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Frame {
+    /// The whole partition.
+    Partition,
+    /// RANGE from the partition's start to the end of the current peer group.
+    RangeToCurrent,
+    /// ROWS; a missing bound is the partition's start or end.
+    Rows { start: Option<i64>, end: Option<i64> },
+}
+
+/// The frame of a node's window; no window, or no bounds, is the whole partition.
+pub fn frame(w: Option<&TAnalyticWindow>) -> Result<Frame, ExecError> {
+    let Some(w) = w else { return Ok(Frame::Partition) };
+    match (w.type_, &w.window_start, &w.window_end) {
+        (_, None, None) => Ok(Frame::Partition),
+        (W::RANGE, None, Some(e)) if e.type_ == B::CURRENT_ROW => Ok(Frame::RangeToCurrent),
+        (W::RANGE, _, _) => Err(ExecError::Unsupported {
+            what: "a RANGE window with offsets".into(),
+        }),
+        (W::ROWS, s, e) => Ok(Frame::Rows {
+            start: s.as_ref().map(offset).transpose()?,
+            end: e.as_ref().map(offset).transpose()?,
+        }),
+        (other, _, _) => Err(ExecError::BadRequest(format!("a window of type {}", other.0))),
+    }
+}
+
+fn offset(b: &TAnalyticWindowBoundary) -> Result<i64, ExecError> {
+    let n = || {
+        b.rows_offset_value
+            .ok_or_else(|| ExecError::BadRequest("a ROWS bound without its offset".into()))
+    };
+    match b.type_ {
+        B::CURRENT_ROW => Ok(0),
+        B::PRECEDING => Ok(-n()?),
+        B::FOLLOWING => n(),
+        other => Err(ExecError::BadRequest(format!("a window bound of type {}", other.0))),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowKind {
+    RowNumber,
+    Rank,
+    DenseRank,
+    /// `lead(x, offset, default)`.
+    Lead(i64),
+    /// `lag(x, offset, default)`.
+    Lag(i64),
+    First {
+        ignore_nulls: bool,
+    },
+    Last {
+        ignore_nulls: bool,
+    },
+    /// An aggregate over the frame.
+    Agg(AggSpec),
+}
+
+/// One function of the node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowFn {
+    pub kind: WindowKind,
+    pub ret: ColType,
+    /// The argument trees, evaluated over the node's input.
+    pub args: Vec<TExpr>,
+}
+
+impl WindowFn {
+    /// An AGG_EXPR tree: the call, then its argument trees.
+    pub fn from_expr(e: &TExpr) -> Result<WindowFn, ExecError> {
+        let root = e.nodes.first().ok_or_else(|| ExecError::BadRequest("an empty window function".into()))?;
+        if root.node_type != N::AGG_EXPR {
+            return Err(ExecError::BadRequest("a window function that is not an AGG_EXPR".into()));
+        }
+        let name = root
+            .fn_
+            .as_ref()
+            .ok_or_else(|| ExecError::BadRequest("an AGG_EXPR without its function".into()))?
+            .name
+            .function_name
+            .to_ascii_lowercase();
+        let ret = ColType::from_type_desc("", &root.type_, root.is_nullable.unwrap_or(true)).ok_or_else(|| ExecError::Unsupported {
+            what: format!("{name} of a nested type"),
+        })?;
+        let mut args = Vec::new();
+        let mut at = 1;
+        for _ in 0..root.num_children.max(0) {
+            let end = subtree_end(&e.nodes, at)?;
+            args.push(TExpr::new(e.nodes[at..end].to_vec()));
+            at = end;
+        }
+        for a in &args {
+            check_read(a)?;
+        }
+        let kind = match name.as_str() {
+            "row_number" => WindowKind::RowNumber,
+            "rank" => WindowKind::Rank,
+            "dense_rank" => WindowKind::DenseRank,
+            "lead" | "lag" => {
+                let off = args
+                    .get(1)
+                    .and_then(int_literal)
+                    .filter(|n| *n >= 0)
+                    .ok_or_else(|| ExecError::Unsupported {
+                        what: format!("a {name} offset that is not a non-negative literal"),
+                    })?;
+                if name == "lead" {
+                    WindowKind::Lead(off)
+                } else {
+                    WindowKind::Lag(off)
+                }
+            }
+            "first_value" | "last_value" => {
+                let ignore_nulls = match args.get(1) {
+                    None => false,
+                    Some(a) => bool_literal(a).ok_or_else(|| ExecError::Unsupported {
+                        what: format!("a {name} flag that is not a literal"),
+                    })?,
+                };
+                if name == "first_value" {
+                    WindowKind::First { ignore_nulls }
+                } else {
+                    WindowKind::Last { ignore_nulls }
+                }
+            }
+            f if AGGREGATES.contains(&f) => {
+                let spec = AggSpec::from_expr(e)?;
+                if spec.merge {
+                    return Err(ExecError::BadRequest(format!("a merging {f} in a window")));
+                }
+                WindowKind::Agg(spec)
+            }
+            other => {
+                return Err(ExecError::Unsupported {
+                    what: format!("function {other}"),
+                })
+            }
+        };
+        Ok(WindowFn { kind, ret, args })
+    }
+
+    /// The function's name, for messages.
+    pub fn name(&self) -> &str {
+        match &self.kind {
+            WindowKind::RowNumber => "row_number",
+            WindowKind::Rank => "rank",
+            WindowKind::DenseRank => "dense_rank",
+            WindowKind::Lead(_) => "lead",
+            WindowKind::Lag(_) => "lag",
+            WindowKind::First { .. } => "first_value",
+            WindowKind::Last { .. } => "last_value",
+            WindowKind::Agg(a) => &a.function,
+        }
+    }
+}
+
+/// The FE forces each rank-family function's frame (`WindowFunctionChecker`): `row_number`
+/// over ROWS from the partition's start to the current row, `rank` and `dense_rank` over RANGE
+/// to the current row. Any other is refused rather than guessed.
+pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
+    let ok = match f.kind {
+        WindowKind::RowNumber => *frame == Frame::Rows { start: None, end: Some(0) },
+        WindowKind::Rank | WindowKind::DenseRank => *frame == Frame::RangeToCurrent,
+        _ => true,
+    };
+    if ok {
+        return Ok(());
+    }
+    let kind = match frame {
+        Frame::Partition => "whole-partition",
+        Frame::RangeToCurrent => "RANGE",
+        Frame::Rows { .. } => "ROWS",
+    };
+    Err(ExecError::Unsupported {
+        what: format!("{} over a {kind} window", f.name()),
+    })
+}
+
+fn int_literal(e: &TExpr) -> Option<i64> {
+    match e.nodes.as_slice() {
+        [n] if n.node_type == N::INT_LITERAL => n.int_literal.as_ref().map(|l| l.value),
+        _ => None,
+    }
+}
+
+fn bool_literal(e: &TExpr) -> Option<bool> {
+    match e.nodes.as_slice() {
+        [n] if n.node_type == N::BOOL_LITERAL => n.bool_literal.as_ref().map(|l| l.value),
+        _ => None,
+    }
+}
+
+/// Two key values are equal as the C++ BE's `compare_at` finds them.
+fn same(a: &Datum, b: &Datum, t: &ColType) -> bool {
+    match (a == &Datum::Null, b == &Datum::Null) {
+        (true, true) => true,
+        (false, false) => compare(a, t, b, t) == Some(Ordering::Equal),
+        _ => false,
+    }
+}
+
+fn same_row(a: &[Datum], b: &[Datum], types: &[ColType]) -> bool {
+    a.iter().zip(b).zip(types).all(|((a, b), t)| same(a, b, t))
+}
+
+/// One function's value for each row. `part` and `order` hold each row's partition and order
+/// key values (rows sorted by them), and `args` the function's argument columns.
+pub fn window_columns(
+    part: &[Vec<Datum>],
+    part_types: &[ColType],
+    order: &[Vec<Datum>],
+    order_types: &[ColType],
+    frame: &Frame,
+    f: &WindowFn,
+    args: &[(ColType, Vec<Datum>)],
+) -> Result<Vec<Datum>, ExecError> {
+    let n = part.len();
+    let mut out = Vec::with_capacity(n);
+    let mut ps = 0;
+    while ps < n {
+        let mut pe = ps + 1;
+        while pe < n && same_row(&part[ps], &part[pe], part_types) {
+            pe += 1;
+        }
+        // each row's peer group, as its start, its end and its number in the partition
+        let mut groups = Vec::with_capacity(pe - ps);
+        let (mut gs, mut idx) = (ps, 0);
+        while gs < pe {
+            let mut ge = gs + 1;
+            while ge < pe && same_row(&order[gs], &order[ge], order_types) {
+                ge += 1;
+            }
+            groups.extend(std::iter::repeat_n((gs, ge, idx), ge - gs));
+            gs = ge;
+            idx += 1;
+        }
+        partition(&mut out, ps, pe, &groups, frame, f, args)?;
+        ps = pe;
+    }
+    Ok(out)
+}
+
+/// The values of one partition `[ps, pe)`.
+fn partition(
+    out: &mut Vec<Datum>,
+    ps: usize,
+    pe: usize,
+    groups: &[(usize, usize, usize)],
+    frame: &Frame,
+    f: &WindowFn,
+    args: &[(ColType, Vec<Datum>)],
+) -> Result<(), ExecError> {
+    let col = |i: usize| args.get(i).map(|(_, v)| v.as_slice());
+    let x = || col(0).ok_or_else(|| ExecError::BadRequest(format!("{} without its argument", f.name())));
+    let default = |cur: usize| col(2).map_or(Datum::Null, |d| d[cur].clone());
+    // an aggregate's state over [acc_start, acc_end), extended while the frame only grows
+    let mut acc: Option<(Accumulator, usize, usize)> = None;
+    for cur in ps..pe {
+        let (gs, ge, gi) = groups[cur - ps];
+        let (fs, fe) = bounds(frame, cur, ps, pe, ge);
+        let v = match &f.kind {
+            WindowKind::RowNumber => Datum::Int((cur - ps + 1) as i128),
+            WindowKind::Rank => Datum::Int((gs - ps + 1) as i128),
+            WindowKind::DenseRank => Datum::Int((gi + 1) as i128),
+            WindowKind::Lead(off) => match cur.checked_add(*off as usize).filter(|t| *t < pe) {
+                Some(t) => x()?[t].clone(),
+                None => default(cur),
+            },
+            WindowKind::Lag(off) => match cur.checked_sub(*off as usize).filter(|t| *t >= ps) {
+                Some(t) => x()?[t].clone(),
+                None => default(cur),
+            },
+            WindowKind::First { ignore_nulls } => {
+                let x = x()?;
+                let mut rows = fs..fe;
+                let at = if *ignore_nulls {
+                    rows.find(|r| x[*r] != Datum::Null)
+                } else {
+                    rows.next()
+                };
+                at.map_or(Datum::Null, |r| x[r].clone())
+            }
+            WindowKind::Last { ignore_nulls } => {
+                let x = x()?;
+                let mut rows = (fs..fe).rev();
+                let at = if *ignore_nulls {
+                    rows.find(|r| x[*r] != Datum::Null)
+                } else {
+                    rows.next()
+                };
+                at.map_or(Datum::Null, |r| x[r].clone())
+            }
+            WindowKind::Agg(spec) => {
+                let fresh = !matches!(&acc, Some((_, s, e)) if *s == fs && *e <= fe);
+                if fresh {
+                    acc = Some((Accumulator::new(spec)?, fs, fs));
+                }
+                let (a, _, end) = acc.as_mut().ok_or_else(|| ExecError::Internal("no window state".into()))?;
+                for r in *end..fe {
+                    let row: Vec<(&ColType, &Datum)> = args.iter().map(|(t, v)| (t, &v[r])).collect();
+                    a.update(&row)?;
+                }
+                *end = (*end).max(fe);
+                a.finish()?
+            }
+        };
+        out.push(v);
+    }
+    Ok(())
+}
+
+/// A row's frame `[start, end)`, clamped to its partition; empty when start >= end.
+fn bounds(frame: &Frame, cur: usize, ps: usize, pe: usize, peer_end: usize) -> (usize, usize) {
+    match frame {
+        Frame::Partition => (ps, pe),
+        Frame::RangeToCurrent => (ps, peer_end),
+        Frame::Rows { start, end } => {
+            let at = |o: i64| (cur as i64).saturating_add(o);
+            let s = start.map_or(ps as i64, at).max(ps as i64);
+            let e = end.map_or(pe as i64, |o| at(o).saturating_add(1)).min(pe as i64);
+            let s = s.min(pe as i64) as usize;
+            (s, (e.max(s as i64)) as usize)
+        }
+    }
+}
