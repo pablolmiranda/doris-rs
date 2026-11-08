@@ -18,7 +18,9 @@
 #   make epic-baseline               Epic 1 reference: 5 serial runs on clusters A and B, derived into epic1/
 #   make fe-up / fe-down / rust-be   FE-only cluster for doris-rs; rust-be runs doris-rs as its BE
 #   make meta-fixtures               capture the C++ BE's meta/ databases (crates/doris-rocks/tests/fixtures)
+#   make loaded-fixture              capture the C++ BE after the M4 load dataset (crates/doris-storage/tests/fixtures/cpp-loaded)
 #   make swap-check                  doris-rs and the C++ BE take turns on one root; the FE must notice nothing
+#   make readback-check              the C++ BE reads what doris-rs loaded as it reads its own loads
 #   make epic-check TARGET=..        run a target through the tap and grade it (suite + strict gates, ratchets)
 #   make epic-grade RUN=..           grade an already recorded run again
 
@@ -40,7 +42,7 @@ BASELINE_ID := $(DORIS_VERSION)-$(PROFILE)-$(basename $(notdir $(SUITES)))
 BASELINE  := baselines/$(BASELINE_ID).json
 
 help:
-	@sed -n '1,24p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,25p' Makefile | sed 's/^# \{0,1\}//'
 
 doctor:
 	@echo "upstream:  $(UPSTREAM)"; test -d "$(UPSTREAM)/.git" && echo "  ok" || echo "  MISSING (set UPSTREAM=path)"
@@ -121,8 +123,14 @@ be-fixtures:
 meta-fixtures:
 	swap/capture-meta.sh
 
+loaded-fixture:
+	swap/capture-loaded.sh
+
 swap-check:
 	swap/swap-check.sh
+
+readback-check:
+	swap/readback-check.sh
 
 EPIC_SUITES ?= suites/epic1.txt
 EPIC_REF    ?= epic1
@@ -167,4 +175,4 @@ triage:
 test:
 	python3 -m unittest discover -s tests -v
 
-.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract be-fixtures meta-fixtures swap-check fe-up fe-down rust-be epic-baseline epic-check epic-grade
+.PHONY: help doctor src image runner up down status logs sql baseline check compare triage test corpus corpus-load corpus-expect corpus-extract wire-capture wire-extract be-fixtures meta-fixtures loaded-fixture swap-check readback-check fe-up fe-down rust-be epic-baseline epic-check epic-grade

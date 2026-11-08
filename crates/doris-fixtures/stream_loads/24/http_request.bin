@@ -1,0 +1,14 @@
+PUT /api/regression_test_correctness_p0/test_default_pi/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 6025c78d-f99b-4d7a-a681-77a5c02f92c6
+column_separator: ,
+columns: k, v1=pi(), v2
+Expect: 100-Continue
+Content-Length: 8
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+5,5
+6,6

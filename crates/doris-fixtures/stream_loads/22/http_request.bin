@@ -1,0 +1,19 @@
+PUT /api/regression_test_load_p0_stream_load/load_object_array_json/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 94aab61e-4acf-4fb3-a80f-c18c216e1958
+strip_outer_array: true
+read_json_by_line: true
+format: json
+columns: id,owner_id,amount_tag,barcode,retail_order_bill_id,status,amount_retail,amount,qty,timestamp,price_cost,is_gift,amount_discount
+jsonpaths: ["$.id","$.owner_id","$.amount_tag","$.barcode","$.retail_order_bill_id","$.status","$.amount_retail","$.amount","$.qty","$.timestamp","$.price_cost","$.is_gift","$.amount_discount"]
+json_root: $.data
+fuzzy_parse: false
+max_filter_ratio: 1
+Expect: 100-Continue
+Content-Length: 339
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+{"data":[{"id":"1021021338780262401","type":"INSERT","owner_id":"0","amount_tag":"239.0","barcode":"876219500005C31942","retail_order_bill_id":"1021021338700570624","status":"0","amount_retail":"0.0","amount":"128.0","qty":"1","timestamp":"2024-07-19 11:34:17","price_cost":"239.0","is_gift":"0","amount_discount":"0.0"}],"type":"INSERT"}

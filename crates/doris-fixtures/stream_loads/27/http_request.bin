@@ -1,0 +1,15 @@
+PUT /api/test_datev1_load_db/test_datev1_load_tbl/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 47df16d1-78f8-40a2-828b-a6e203f2a267
+Expect: 100-Continue
+Content-Length: 54
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+2010-10-10
+2012-12-12
+2013-03-03
+2014-03-04
+2015-05-18

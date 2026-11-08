@@ -110,3 +110,20 @@ cpp_tablets() {
   curl -sf "http://127.0.0.1:8040/tablets_json?limit=all" |
     python3 -c 'import json,sys; [print(t["tablet_id"]) for t in json.load(sys.stdin)["data"]["tablets"]]'
 }
+
+# The FE log's length, so checks read only what follows a swap.
+fe_mark=0
+mark_fe_log() { fe_mark="$(docker exec "${FE}" sh -c 'wc -l < /opt/apache-doris/fe/log/fe.log' | tr -d ' ')"; }
+fe_log_since_mark() { docker exec "${FE}" tail -n "+$((fe_mark + 1))" /opt/apache-doris/fe/log/fe.log; }
+
+# The incoming BE loaded every tablet: the FE's last tablet report diff (ReportHandler,
+# LocalTabletInvertedIndex.logTabletReportSummary) counts as many tablets on the backend as in
+# its metadata, and deleted none from its metadata.
+reported() {
+  local line fe be
+  line="$(fe_log_since_mark | grep "finished to do tablet diff" | tail -1)"
+  fe="$(sed -nE 's/.*fe tablet num: ([0-9]+).*/\1/p' <<< "${line}")"
+  be="$(sed -nE 's/.*backend tablet num: ([0-9]+).*/\1/p' <<< "${line}")"
+  [[ -n "${fe}" && "${fe}" == "${be}" && "${line}" == *"metaDel: 0"* ]] || fail "$1: tablet report diff: ${line##*]}"
+  say "$1 reports all ${be} tablets"
+}

@@ -1,0 +1,16 @@
+PUT /api/test_decimalv2_load_db/test_decimalv2_load_tbl/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: d2e6a688-67b8-4314-975f-ac020bb01fdd
+Expect: 100-Continue
+Content-Length: 41
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1.999
+2.888
+3.666
+7.888
+11.9999
+837.43444

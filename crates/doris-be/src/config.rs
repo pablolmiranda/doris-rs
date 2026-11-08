@@ -27,6 +27,8 @@ pub struct BeConfig {
     pub min_garbage_sweep_interval: u64,
     pub trash_file_expire_time_sec: i64,
     pub snapshot_expire_time_sec: i64,
+    /// `streaming_load_max_mb`: the largest stream load body read.
+    pub streaming_load_max_mb: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +60,7 @@ impl Default for BeConfig {
             min_garbage_sweep_interval: 180,
             trash_file_expire_time_sec: 0,
             snapshot_expire_time_sec: 172_800,
+            streaming_load_max_mb: 102_400,
         }
     }
 }
@@ -112,6 +115,7 @@ impl BeConfig {
                 "min_garbage_sweep_interval" => cfg.min_garbage_sweep_interval = secs(key)?,
                 "trash_file_expire_time_sec" => cfg.trash_file_expire_time_sec = secs(key)? as i64,
                 "snapshot_expire_time_sec" => cfg.snapshot_expire_time_sec = secs(key)? as i64,
+                "streaming_load_max_mb" => cfg.streaming_load_max_mb = secs(key)?,
                 _ => {}
             }
         }

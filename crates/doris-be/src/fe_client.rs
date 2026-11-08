@@ -1,10 +1,17 @@
-//! Calls this BE makes to the master FE (`FrontendService` on the FE's Thrift port): `report`
-//! and `finishTask`, as the C++ BE's `MasterServerClient` makes them.
+//! Calls this BE makes to the FE (`FrontendService` on the FE's Thrift port): `report` and
+//! `finishTask` (`MasterServerClient`), a write fragment's `reportExecStatus` (to the
+//! fragment's coordinator), and the stream load transaction calls (`StreamLoadExecutor`).
 
 use std::net::TcpStream;
 use std::time::Duration;
 
-use doris_thrift::gen::frontend_service::{FrontendServiceSyncClient, TFrontendServiceSyncClient};
+use doris_thrift::gen::frontend_service::{
+    FrontendServiceSyncClient, TDescribeTablesParams, TDescribeTablesResult, TFrontendServiceSyncClient, TGetDbsParams, TGetDbsResult,
+    TGetTablesParams, TGetTablesResult, TListTableStatusResult, TShowVariableRequest, TShowVariableResult, TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest,
+    TLoadTxnCommitResult, TLoadTxnRollbackRequest, TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult,
+    TStreamLoadPutRequest, TStreamLoadPutResult,
+};
+use doris_thrift::gen::types::TNetworkAddress;
 use doris_thrift::gen::master_service::{TFinishTaskRequest, TMasterResult, TReportRequest};
 use thrift::protocol::{TBinaryInputProtocol, TBinaryOutputProtocol};
 use thrift::transport::{TBufferedReadTransport, TBufferedWriteTransport};
@@ -22,6 +29,18 @@ pub enum FeError {
 pub trait FeClient: Send + Sync {
     fn finish_task(&self, req: TFinishTaskRequest) -> Result<TMasterResult, FeError>;
     fn report(&self, req: TReportRequest) -> Result<TMasterResult, FeError>;
+    /// To the fragment's coordinator, which may not be the master.
+    fn report_exec_status(&self, coord: &TNetworkAddress, req: TReportExecStatusParams) -> Result<TReportExecStatusResult, FeError>;
+    fn load_txn_begin(&self, req: TLoadTxnBeginRequest) -> Result<TLoadTxnBeginResult, FeError>;
+    fn stream_load_put(&self, req: TStreamLoadPutRequest) -> Result<TStreamLoadPutResult, FeError>;
+    fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError>;
+    fn load_txn_rollback(&self, req: TLoadTxnRollbackRequest) -> Result<TLoadTxnRollbackResult, FeError>;
+    /// The information_schema scanners' calls, to the FE their scan node names.
+    fn get_db_names(&self, fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError>;
+    fn get_table_names(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError>;
+    fn describe_tables(&self, fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError>;
+    fn list_table_status(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError>;
+    fn show_variables(&self, fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError>;
 }
 
 /// Strict binary protocol, unframed, one connection per call, to the address the last
@@ -41,7 +60,15 @@ impl ThriftFeClient {
         f: impl FnOnce(&mut dyn TFrontendServiceSyncClient) -> thrift::Result<T>,
     ) -> Result<T, FeError> {
         let master = self.master.fe_address().ok_or(FeError::NoMaster)?;
-        let addr = format!("{}:{}", master.hostname, master.port);
+        self.call_at(&master, f)
+    }
+
+    fn call_at<T>(
+        &self,
+        fe: &TNetworkAddress,
+        f: impl FnOnce(&mut dyn TFrontendServiceSyncClient) -> thrift::Result<T>,
+    ) -> Result<T, FeError> {
+        let addr = format!("{}:{}", fe.hostname, fe.port);
         let err = |msg: String| FeError::Call { addr: addr.clone(), msg };
         let stream = TcpStream::connect(&addr).map_err(|e| err(e.to_string()))?;
         stream.set_read_timeout(Some(self.timeout)).map_err(|e| err(e.to_string()))?;
@@ -61,5 +88,45 @@ impl FeClient for ThriftFeClient {
 
     fn report(&self, req: TReportRequest) -> Result<TMasterResult, FeError> {
         self.call(|c| c.report(req))
+    }
+
+    fn report_exec_status(&self, coord: &TNetworkAddress, req: TReportExecStatusParams) -> Result<TReportExecStatusResult, FeError> {
+        self.call_at(coord, |c| c.report_exec_status(req))
+    }
+
+    fn load_txn_begin(&self, req: TLoadTxnBeginRequest) -> Result<TLoadTxnBeginResult, FeError> {
+        self.call(|c| c.load_txn_begin(req))
+    }
+
+    fn stream_load_put(&self, req: TStreamLoadPutRequest) -> Result<TStreamLoadPutResult, FeError> {
+        self.call(|c| c.stream_load_put(req))
+    }
+
+    fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError> {
+        self.call(|c| c.load_txn_commit(req))
+    }
+
+    fn load_txn_rollback(&self, req: TLoadTxnRollbackRequest) -> Result<TLoadTxnRollbackResult, FeError> {
+        self.call(|c| c.load_txn_rollback(req))
+    }
+
+    fn get_db_names(&self, fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError> {
+        self.call_at(fe, |c| c.get_db_names(req))
+    }
+
+    fn get_table_names(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError> {
+        self.call_at(fe, |c| c.get_table_names(req))
+    }
+
+    fn describe_tables(&self, fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError> {
+        self.call_at(fe, |c| c.describe_tables(req))
+    }
+
+    fn list_table_status(&self, fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError> {
+        self.call_at(fe, |c| c.list_table_status(req))
+    }
+
+    fn show_variables(&self, fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError> {
+        self.call_at(fe, |c| c.show_variables(req))
     }
 }

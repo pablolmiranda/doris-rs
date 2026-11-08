@@ -7,7 +7,7 @@ pub enum StorageError {
     #[error("storage root {root} does not exist")]
     MissingRoot { root: PathBuf },
     #[error(
-        "storage root {root} holds a C++ BE's tablet data ({}); doris-rs can hold tablets with data from milestone 4",
+        "storage root {root} holds data doris-rs cannot keep yet ({}): merge-on-write, binlog or remote-storage keys, or a tablet directory with files and no valid header",
         match (tablet_id, key) { (Some(t), _) => format!("tablet {t}"), (_, Some(k)) => format!("key {k}"), _ => "rowsets".into() }
     )]
     DataRoot { root: PathBuf, tablet_id: Option<i64>, key: Option<String> },
@@ -25,8 +25,25 @@ pub enum StorageError {
     /// `TabletManager::_drop_tablet`'s `Status::Aborted`.
     #[error("replica_id not match({current} vs {requested})")]
     ReplicaMismatch { current: i64, requested: i64 },
+    /// `TxnManager::commit_txn`: the transaction already committed another rowset for the tablet
+    /// (`PUSH_TRANSACTION_ALREADY_EXIST`).
+    #[error("transaction {txn_id} already committed rowset {existing} for tablet {tablet_id}")]
+    TxnConflict { txn_id: i64, tablet_id: i64, existing: String },
+    /// `TxnManager::commit_txn` rejects ids below 1.
+    #[error("invalid transaction: partition {partition_id}, txn {txn_id}, tablet {tablet_id}")]
+    InvalidTxn { partition_id: i64, txn_id: i64, tablet_id: i64 },
+    /// `TabletMeta::add_rs_meta`: another rowset already holds the version.
+    #[error("tablet {tablet_id} already has a rowset at version {version}")]
+    VersionExists { tablet_id: i64, version: i64 },
     #[error("doris-rs does not support {what} yet")]
     Unsupported { what: String },
+    /// `VersionGraph::capture_consistent_versions`: no rowsets reach the version.
+    #[error("fail to find path in version_graph. spec_version: 0-{version} (tablet {tablet_id})")]
+    MissedVersion { tablet_id: i64, version: i64 },
+    /// A read doris-rs refuses rather than answer wrongly (delete predicates, merge-on-read
+    /// keys, columns or encodings it does not read yet).
+    #[error("doris-rs cannot read tablet {tablet_id} yet: {what}")]
+    UnsupportedRead { tablet_id: i64, what: String },
     #[error("no storage root is configured")]
     NoDataDir,
     #[error("{path}: bad tablet header: {source}")]

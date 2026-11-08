@@ -5,7 +5,7 @@
 use crate::error::Error;
 use crate::footer::SegmentFile;
 use crate::page::read_page;
-use crate::pb::segment_v2::{ColumnIndexTypePb, ColumnMetaPb, PagePointerPb};
+use crate::pb::segment_v2::{ColumnIndexTypePb, ColumnMetaPb, CompressionTypePb, PagePointerPb};
 use crate::varint::{read_varint32, read_varint64};
 
 /// Pointers to all data pages of a column, in ordinal order.
@@ -22,23 +22,36 @@ pub fn data_pages(file: &SegmentFile, meta: &ColumnMetaPb) -> Result<Vec<PagePoi
     if root.is_root_data_page.unwrap_or(false) {
         return Ok(vec![root_ptr]);
     }
-    let page = read_page(file, &root_ptr, meta.compression())?;
+    Ok(index_entries(file, &root_ptr, meta.compression())?.into_iter().map(|(_, p)| p).collect())
+}
+
+/// The entries of one index page (`IndexPageBuilder`): each a key and the page it points to.
+pub fn index_entries(
+    file: &SegmentFile,
+    ptr: &PagePointerPb,
+    codec: CompressionTypePb,
+) -> Result<Vec<(Vec<u8>, PagePointerPb)>, Error> {
+    let page = read_page(file, ptr, codec)?;
     let n = page
         .footer
         .index_page_footer
         .as_ref()
         .and_then(|f| f.num_entries)
-        .ok_or_else(|| Error::Corrupt("ordinal index page without num_entries".into()))?
+        .ok_or_else(|| Error::Corrupt("index page without num_entries".into()))?
         as usize;
     let body = &page.body;
     let mut pos = 0usize;
-    let mut pages = Vec::with_capacity(n);
+    let mut entries = Vec::with_capacity(n.min(body.len()));
     for _ in 0..n {
         let key_len = read_varint32(body, &mut pos)? as usize;
+        let key = body
+            .get(pos..pos + key_len)
+            .ok_or_else(|| Error::Corrupt("index key past the page end".into()))?
+            .to_vec();
         pos += key_len;
         let offset = read_varint64(body, &mut pos)?;
         let size = read_varint32(body, &mut pos)?;
-        pages.push(PagePointerPb { offset, size });
+        entries.push((key, PagePointerPb { offset, size }));
     }
-    Ok(pages)
+    Ok(entries)
 }

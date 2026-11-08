@@ -1,0 +1,15 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_with_aes_encrypt/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 29c63759-1ae3-4cc0-a519-3d2aedfdbed2
+column_separator: ,
+columns:  id, name, tmp_data, encrypted_data=TO_BASE64(AES_ENCRYPT(tmp_data, 'F3229A0B371ED2D9441B830D21A390C3')) 
+Expect: 100-Continue
+Content-Length: 67
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1,Alice,hello world
+2,Bob,doris is great
+3,Charlie,test encryption

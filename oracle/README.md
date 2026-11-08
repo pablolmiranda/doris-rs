@@ -78,6 +78,27 @@ counting `needs_supplement.json`: 63 suites that would otherwise be eligible wai
 the run and cannot reach until doris-rs executes queries. A full run takes 80–150 minutes; most
 of the spread is `test_etl_failed` waiting on its broker load.
 
+After Milestone 4 (the write loop: INSERT … VALUES and CSV/JSON stream loads into duplicate-key
+tables; run `m4-full-2`, 2026-11-05): 170 eligible suites, all passing both gates; 297 Epic 1
+suites pass the out gate (130 of those that reach the BE) and 99 the strict gate (56). The
+`wait_timeout=31000` need is now a supplement group over the 809 suites whose connect query reads
+it on the reference. Six ssb queries left the ratchets (`ssb_unique_sql_zstd` q3.4, q4.2 and q4.3
+in `inverted_index_p0` and `unique_with_mow_p0`): they expect an empty result and passed only
+while their gzip loads failed; now the tables hold rows and the queries need the read path.
+
+After Milestone 5 (the read loop: scans of duplicate-key tablets, filters, sorts and top-n,
+aggregation, exchanges, six `information_schema` tables; run `m5-full-2`, 2026-11-07): 348
+eligible suites, all passing both gates; 378 Epic 1 suites pass the out gate (211 of those that
+reach the BE) and 276 the strict gate (196). The needs index now also records what the plan
+shows and the types do not (`read:UNIQUE_KEYS`, `read:AGG_KEYS`, `write:INSERT_SELECT`,
+`result:binary_rows`, `sort:two_phase_read`, `schema_table:<name>`), which takes the eligible set
+from 476 to 370; the supplement takes it to 348. It gains a group,
+`state:fe enable_date_conversion=true`, over 18 suites: `test_coalesce_new` sets the variable to
+false and fails on the reference before it resets it, so later tables get v1 DATE columns. The
+`wait_timeout=31000` group is gone: the nereids `test_query_sys_tables` now runs past the
+statement that sets it. `test_move_column_with_cast` left the out ratchet: it needs
+`task:ALTER` and had passed in only one run of six.
+
 The older directory-level gate also works against any target:
 
 ```
@@ -98,15 +119,34 @@ keeps its path hash because doris-rs gets, as `host`, the VM address the C++ BE'
 `priority_networks` picks.
 
 ```
-make swap-check      # doris-rs -> C++ BE -> doris-rs on one root; last line: swap check: PASS
+make swap-check      # doris-rs -> C++ BE -> doris-rs -> C++ BE on one root; last line: swap check: PASS
+make readback-check  # the C++ BE reads doris-rs's loads as its own; last line: readback check: PASS
 make meta-fixtures   # re-capture the C++ BE's meta/ databases (crates/doris-rocks/tests/fixtures)
+make loaded-fixture  # re-capture the C++ BE after the M4 load dataset (crates/doris-storage/tests/fixtures/cpp-loaded)
 ```
 
-After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot before it (clocks,
-the binary's version and the deployment facts aside), its tablet report diff counts every tablet
-on the backend, no DROP or CLONE arrives, and then each binary drops a table the other created.
-Internal loads (audit log, statistics) are turned off so no tablet holds data, which doris-rs
-refuses until milestone 4. Both targets recreate the FE-only cluster.
+**Swap check.** After each swap the FE's `SHOW TABLETS` and `SHOW BACKENDS` match the snapshot
+before it (clocks, the binary's version and the deployment facts aside), its tablet report diff
+counts every tablet on the backend, and no DROP or CLONE arrives. Each binary inserts rows into
+the tables it creates and drops a table the other created, and the C++ BE sweeps the tablets
+doris-rs shut down. `SHOW TABLETS`' stat columns lag the FE's tablet-stat poll (60 s), so each
+snapshot waits one poll and until every tablet's version count equals its version. Internal
+loads (audit log, statistics) are turned off: their tables use types doris-rs does not write
+yet.
+
+**Readback check.** The load dataset (`swap/load-dataset.sql`: INSERT … VALUES and CSV/JSON
+stream loads into four duplicate-key tables, every M4 type, 1 to 8 buckets, a RANGE partition,
+6,000 rows by stream load; and `m5.zstd`, 20,000 rows in one load, which the C++ BE writes with
+ZSTD pages) runs twice on fresh swap clusters: once on the C++ BE, once on doris-rs, after which
+the C++ BE takes doris-rs's root over. Three rounds compare replies to
+`swap/readback-queries.sql` (26 queries: whole tables, key points and ranges, NULL and value
+predicates, counts, MIN/MAX, a join) with the C++ BE's on its own loads:
+(a) the C++ BE over doris-rs's loads; (b) doris-rs over the C++ BE's loads, on its root; (c)
+doris-rs over its own loads. doris-rs skips the join (M6). Replies without ORDER BY are compared
+as sorted rows; in rounds b and c the LIMIT without ORDER BY (`big_head_unordered`) is compared by
+row count, since which rows come first is each BE's read order. The check found that the C++ BE
+cannot run a predicate on a PLAIN string column, which is why doris-rs writes strings
+dictionary-encoded in plain mode.
 
 ## Epic 1 checker
 

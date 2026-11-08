@@ -97,3 +97,39 @@ fn a_late_report_for_an_earlier_suites_query_is_not_a_need() {
     records.push(report(hi ^ 1, lo));
     assert!(!needs_of(&records).unwrap()["rpc"].contains("FrontendService.reportExecStatus"));
 }
+
+/// Plan features the node and sink types do not show: what a scan reads, what feeds a write,
+/// how results are encoded, which schema tables are scanned.
+#[test]
+fn plan_features_the_types_do_not_show() {
+    use doris_fixtures::build::{col, scan_query, ty};
+    use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
+    use doris_thrift::gen::types::{TKeysType, TPrimitiveType, TUniqueId};
+    use doris_wire::needs::plan_needs;
+    let list = |p| TPipelineFragmentParamsList::new(vec![p], None, None, None, None, None, None, None, None, None, None, None, None, None);
+    let q = || scan_query(TUniqueId { hi: 1, lo: 2 }, 10, 2, &[col("k", ty(TPrimitiveType::INT), false)], 4064);
+    let has = |p, kind: &str, v: &str| plan_needs(&list(p)).get(kind).is_some_and(|s| s.contains(v));
+
+    // a duplicate-key scan needs nothing more; a unique-key one needs a merge-on-read
+    assert!(!has(q(), "read", "UNIQUE_KEYS"));
+    let mut p = q();
+    let node = &mut p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0];
+    let scan = node.olap_scan_node.as_mut().unwrap();
+    scan.key_type = Some(TKeysType::UNIQUE_KEYS);
+    scan.table_name = Some("t(t)".into());
+    assert!(has(p.clone(), "read", "UNIQUE_KEYS"));
+    // the FE's statistics table: every corpus read of it is empty
+    p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0].olap_scan_node.as_mut().unwrap().table_name =
+        Some("column_statistics(column_statistics)".into());
+    assert!(!has(p, "read", "UNIQUE_KEYS"));
+
+    // a write fed by a scan
+    let mut p = q();
+    p.fragment.as_mut().unwrap().output_sink.as_mut().unwrap().type_ = doris_thrift::gen::data_sinks::TDataSinkType::OLAP_TABLE_SINK;
+    assert!(has(p, "write", "INSERT_SELECT"));
+
+    // binary-protocol rows
+    let mut p = q();
+    p.query_options.as_mut().unwrap().mysql_row_binary_format = Some(true);
+    assert!(has(p, "result", "binary_rows"));
+}
