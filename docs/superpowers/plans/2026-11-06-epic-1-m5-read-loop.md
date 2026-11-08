@@ -70,6 +70,9 @@ The tasks below are the plan as written. Implementation changed these:
     refused as the C++ BE refuses it; a query whose thread cannot start fails at once. The
     swap and readback checks name a BE left holding their ports, and round c's replies are
     counted.
+  - `m5-full-3` on the final code (f6e3e51): 348 eligible, failing 0 on both gates; out 378
+    (211), strict 276 (196), as `m5-full-2`. `test_move_column_with_cast` passed (2 of 7 runs)
+    and stays off the ratchets.
   - `m5-full-2` ran on 8bef912. The review fixes after it (query and exchange state forgotten
     once served, sender counts checked, the cancel/finish race) change no reply.
 
