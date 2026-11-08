@@ -8,9 +8,14 @@
 //!
 //! C++ emits rows in its hash table's order, and doris-rs does not reproduce that order. It
 //! keeps child 0's first-seen order and puts a one-column NULL row first, as C++'s
-//! `DataWithNullKey` iterator does. The corpus marks every other multi-row unordered result as
-//! unordered.
-use std::collections::HashSet;
+//! `DataWithNullKey` iterator does for a single nullable key. In the eligible suites, every other
+//! multi-row result without ORDER BY varied in order on the reference, so it is graded
+//! unordered. Two replies of `set_operation_exprid_reuse` (not yet eligible: #18 and #27, keys of
+//! two columns) follow C++'s hash order; first-seen order happens to match them today.
+//! Complex-type keys, which C++ serializes and so gives no NULL-first, are refused by
+//! `check_plan` today.
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 
 use doris_segment::writer::Datum;
 
@@ -23,24 +28,28 @@ pub enum SetKind {
 /// Child 0's distinct rows that every other child has (INTERSECT) or none has (EXCEPT).
 pub fn set_rows(kind: SetKind, children: Vec<Vec<Vec<Datum>>>) -> Vec<Vec<Datum>> {
     let mut children = children.into_iter();
+    // the build: each distinct row of child 0, by its key
     let mut rows: Vec<Vec<Datum>> = Vec::new();
-    let mut keys: Vec<Vec<u8>> = Vec::new();
-    let mut seen = HashSet::new();
+    let mut index: HashMap<Vec<u8>, usize> = HashMap::new();
     for row in children.next().unwrap_or_default() {
-        let k = key(&row);
-        if seen.insert(k.clone()) {
-            keys.push(k);
+        if let Entry::Vacant(e) = index.entry(key(&row)) {
+            e.insert(rows.len());
             rows.push(row);
         }
     }
+    // each probe child marks the rows it finds, as C++'s mark_data_in_hashtable does
     let mut keep = vec![true; rows.len()];
     for child in children {
-        let found: HashSet<Vec<u8>> = child.iter().map(|r| key(r)).collect();
-        for (i, k) in keys.iter().enumerate() {
-            let hit = found.contains(k);
-            keep[i] &= match kind {
-                SetKind::Intersect => hit,
-                SetKind::Except => !hit,
+        let mut hit = vec![false; rows.len()];
+        for r in &child {
+            if let Some(&i) = index.get(&key(r)) {
+                hit[i] = true;
+            }
+        }
+        for (k, h) in keep.iter_mut().zip(hit) {
+            *k &= match kind {
+                SetKind::Intersect => h,
+                SetKind::Except => !h,
             };
         }
     }

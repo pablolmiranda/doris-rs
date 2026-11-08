@@ -32,8 +32,12 @@
 4. **Output order is hash-table iteration order** (`PHHashMap`, `HashCRC32`).
    - A single nullable key column uses `DataWithNullKey`, whose iterator yields the NULL entry
      first.
-5. **What C++ ignores.** `const_expr_lists`, `first_materialized_child_idx` and `is_colocate`
-   are never read.
+5. **What C++ ignores.** `const_expr_lists` and `first_materialized_child_idx` are never read.
+   `is_colocate` is read: `required_data_distribution()` asks for a hash (or bucket-hash)
+   shuffle on each child's result exprs. C++ adds a local exchange wherever a child is not
+   already distributed that way, so equal rows meet in one pipeline task. doris-rs has no local
+   shuffle, so in a fragment of several instances it refuses at prepare any set node whose rows
+   might not meet (Task 2's fix pass).
 6. **Generic node steps.** The node's conjuncts and limit apply to the output (`get_block_impl`).
 
 **The corpus.** There are 15 newly eligible suites. Four of them can be replayed:

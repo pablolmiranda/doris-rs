@@ -425,55 +425,178 @@ fn a_multicast_consumer_must_be_runnable() {
     refused(&|m| m.destinations.as_mut().unwrap().truncate(0), "multicast sink with");
 }
 
-#[test]
-fn a_set_node_must_be_well_formed() {
+/// A set_with_null plan whose set node (`node_type`) runs in 4 instances, with a function that
+/// changes the plan (the set node, then the whole list) and prepares it.
+fn set_plan_prepare(node_type: TPlanNodeType) -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
     use doris_fixtures::replays::{self, plan_list, Step};
-    use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
-    use doris_thrift::gen::plan_nodes::TPlanNode;
-    let is_intersect = |l: &TPipelineFragmentParamsList| {
-        l.params_list.iter().flatten().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes)).any(|n| n.node_type == TPlanNodeType::INTERSECT_NODE)
+    let has = move |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        l.params_list.iter().flatten().any(|p| {
+            p.local_params.as_ref().is_some_and(|l| l.len() > 1)
+                && p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| n.node_type == node_type)
+        })
     };
     let (req, list) = replays::load("query_p0.set_operations.set_with_null.set_with_null.set_with_null")
         .steps
         .iter()
         .find_map(|s| match s {
-            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(is_intersect).map(|l| (request.clone(), l)),
+            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(has).map(|l| (request.clone(), l)),
             _ => None,
         })
-        .expect("an INTERSECT plan");
-    let prepare = |change: &dyn Fn(&mut TPlanNode)| {
+        .expect("a set plan in 4 instances");
+    move |change| {
         let mut l = list.clone();
-        let n = l
-            .params_list
-            .as_mut()
-            .unwrap()
-            .iter_mut()
-            .flat_map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes.iter_mut())
-            .find(|n| n.node_type == TPlanNodeType::INTERSECT_NODE)
-            .unwrap();
-        change(n);
+        change(&mut l);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    }
+}
+
+fn set_node_of(l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList, t: TPlanNodeType) -> &mut doris_thrift::gen::plan_nodes::TPlanNode {
+    l.params_list.as_mut().unwrap().iter_mut().flat_map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes.iter_mut()).find(|n| n.node_type == t).unwrap()
+}
+
+fn set_lists(n: &mut doris_thrift::gen::plan_nodes::TPlanNode) -> &mut Vec<Vec<doris_thrift::gen::exprs::TExpr>> {
+    match (&mut n.intersect_node, &mut n.except_node) {
+        (Some(s), _) => &mut s.result_expr_lists,
+        (_, Some(s)) => &mut s.result_expr_lists,
+        _ => panic!("not a set node"),
+    }
+}
+
+#[test]
+fn a_set_node_must_be_well_formed() {
+    use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList as L;
+    use doris_thrift::gen::partitions::TPartitionType;
+    for t in [TPlanNodeType::INTERSECT_NODE, TPlanNodeType::EXCEPT_NODE] {
+        let name = format!("{t:?}");
+        let prepare = set_plan_prepare(t);
+        let st = prepare(&|_| {});
+        assert_eq!(st.status_code, 0, "{name}: {st:?}");
+        let refused = |change: &dyn Fn(&mut L), want: &str| {
+            let st = prepare(change);
+            assert_ne!(st.status_code, 0, "{name}, {want}: accepted");
+            assert!(st.error_msgs.iter().any(|e| e.contains(want)), "{name}, {want}: {st:?}");
+        };
+        let node = |change: &'static dyn Fn(&mut doris_thrift::gen::plan_nodes::TPlanNode)| move |l: &mut L| change(set_node_of(l, t));
+        refused(&node(&|n| { set_lists(n).pop(); }), "result expr lists");
+        refused(&node(&|n| { set_lists(n)[0].pop(); }), "different lengths");
+        refused(
+            &node(&|n| {
+                n.num_children = 1;
+                set_lists(n).truncate(1);
+            }),
+            "a set node with 1 child; it needs at least 2",
+        );
+        refused(&node(&|n| set_lists(n)[1][0] = doris_fixtures::build::call("no_such_function", ty(T::INT), vec![])), "no_such_function");
+        refused(
+            &node(&|n| {
+                n.intersect_node = None;
+                n.except_node = None;
+            }),
+            "without its parameters",
+        );
+        // the lists must fill the node's tuple, with one expr at least
+        refused(&node(&|n| set_lists(n).iter_mut().for_each(|l| l.push(l[0].clone()))), "for a tuple of");
+        refused(&node(&|n| set_lists(n).iter_mut().for_each(|l| l.clear())), "no result exprs");
+        // a child's values must have the slot's type (C++ probes them with child 0's hash method)
+        refused(&node(&|n| set_lists(n)[1][0].nodes[0].type_ = doris_fixtures::build::ty(T::LARGEINT)), "for a slot of type");
+        // in several instances, equal rows must meet: every child an exchange, child 0's hash partitioned
+        refused(
+            &node(&|n| match (&mut n.intersect_node, &mut n.except_node) {
+                (Some(s), _) => s.is_colocate = Some(true),
+                (_, Some(s)) => s.is_colocate = Some(true),
+                _ => {}
+            }),
+            "colocated",
+        );
+        refused(
+            &|l: &mut L| {
+                let first_child = {
+                    let ps = l.params_list.as_mut().unwrap();
+                    let nodes = ps.iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == t)).unwrap();
+                    let at = nodes.nodes.iter().position(|n| n.node_type == t).unwrap();
+                    nodes.nodes[at + 1].node_id
+                };
+                for p in l.params_list.as_mut().unwrap() {
+                    if let Some(s) = p.fragment.as_mut().unwrap().output_sink.as_mut().and_then(|s| s.stream_sink.as_mut()) {
+                        if s.dest_node_id == first_child {
+                            s.output_partition.type_ = TPartitionType::RANDOM;
+                        }
+                    }
+                }
+            },
+            "fed by a RANDOM stream",
+        );
+        refused(
+            &|l: &mut L| {
+                let first_child = {
+                    let ps = l.params_list.as_mut().unwrap();
+                    let nodes = ps.iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == t)).unwrap();
+                    let at = nodes.nodes.iter().position(|n| n.node_type == t).unwrap();
+                    nodes.nodes[at + 1].node_id
+                };
+                for p in l.params_list.as_mut().unwrap() {
+                    if let Some(s) = p.fragment.as_mut().unwrap().output_sink.as_mut().and_then(|s| s.stream_sink.as_mut()) {
+                        if s.dest_node_id == first_child {
+                            s.output_partition.partition_exprs = Some(vec![doris_fixtures::build::int(1, ty(T::INT))]);
+                        }
+                    }
+                }
+            },
+            "hashed on other exprs than its keys",
+        );
+    }
+}
+
+#[test]
+fn a_nested_set_node_must_be_keyed_on_its_output() {
+    // test_set_operation: INTERSECT(EXCHANGE, EXCEPT(EXCHANGE, EXCHANGE)) in 4 instances; the
+    // INTERSECT keys its EXCEPT child on slot 6, the EXCEPT's own; slot 5 is not
+    use doris_fixtures::replays::{self, plan_list, Step};
+    let (req, list) = replays::load("correctness_p0.test_set_operation.test_set_operation")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request)
+                .filter(|l| {
+                    l.params_list.iter().flatten().any(|p| {
+                        let nodes = &p.fragment.as_ref().unwrap().plan.as_ref().unwrap().nodes;
+                        nodes.iter().any(|n| n.intersect_node.is_some()) && nodes.iter().any(|n| n.except_node.is_some())
+                    })
+                })
+                .map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("a nested set plan");
+    let prepare = |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
         let mut r = req.clone();
         r.request = exec_request(l.params_list.clone().unwrap()).request;
         env().query.prepare(&r).status
     };
-    let st = prepare(&|_| {});
-    assert_eq!(st.status_code, 0, "{st:?}");
-    let refused = |change: &dyn Fn(&mut TPlanNode), want: &str| {
-        let st = prepare(change);
-        assert_ne!(st.status_code, 0, "{want}: accepted");
-        assert!(st.error_msgs.iter().any(|e| e.contains(want)), "{want}: {st:?}");
-    };
-    fn lists(n: &mut TPlanNode) -> &mut Vec<Vec<doris_thrift::gen::exprs::TExpr>> {
-        &mut n.intersect_node.as_mut().unwrap().result_expr_lists
-    }
-    refused(&|n| { lists(n).pop(); }, "result expr lists");
-    refused(&|n| { lists(n)[0].pop(); }, "different lengths");
-    refused(
-        &|n| {
-            n.num_children = 1;
-            lists(n).truncate(1);
-        },
-        "children",
-    );
-    refused(&|n| lists(n)[1][0] = doris_fixtures::build::call("no_such_function", ty(T::INT), vec![]), "no_such_function");
+    assert_eq!(prepare(&list).status_code, 0);
+    let mut l = list.clone();
+    let n = set_node_of(&mut l, TPlanNodeType::INTERSECT_NODE);
+    let e = &mut set_lists(n)[1][0].nodes[0];
+    assert_eq!(e.slot_ref.as_ref().map(|r| r.slot_id), Some(6));
+    e.slot_ref.as_mut().unwrap().slot_id = 5;
+    let st = prepare(&l);
+    assert_ne!(st.status_code, 0, "accepted");
+    assert!(st.error_msgs.iter().any(|m| m.contains("over a set node on other keys in 4 instances")), "{st:?}");
+}
+
+#[test]
+fn a_set_node_needs_its_children_to_be_exchanges_in_several_instances() {
+    // a local child in a 4-instance fragment: each instance would see only its own scan ranges
+    let prepare = set_plan_prepare(TPlanNodeType::INTERSECT_NODE);
+    let st = prepare(&|l| {
+        let ps = l.params_list.as_mut().unwrap();
+        let plan = ps.iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == TPlanNodeType::INTERSECT_NODE)).unwrap();
+        let at = plan.nodes.iter().position(|n| n.node_type == TPlanNodeType::INTERSECT_NODE).unwrap();
+        let child = &mut plan.nodes[at + 1];
+        child.node_type = TPlanNodeType::EMPTY_SET_NODE;
+        child.exchange_node = None;
+    });
+    assert_ne!(st.status_code, 0, "accepted");
+    assert!(st.error_msgs.iter().any(|e| e.contains("over an EMPTY_SET_NODE in 4 instances")), "{st:?}");
 }

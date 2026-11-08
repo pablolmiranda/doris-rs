@@ -71,3 +71,41 @@ fn an_empty_child_zero_gives_nothing() {
         assert!(set_rows(kind, vec![vec![], col(&[i(1)])]).is_empty());
     }
 }
+
+#[test]
+fn nan_is_one_row_and_float_keeps_its_sign() {
+    let d = Datum::Double;
+    let got = set_rows(SetKind::Except, vec![col(&[d(f64::NAN), d(1.0)]), col(&[d(f64::NAN)])]);
+    assert_eq!(got, col(&[d(1.0)]));
+    let got = set_rows(SetKind::Except, vec![col(&[d(f64::NAN)]), col(&[d(0.0), d(-0.0)])]);
+    assert!(matches!(got.as_slice(), [r] if matches!(r[0], Datum::Double(x) if x.is_nan())), "{got:?}");
+    let f = Datum::Float;
+    let got = set_rows(SetKind::Except, vec![col(&[f(-0.0), f(0.0)]), col(&[f(0.0)])]);
+    assert!(
+        matches!(got.as_slice(), [r] if matches!(r[0], Datum::Float(x) if x == 0.0 && x.is_sign_negative())),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn a_wide_null_row_keeps_its_place() {
+    // only a one-column NULL row goes first
+    let one = vec![i(1), i(1)];
+    let nulls = vec![N, N];
+    let got = set_rows(
+        SetKind::Intersect,
+        vec![vec![one.clone(), nulls.clone()], vec![nulls.clone(), one.clone()]],
+    );
+    assert_eq!(got, vec![one, nulls]);
+}
+
+#[test]
+fn keys_do_not_run_together() {
+    let b = |s: &str| Datum::Bytes(s.as_bytes().to_vec());
+    assert!(set_rows(SetKind::Intersect, vec![vec![vec![b("ab"), b("c")]], vec![vec![b("a"), b("bc")]]]).is_empty());
+    assert!(set_rows(SetKind::Intersect, vec![col(&[Datum::Bool(true)]), col(&[i(1)])]).is_empty());
+    assert_eq!(
+        set_rows(SetKind::Intersect, vec![col(&[Datum::Bool(true)]), col(&[Datum::Bool(true)])]),
+        col(&[Datum::Bool(true)])
+    );
+}

@@ -384,3 +384,39 @@ fn set_operations_match_the_reference() {
         assert!(m.is_empty(), "{s}: {m:#?}");
     }
 }
+
+#[test]
+fn a_limit_on_a_set_node_applies_after_the_set_operation() {
+    // limit 0 on every set node: each set query then returns no rows, so it differs from the
+    // reference exactly where the reference has rows
+    use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
+    use thrift::protocol::{TCompactOutputProtocol, TSerializable};
+    let mut r = replays::load("query_p0.set_operations.test_pullup_predicate_null.test_pullup_predicate_null");
+    let mut changed = 0;
+    for s in &mut r.steps {
+        if let Step::ExecPlanFragment { request, .. } = s {
+            let Some(mut list) = plan_list(request) else { continue };
+            let mut hit = false;
+            for p in list.params_list.iter_mut().flatten() {
+                for n in p.fragment.iter_mut().flat_map(|f| f.plan.iter_mut()).flat_map(|x| x.nodes.iter_mut()) {
+                    if matches!(n.node_type, P::INTERSECT_NODE | P::EXCEPT_NODE) {
+                        n.limit = 0;
+                        hit = true;
+                    }
+                }
+            }
+            if hit {
+                let mut buf = Vec::new();
+                list.write_to_out_protocol(&mut TCompactOutputProtocol::new(&mut buf)).unwrap();
+                request.request = Some(buf);
+                changed += 1;
+            }
+        }
+    }
+    assert!(changed > 0);
+    let m = replay(&r);
+    assert!(!m.is_empty(), "limit 0 changed nothing");
+    for x in &m {
+        assert!(x.what.starts_with("0 rows, the reference "), "{x:?}");
+    }
+}
