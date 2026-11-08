@@ -5,7 +5,7 @@
 //! doris-rs does not run, so that nothing of a refused query runs.
 use std::collections::{BTreeMap, HashMap};
 
-use doris_thrift::gen::data_sinks::{TDataSink, TDataSinkType, TDataStreamSink, TPlanFragmentDestination};
+use doris_thrift::gen::data_sinks::{TDataSink, TDataSinkType, TDataStreamSink, TMultiCastDataStreamSink, TPlanFragmentDestination};
 use doris_thrift::gen::descriptors::TDescriptorTable;
 use doris_thrift::gen::exprs::TExpr;
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
@@ -393,7 +393,31 @@ fn check_senders(plan: &QueryPlan) -> Result<(), ExecError> {
     Ok(())
 }
 
+/// A multicast sink's consumers and their destination lists, one each.
+pub fn multicast_consumers(m: &TMultiCastDataStreamSink) -> Result<(&[TDataStreamSink], &[Vec<TPlanFragmentDestination>]), ExecError> {
+    let (sinks, destinations) = (m.sinks.as_deref().unwrap_or_default(), m.destinations.as_deref().unwrap_or_default());
+    if sinks.is_empty() || sinks.len() != destinations.len() {
+        return Err(ExecError::BadRequest(format!(
+            "a multicast sink with {} consumers and {} destination lists",
+            sinks.len(),
+            destinations.len()
+        )));
+    }
+    Ok((sinks, destinations))
+}
+
+/// The tuple a stream sink projects onto, if it projects: only when it has output exprs, as
+/// C++ (pipeline_fragment_context.cpp, the multicast row descriptor).
+pub fn projection_tuple(s: &TDataStreamSink) -> Result<Option<i32>, ExecError> {
+    match (s.output_exprs.as_ref().filter(|e| !e.is_empty()), s.output_tuple_id) {
+        (None, _) => Ok(None),
+        (Some(_), Some(t)) => Ok(Some(t)),
+        (Some(_), None) => Err(ExecError::BadRequest("a stream sink with output exprs and no output tuple".into())),
+    }
+}
+
 fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
+    projection_tuple(s)?;
     check_partition(s.output_partition.type_, what)?;
     check_exprs(s.output_partition.partition_exprs.iter().flatten(), false)?;
     check_exprs(s.output_exprs.iter().flatten(), false)?;
@@ -425,14 +449,7 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
                     .multi_cast_stream_sink
                     .as_ref()
                     .ok_or_else(|| ExecError::BadRequest("MULTI_CAST_DATA_STREAM_SINK without its parameters".into()))?;
-                let (sinks, destinations) = (m.sinks.as_deref().unwrap_or_default(), m.destinations.as_deref().unwrap_or_default());
-                if sinks.is_empty() || sinks.len() != destinations.len() {
-                    return Err(ExecError::BadRequest(format!(
-                        "a multicast sink with {} consumers and {} destination lists",
-                        sinks.len(),
-                        destinations.len()
-                    )));
-                }
+                let (sinks, _) = multicast_consumers(m)?;
                 for s in sinks {
                     check_stream_sink(s, "a multicast consumer")?;
                 }

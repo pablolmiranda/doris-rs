@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use doris_exec::block::Block;
 use doris_exec::exchange::Chunk;
-use doris_exec::pipeline::multicast;
+use doris_exec::exchange::{ExchangeKey, Exchanges};
+use doris_exec::pipeline::{multicast, send_stream};
 use doris_exec::query::{DescTable, SlotInfo};
 use doris_exec::value::ColType;
 use doris_exec::ExecError;
@@ -155,4 +156,56 @@ fn sinks_and_destinations_must_pair() {
         Err(ExecError::BadRequest(m)) => assert!(m.contains("multicast"), "{m}"),
         other => panic!("expected a BadRequest, got {other:?}"),
     }
+}
+
+#[test]
+fn empty_output_exprs_send_rows_unchanged() {
+    // C++ projects only when output_exprs is non-empty
+    let sink = TMultiCastDataStreamSink::new(vec![consumer(10, None, Some((vec![], 5)))], vec![dest(1)]);
+    let copies = multicast(&input(), &sink, &desc()).unwrap();
+    assert_eq!(texts(&copies[0].2), vec!["1,a", "2,b", "3,c"]);
+    assert_eq!(copies[0].2.slots, vec![1, 2]);
+}
+
+#[test]
+fn output_exprs_need_a_tuple() {
+    let mut c = consumer(10, None, None);
+    c.output_exprs = Some(vec![slot(2, varchar())]);
+    let sink = TMultiCastDataStreamSink::new(vec![c], vec![dest(1)]);
+    match multicast(&input(), &sink, &desc()) {
+        Err(ExecError::BadRequest(m)) => assert!(m.contains("output tuple"), "{m}"),
+        other => panic!("expected a BadRequest, got {other:?}"),
+    }
+}
+
+#[test]
+fn two_consumers_into_one_instance_stay_apart() {
+    // both consumers feed instance 1, through exchange nodes 10 and 20
+    let sink = TMultiCastDataStreamSink::new(
+        vec![
+            consumer(10, Some(vec![binary("eq", slot(1, ty(T::INT)), int(1, ty(T::INT)))]), None),
+            consumer(20, Some(vec![binary("gt", slot(1, ty(T::INT)), int(1, ty(T::INT)))]), None),
+        ],
+        vec![dest(1), dest(1)],
+    );
+    let exchanges = Exchanges::default();
+    let query = (7, 7);
+    for (s, d, copy) in multicast(&input(), &sink, &desc()).unwrap() {
+        send_stream(&exchanges, query, &s, &d, copy, 0).unwrap();
+    }
+    let got = |node: i32| {
+        let chunks = exchanges
+            .receive(
+                &ExchangeKey {
+                    query,
+                    instance: (1, 1),
+                    node,
+                },
+                1,
+            )
+            .unwrap();
+        chunks.iter().flat_map(texts).collect::<Vec<_>>()
+    };
+    assert_eq!(got(10), vec!["1,a"]);
+    assert_eq!(got(20), vec!["2,b", "3,c"]);
 }
