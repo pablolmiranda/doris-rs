@@ -424,3 +424,56 @@ fn a_multicast_consumer_must_be_runnable() {
     );
     refused(&|m| m.destinations.as_mut().unwrap().truncate(0), "multicast sink with");
 }
+
+#[test]
+fn a_set_node_must_be_well_formed() {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
+    use doris_thrift::gen::plan_nodes::TPlanNode;
+    let is_intersect = |l: &TPipelineFragmentParamsList| {
+        l.params_list.iter().flatten().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes)).any(|n| n.node_type == TPlanNodeType::INTERSECT_NODE)
+    };
+    let (req, list) = replays::load("query_p0.set_operations.set_with_null.set_with_null.set_with_null")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(is_intersect).map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("an INTERSECT plan");
+    let prepare = |change: &dyn Fn(&mut TPlanNode)| {
+        let mut l = list.clone();
+        let n = l
+            .params_list
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .flat_map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes.iter_mut())
+            .find(|n| n.node_type == TPlanNodeType::INTERSECT_NODE)
+            .unwrap();
+        change(n);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    };
+    let st = prepare(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    let refused = |change: &dyn Fn(&mut TPlanNode), want: &str| {
+        let st = prepare(change);
+        assert_ne!(st.status_code, 0, "{want}: accepted");
+        assert!(st.error_msgs.iter().any(|e| e.contains(want)), "{want}: {st:?}");
+    };
+    fn lists(n: &mut TPlanNode) -> &mut Vec<Vec<doris_thrift::gen::exprs::TExpr>> {
+        &mut n.intersect_node.as_mut().unwrap().result_expr_lists
+    }
+    refused(&|n| { lists(n).pop(); }, "result expr lists");
+    refused(&|n| { lists(n)[0].pop(); }, "different lengths");
+    refused(
+        &|n| {
+            n.num_children = 1;
+            lists(n).truncate(1);
+        },
+        "children",
+    );
+    refused(&|n| lists(n)[1][0] = doris_fixtures::build::call("no_such_function", ty(T::INT), vec![]), "no_such_function");
+}

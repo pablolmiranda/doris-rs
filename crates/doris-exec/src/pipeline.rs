@@ -96,6 +96,7 @@ impl Instance<'_> {
             }
             P::SELECT_NODE => self.child(t, 0)?,
             P::UNION_NODE => self.constants(t)?,
+            P::INTERSECT_NODE | P::EXCEPT_NODE => self.set_op(t)?,
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
@@ -231,6 +232,21 @@ impl Instance<'_> {
             let b = self.typed(project(row, &one)?, &out.slots)?;
             out.block.rows.extend(b.rows);
         }
+        Ok(out)
+    }
+
+    /// INTERSECT_NODE / EXCEPT_NODE: each child projected by its result expr list, then the set
+    /// operation, typed onto the node's tuple.
+    fn set_op(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let (kind, tuple, lists) = crate::query::set_node(&t.node)?;
+        let mut out = self.empty(tuple)?;
+        let mut children = Vec::with_capacity(t.children.len());
+        for (c, exprs) in t.children.iter().zip(lists) {
+            // every child in the tuple's types, so equal values compare equal
+            let child = self.node(c)?;
+            children.push(self.typed(project(exprs, &child)?, &out.slots)?.rows);
+        }
+        out.block.rows = crate::set_op::set_rows(kind, children);
         Ok(out)
     }
 

@@ -371,3 +371,16 @@ fn every_replay_matches_the_reference() {
     let lines: Vec<String> = all.iter().map(|m| format!("{} #{}: {}", m.suite, m.query, m.what)).collect();
     assert!(all.is_empty(), "{} mismatches over {} replays:\n{}", lines.len(), rs.len(), lines.join("\n"));
 }
+
+#[test]
+fn set_operations_match_the_reference() {
+    for s in [
+        "correctness_p0.test_set_operation.test_set_operation",
+        "nereids_p0.test_filter_pushdown_set.test_filter_pushdown_set",
+        "query_p0.set_operations.set_with_null.set_with_null.set_with_null",
+        "query_p0.set_operations.test_pullup_predicate_null.test_pullup_predicate_null",
+    ] {
+        let m = replay(&replays::load(s));
+        assert!(m.is_empty(), "{s}: {m:#?}");
+    }
+}

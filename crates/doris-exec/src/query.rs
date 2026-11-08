@@ -349,11 +349,36 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
             check_exprs(m.fetch_expr_lists.iter().flatten(), false)?;
         }
+        // const_expr_lists, first_materialized_child_idx and is_colocate are ignored, as C++ ignores them
+        P::INTERSECT_NODE | P::EXCEPT_NODE => check_exprs(set_node(n)?.2.iter().flatten(), false)?,
         _ => return Err(unsupported(name)),
     }
     check_exprs(n.conjuncts.iter().flatten(), false)?;
     check_exprs(n.projections.iter().flatten(), false)?;
     Ok(())
+}
+
+/// An INTERSECT_NODE's or EXCEPT_NODE's kind, tuple and result expr lists (one per child, all of
+/// one length).
+pub fn set_node(n: &TPlanNode) -> Result<(crate::set_op::SetKind, i32, &[Vec<TExpr>]), ExecError> {
+    use crate::set_op::SetKind;
+    let name = node_type_name(n.node_type);
+    let missing = || ExecError::BadRequest(format!("{name} without its parameters"));
+    let (kind, tuple, lists) = match n.node_type {
+        P::INTERSECT_NODE => n.intersect_node.as_ref().map(|s| (SetKind::Intersect, s.tuple_id, &s.result_expr_lists)).ok_or_else(missing)?,
+        P::EXCEPT_NODE => n.except_node.as_ref().map(|s| (SetKind::Except, s.tuple_id, &s.result_expr_lists)).ok_or_else(missing)?,
+        _ => return Err(ExecError::BadRequest(format!("{name} is not a set node"))),
+    };
+    if n.num_children < 2 {
+        return Err(ExecError::BadRequest(format!("a set node with {} children", n.num_children)));
+    }
+    if lists.len() != n.num_children as usize {
+        return Err(ExecError::BadRequest(format!("an {name} with {} children and {} result expr lists", n.num_children, lists.len())));
+    }
+    if lists.iter().any(|l| l.len() != lists[0].len()) {
+        return Err(ExecError::BadRequest(format!("an {name} with result expr lists of different lengths")));
+    }
+    Ok((kind, tuple, lists))
 }
 
 /// How many of a fragment's stream sinks send to exchange `node` in instance `to`: its stream
