@@ -145,6 +145,8 @@ pub struct QueryPlan {
     /// Arithmetic under `check_overflow_for_decimal` false, whose decimal multiply rounds
     /// differently (`F/multiply.cpp:401-422`); the FE always sends true.
     pub unchecked_arithmetic: bool,
+    /// The query's instant and time zone (`TQueryGlobals`), the same in every instance.
+    pub clock: crate::clock::QueryClock,
 }
 
 impl QueryPlan {
@@ -235,6 +237,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
         parallel_result_sink: o.and_then(|o| o.enable_parallel_result_sink).unwrap_or(true),
         binary_rows: o.and_then(|o| o.mysql_row_binary_format).unwrap_or(false),
         dry_run: o.and_then(|o| o.dry_run_query).unwrap_or(false),
+        clock: crate::clock::QueryClock::from_optional(params.iter().find_map(|p| p.query_globals.as_ref())),
         unchecked_arithmetic: o.and_then(|o| o.check_overflow_for_decimal) == Some(false)
             && format!("{list:?}").contains(&format!("node_type: {:?}", TExprNodeType::ARITHMETIC_EXPR)),
     })

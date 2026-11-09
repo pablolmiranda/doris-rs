@@ -68,6 +68,15 @@ fn string_call(n: &TExprNode) -> bool {
     }
 }
 
+/// `now([INT])` into DATETIMEV2, `current_date()` (`curdate()`) into DATEV2.
+fn clock_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    match name.as_str() {
+        "now" => to.ptype == T::DATETIMEV2 && (args.is_empty() || (args.len() == 1 && args[0].ptype == T::INT)),
+        _ => to.ptype == T::DATEV2 && args.is_empty(),
+    }
+}
+
 /// The number of nodes in the subtree at `i` (pre-order, `num_children` each).
 fn subtree_len(nodes: &[TExprNode], i: usize) -> usize {
     let mut len = 1;
@@ -177,6 +186,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
                 Some("round") => round_call(&e.nodes, i),
+                Some("now" | "current_date" | "curdate") => clock_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -466,6 +476,21 @@ fn eval_at(
                 let to = node_type(n)?;
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
                 let out = crate::arith::abs((ta, a), &to)?;
+                (to, out)
+            }
+            Some(f @ ("now" | "current_date" | "curdate")) => {
+                let to = node_type(n)?;
+                let clock = crate::clock::current().ok_or_else(|| ExecError::Internal(format!("{f}() without the query's clock")))?;
+                let out = if f == "now" {
+                    // now(n): a NULL n is 0, row by row (CurrentDateTimeImpl)
+                    let scale = |r: usize| match kids.first().map(|(_, v)| &v[r]) {
+                        Some(Datum::Int(s)) => *s as i32,
+                        _ => 0,
+                    };
+                    (0..rows).map(|r| Datum::Int(clock.now(scale(r)).into())).collect()
+                } else {
+                    vec![Datum::Int(clock.today().into()); rows]
+                };
                 (to, out)
             }
             Some("round") => {

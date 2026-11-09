@@ -6,6 +6,7 @@ pub mod aggregate;
 pub mod analytic;
 pub mod arith;
 pub mod block;
+pub mod clock;
 pub mod columnar;
 pub mod cond;
 pub mod error_log;

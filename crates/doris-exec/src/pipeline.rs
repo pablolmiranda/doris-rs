@@ -84,8 +84,10 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         instance: &f.instances[instance],
         ctx,
     };
-    let out = me.node(&f.root)?;
-    me.sink(out)
+    crate::clock::with_clock(&plan.clock, || {
+        let out = me.node(&f.root)?;
+        me.sink(out)
+    })
 }
 
 impl Instance<'_> {

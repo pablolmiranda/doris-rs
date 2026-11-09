@@ -32,6 +32,9 @@ bytes = { workspace = true }
 ethnum = { workspace = true }
 # LIKE patterns
 regex = { workspace = true }
+# now(), current_date() and named time zones
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }

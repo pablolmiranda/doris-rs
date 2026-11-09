@@ -397,14 +397,26 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             // the value at the column's scale, as a decimal prints
             Value::Decimal(decimal_text(v, col.scale))
         }
-        T::DATEV2 | T::DATE => {
-            parse_datev2(t)?;
-            Value::Date(t.to_string())
-        }
-        T::DATETIMEV2 | T::DATETIME => {
-            parse_datetime(t, col)?;
-            Value::Date(t.to_string())
-        }
+        // a zone after the time part: checked for a date, converted to the query zone for a
+        // datetime (crate::clock)
+        T::DATEV2 | T::DATE => match crate::clock::split_zone(t) {
+            Some((dt, zone)) if crate::clock::valid_zone(zone) => Value::Date(crate::row_text::datev2_text(parse_datev2(dt)?)),
+            Some(_) => return None,
+            None => {
+                parse_datev2(t)?;
+                Value::Date(t.to_string())
+            }
+        },
+        T::DATETIMEV2 | T::DATETIME => match crate::clock::split_zone(t) {
+            Some((dt, zone)) => {
+                let v = crate::clock::convert_from(parse_datetime(dt, col)?, zone)?;
+                Value::Date(crate::row_text::datetimev2_text(v, if col.ptype == TPrimitiveType::DATETIME { 0 } else { col.scale }))
+            }
+            None => {
+                parse_datetime(t, col)?;
+                Value::Date(t.to_string())
+            }
+        },
         _ => return None,
     })
 }

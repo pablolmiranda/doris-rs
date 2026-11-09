@@ -27,7 +27,9 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
             | TExprNodeType::NULL_LITERAL
             | TExprNodeType::SLOT_REF => true,
             TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.writable()),
-            TExprNodeType::FUNCTION_CALL => matches!(function_name(n).as_deref(), Some("substring" | "concat")),
+            TExprNodeType::FUNCTION_CALL => {
+                matches!(function_name(n).as_deref(), Some("substring" | "concat" | "now" | "current_date" | "curdate"))
+            }
             _ => false,
         };
         if !ok {
@@ -90,6 +92,19 @@ fn eval_at(nodes: &[TExprNode], pos: &mut usize, slots: &Slots) -> Result<Value,
         }
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("substring") => substring(&children),
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("concat") => concat(&children),
+        TExprNodeType::FUNCTION_CALL if matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate")) => {
+            let f = function_name(n).unwrap_or_default();
+            let clock = crate::clock::current().ok_or_else(|| RowError::new(format!("{f}() without the query's clock")))?;
+            if f == "now" {
+                let scale = match children.first() {
+                    Some(Value::Int(s)) => *s as i32,
+                    _ => 0,
+                };
+                Value::Date(crate::row_text::datetimev2_text(clock.now(scale), scale.clamp(0, 6)))
+            } else {
+                Value::Date(crate::row_text::datev2_text(clock.today()))
+            }
+        }
         _ => return Err(RowError::new(format!("unsupported {}", describe(n)))),
     })
 }
