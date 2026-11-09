@@ -1,7 +1,7 @@
 [package]
 name = "doris-exec"
 version = "0.1.0"
-description = "doris-rs BE execution: write fragments (INSERT VALUES, stream load), constant expressions, the OLAP table sink"
+description = "doris-rs BE execution: query and write fragments, expressions, the OLAP table sink"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -22,6 +22,12 @@ crc32fast = { workspace = true }
 flate2 = { workspace = true }
 # numbers keep their text (a JSON load's 1.79769e+309 is a field, not a parse error)
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
+# format=parquet and format=orc stream loads
+parquet = { workspace = true }
+orc-rust = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }

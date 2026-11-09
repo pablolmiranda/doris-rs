@@ -325,7 +325,7 @@ fn read_cluster_id(path: &Path) -> Result<Option<i32>, StorageError> {
 
 /// `gen_timestamp_string`'s `%Y%m%d%H%M%S`. The C++ BE uses local time; this uses UTC (the
 /// reference container's local time is UTC).
-fn timestamp() -> String {
+pub fn timestamp() -> String {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let (days, rem) = (secs / 86_400, secs % 86_400);
     let (y, m, d) = civil_from_days(days as i64);

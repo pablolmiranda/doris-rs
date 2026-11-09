@@ -86,6 +86,13 @@ fn check(s: &StreamLoadSample, r: &Run) {
     assert_eq!(begin, s.begin.0, "{ctx}: loadTxnBegin");
     let LoadCall::Put(mut put) = calls[1].clone() else { panic!("{ctx}: {calls:?}") };
     put.load_id = s.put.0.load_id.clone();
+    // a Parquet or ORC body is saved first (`_data_saved_path`): its path holds the time
+    if let Some(path) = put.path.as_deref() {
+        let db = &s.put.0.db;
+        assert!(path.contains(&format!("/mini_download/{db}/__shard_")), "{ctx}: {path}");
+        assert!(path.contains(&format!("//{}.", s.put.0.tbl)), "{ctx}: {path}");
+        put.path = s.put.0.path.clone();
+    }
     assert_eq!(put, s.put.0, "{ctx}: streamLoadPut");
     match (&s.end, &calls[2]) {
         (LoadEnd::Commit(want, _), LoadCall::Commit(got)) => {
@@ -144,6 +151,13 @@ fn csv_stream_loads_match_the_corpus() {
 fn json_stream_loads_match_the_corpus() {
     let n = replay("json", false);
     assert!(n >= 3, "{n}");
+}
+
+#[test]
+fn parquet_and_orc_stream_loads_match_the_corpus() {
+    // test_load_with_decimal: a Parquet and an ORC file of decimals, read as text and cast
+    assert!(replay("parquet", false) >= 1);
+    assert!(replay("orc", false) >= 1);
 }
 
 #[test]

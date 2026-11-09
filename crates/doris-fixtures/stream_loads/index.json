@@ -520,5 +520,23 @@
     "end": "commit",
     "format": "csv",
     "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "87",
+    "end": "commit",
+    "format": "parquet",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
+  },
+  {
+    "dir": "88",
+    "end": "commit",
+    "format": "orc",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
+  },
+  {
+    "dir": "89",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
   }
 ]

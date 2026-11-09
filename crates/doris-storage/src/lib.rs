@@ -12,7 +12,7 @@ mod tablet;
 mod tablet_manager;
 mod txn;
 
-pub use data_dir::DataDir;
+pub use data_dir::{timestamp, DataDir};
 pub use error::StorageError;
 pub use file_header::{adler32, decode_file_header, encode_file_header};
 pub use olap_meta::{tablet_meta_key, OlapMeta};

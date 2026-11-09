@@ -36,7 +36,11 @@ pub fn check_stream(f: &WriteFragment) -> Result<(), ExecError> {
         return Err(ExecError::Unsupported { what: "a WHERE clause on a stream load".into() });
     }
     match params.format_type {
-        Some(TFileFormatType::FORMAT_CSV_PLAIN) | Some(TFileFormatType::FORMAT_CSV_GZ) | Some(TFileFormatType::FORMAT_JSON) => {}
+        Some(TFileFormatType::FORMAT_CSV_PLAIN)
+        | Some(TFileFormatType::FORMAT_CSV_GZ)
+        | Some(TFileFormatType::FORMAT_JSON)
+        | Some(TFileFormatType::FORMAT_PARQUET)
+        | Some(TFileFormatType::FORMAT_ORC) => {}
         other => return Err(ExecError::Unsupported { what: format!("stream load format {other:?}") }),
     }
     match params.compress_type {
@@ -309,6 +313,10 @@ fn decompressed<'a>(params: &TFileScanRangeParams, body: &'a [u8], max_bytes: u6
     Ok(std::borrow::Cow::Owned(out))
 }
 
+fn columnar_rows(rows: crate::columnar::TextRows) -> Vec<Result<SourceRow, RowError>> {
+    rows.into_iter().map(|fields| Ok(SourceRow { fields })).collect()
+}
+
 pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec<Result<Vec<Value>, RowError>>, ExecError> {
     let params = scan_params(f)?;
     let body = decompressed(&params, body, max_bytes)?;
@@ -334,6 +342,8 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
     let strict = params.strict_mode.unwrap_or(false);
     let rows = match params.format_type {
         Some(TFileFormatType::FORMAT_JSON) => json_rows(&params, &names, &nullable, body),
+        Some(TFileFormatType::FORMAT_PARQUET) => columnar_rows(crate::columnar::parquet_rows(body, &names)?),
+        Some(TFileFormatType::FORMAT_ORC) => columnar_rows(crate::columnar::orc_rows(body, &names)?),
         _ => csv_rows(&params, body),
     };
     let output = f.params.fragment.as_ref().and_then(|fr| fr.output_exprs.clone()).unwrap_or_default();
