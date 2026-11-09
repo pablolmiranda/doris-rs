@@ -79,6 +79,11 @@ impl Exchanges {
         }
     }
 
+    /// The chunks sent to a receiver and the ends it has had, while it has not received them.
+    pub fn pending(&self, key: &ExchangeKey) -> Option<(usize, usize)> {
+        self.lock().channels.get(key).map(|c| (c.chunks.len(), c.ends))
+    }
+
     /// Ends every receiver of the query, now and later, with `why`.
     pub fn cancel(&self, query: QueryId, why: String) {
         let mut s = self.lock();

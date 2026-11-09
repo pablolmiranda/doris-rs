@@ -77,14 +77,32 @@ pub fn project(exprs: &[TExpr], input: &Chunk) -> Result<Block, ExecError> {
 /// Runs one instance of one fragment of the query to its end.
 pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &ExecCtx) -> Result<(), ExecError> {
     let f = &plan.fragments[fragment];
+    // a merged fragment (`RunMode::Merged`): the first instance scans every instance's ranges
+    let merged;
+    let me_plan = if f.mode == crate::query::RunMode::Merged && instance == 0 {
+        let mut all = f.instances[0].clone();
+        all.scan_ranges.clear();
+        for i in &f.instances {
+            for (node, ranges) in &i.scan_ranges {
+                all.scan_ranges.entry(*node).or_default().extend(ranges.iter().cloned());
+            }
+        }
+        merged = all;
+        &merged
+    } else {
+        &f.instances[instance]
+    };
     let me = Instance {
         plan,
         at: (fragment, instance),
         fragment: f,
-        instance: &f.instances[instance],
+        instance: me_plan,
         ctx,
     };
     crate::clock::with_clock(&plan.clock, || {
+        if f.mode == crate::query::RunMode::Merged && instance > 0 {
+            return me.idle();
+        }
         let out = me.node(&f.root)?;
         me.sink(out)
     })
@@ -463,7 +481,7 @@ impl Instance<'_> {
             instance: (self.instance.id.hi, self.instance.id.lo),
             node: n.node_id,
         };
-        let chunks = self.ctx.exchanges.receive(&key, senders)?;
+        let chunks = self.receive_exchange(n.node_id, &key, senders)?;
         let tuple = *e
             .input_row_tuples
             .first()
@@ -484,6 +502,67 @@ impl Instance<'_> {
                 out.block.rows.drain(..offset.min(out.block.rows.len()));
                 Ok(out)
             }
+        }
+    }
+
+    /// An exchange's chunks. A shared broadcast build (`query::shared_build`) reaches only the
+    /// instances the plan sends it to; each of those forwards a copy to the instances of its
+    /// fragment that no sender names, which take it as their one sender.
+    fn receive_exchange(&self, node: i32, key: &ExchangeKey, senders: usize) -> Result<Vec<Chunk>, ExecError> {
+        use crate::query::{plan_senders, shared_build};
+        let shared = self.fragment.mode == crate::query::RunMode::Each && shared_build(self.plan, self.at.0, node);
+        if !shared {
+            return self.ctx.exchanges.receive(key, senders);
+        }
+        if plan_senders(self.plan, node, &self.instance.id) == 0 {
+            return self.ctx.exchanges.receive(key, 1);
+        }
+        let chunks = self.ctx.exchanges.receive(key, senders)?;
+        if self.at.1 == 0 {
+            for other in self.fragment.instances.iter().filter(|i| plan_senders(self.plan, node, &i.id) == 0) {
+                let to = ExchangeKey { query: key.query, instance: (other.id.hi, other.id.lo), node };
+                for c in &chunks {
+                    self.ctx.exchanges.send(&to, c.clone());
+                }
+                self.ctx.exchanges.end(&to);
+            }
+        }
+        Ok(chunks)
+    }
+
+    /// A merged fragment's other instances: no rows, but every stream they feed still gets their
+    /// end, and a result or table sink their empty output.
+    fn idle(&self) -> Result<(), ExecError> {
+        let f = self.fragment;
+        let q = qid(self.plan);
+        let end = |s: &TDataStreamSink, destinations: &[TPlanFragmentDestination]| {
+            for key in stream_keys(q, s, destinations) {
+                self.ctx.exchanges.end(&key);
+            }
+        };
+        match f.sink.type_ {
+            TDataSinkType::DATA_STREAM_SINK => {
+                let s = f.sink.stream_sink.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_STREAM_SINK without its parameters".into()))?;
+                end(s, &f.destinations);
+                Ok(())
+            }
+            TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => {
+                let m = f
+                    .sink
+                    .multi_cast_stream_sink
+                    .as_ref()
+                    .ok_or_else(|| ExecError::BadRequest("MULTI_CAST_DATA_STREAM_SINK without its parameters".into()))?;
+                let (sinks, destinations) = multicast_consumers(m)?;
+                for (s, d) in sinks.iter().zip(destinations) {
+                    end(s, d);
+                }
+                Ok(())
+            }
+            TDataSinkType::RESULT_SINK => (self.ctx.result)(empty_of(&f.output_exprs)?),
+            TDataSinkType::OLAP_TABLE_SINK => (self.ctx.table)(self.at.0, self.at.1, empty_of(&f.output_exprs)?),
+            other => Err(ExecError::Unsupported {
+                what: crate::query::sink_type_name(other),
+            }),
         }
     }
 
@@ -741,11 +820,49 @@ pub fn send_stream(
         .map(|d| ExchangeKey { query, instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id })
         .collect();
     let parts = partition(out, &s.output_partition, keys.len(), sender)?;
-    for (key, part) in keys.iter().zip(parts) {
-        exchanges.send(key, part);
-        exchanges.end(key);
+    // a bucket-shuffle list names an instance once per bucket it scans: each instance gets its
+    // buckets' rows in one send and one end; an unscanned bucket's (-1, -1) rows are dropped
+    let mut merged: Vec<(ExchangeKey, Chunk)> = Vec::new();
+    for (key, part) in keys.into_iter().zip(parts) {
+        if key.instance == (-1, -1) {
+            continue;
+        }
+        match merged.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, c)) => c.block.rows.extend(part.block.rows),
+            None => merged.push((key, part)),
+        }
+    }
+    for (key, part) in merged {
+        exchanges.send(&key, part);
+        exchanges.end(&key);
     }
     Ok(())
+}
+
+/// The receivers a stream sink sends to, each once, without an unscanned bucket's (-1, -1).
+fn stream_keys(query: (i64, i64), s: &TDataStreamSink, destinations: &[TPlanFragmentDestination]) -> Vec<ExchangeKey> {
+    let mut keys: Vec<ExchangeKey> = Vec::new();
+    for d in destinations {
+        let key = ExchangeKey { query, instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id };
+        if key.instance != (-1, -1) && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
+/// No rows, in the types of a sink's output exprs.
+fn empty_of(exprs: &[TExpr]) -> Result<Block, ExecError> {
+    let types = exprs
+        .iter()
+        .map(|e| {
+            e.nodes
+                .first()
+                .and_then(|n| crate::value::ColType::from_type_desc("", &n.type_, true))
+                .ok_or_else(|| ExecError::BadRequest("an output expr of a nested type".into()))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Block::new(types))
 }
 
 /// Values in the types of a tuple's slots.
@@ -876,7 +993,19 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
             }
             Ok(parts)
         }
-        T::RANDOM => {
+        T::BUCKET_SHFFULE_HASH_PARTITIONED => {
+            // destination i is the instance scanning bucket i (`partitioner.cpp:31-66`)
+            let exprs = p.partition_exprs.clone().unwrap_or_default();
+            let values = project(&exprs, &out)?;
+            let mut parts: Vec<Chunk> = (0..n).map(|_| empty()).collect();
+            for (row, key) in out.block.rows.into_iter().zip(values.rows) {
+                let typed: Vec<(crate::value::ColType, Datum)> = values.types.iter().cloned().zip(key).collect();
+                parts[(crate::route::bucket_hash(&typed) % n as u32) as usize].block.rows.push(row);
+            }
+            Ok(parts)
+        }
+        // the receiving table sink routes each row itself, so any split is right
+        T::RANDOM | T::OLAP_TABLE_SINK_HASH_PARTITIONED => {
             let mut parts: Vec<Chunk> = (0..n).map(|_| empty()).collect();
             for (i, row) in out.block.rows.into_iter().enumerate() {
                 parts[(i + sender.max(0) as usize) % n].block.rows.push(row);

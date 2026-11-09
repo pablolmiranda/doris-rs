@@ -123,6 +123,19 @@ pub struct FragmentPlan {
     pub instances: Vec<InstancePlan>,
     /// The fragment's OLAP_TABLE_SINK (`INSERT … SELECT`), checked.
     pub write: Option<crate::fragment::WriteFragment>,
+    pub mode: RunMode,
+}
+
+/// How a fragment's instances run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunMode {
+    /// Each instance over its own scan ranges and exchange input.
+    Each,
+    /// The FE planned a local shuffle (`parallel_instances` set, over several instances): it
+    /// sends every exchange's rows to the first instance and spreads the scans, and C++ shuffles
+    /// them between its tasks. doris-rs runs the first instance over every instance's scan ranges;
+    /// the others only end their streams.
+    Merged,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,6 +160,9 @@ pub struct QueryPlan {
     pub unchecked_arithmetic: bool,
     /// The query's instant and time zone (`TQueryGlobals`), the same in every instance.
     pub clock: crate::clock::QueryClock,
+    /// `enable_share_hash_table_for_broadcast_join`: a broadcast hash join's build input goes to
+    /// the first instance of its fragment, and the others share it.
+    pub share_broadcast_build: bool,
 }
 
 impl QueryPlan {
@@ -180,7 +196,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
             .output_sink
             .clone()
             .ok_or_else(|| ExecError::BadRequest("a fragment without its sink".into()))?;
-        let instances = p
+        let instances: Vec<InstancePlan> = p
             .local_params
             .iter()
             .flatten()
@@ -220,6 +236,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
             output_exprs: f.output_exprs.clone().unwrap_or_default(),
             per_exch_num_senders: p.per_exch_num_senders.clone(),
             destinations: p.destinations.clone().unwrap_or_default(),
+            mode: if p.parallel_instances.is_some() && instances.len() > 1 { RunMode::Merged } else { RunMode::Each },
             instances,
             write,
         });
@@ -237,6 +254,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
         parallel_result_sink: o.and_then(|o| o.enable_parallel_result_sink).unwrap_or(true),
         binary_rows: o.and_then(|o| o.mysql_row_binary_format).unwrap_or(false),
         dry_run: o.and_then(|o| o.dry_run_query).unwrap_or(false),
+        share_broadcast_build: o.and_then(|o| o.enable_share_hash_table_for_broadcast_join).unwrap_or(true),
         clock: crate::clock::QueryClock::from_optional(params.iter().find_map(|p| p.query_globals.as_ref())),
         unchecked_arithmetic: o.and_then(|o| o.check_overflow_for_decimal) == Some(false)
             && format!("{list:?}").contains(&format!("node_type: {:?}", TExprNodeType::ARITHMETIC_EXPR)),
@@ -331,7 +349,8 @@ fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool)
 }
 
 fn check_partition(t: TPartitionType, what: &str) -> Result<(), ExecError> {
-    if matches!(t, TPartitionType::UNPARTITIONED | TPartitionType::HASH_PARTITIONED | TPartitionType::RANDOM) {
+    use TPartitionType as T;
+    if matches!(t, T::UNPARTITIONED | T::HASH_PARTITIONED | T::RANDOM | T::BUCKET_SHFFULE_HASH_PARTITIONED | T::OLAP_TABLE_SINK_HASH_PARTITIONED) {
         Ok(())
     } else {
         Err(unsupported(format!("{what} partitioned as {t:?}")))
@@ -775,15 +794,41 @@ fn feeds(g: &FragmentPlan, node: i32, to: &TUniqueId) -> usize {
     }
 }
 
+/// How many sender instances name instance `to` for exchange `node`.
+pub fn plan_senders(plan: &QueryPlan, node: i32, to: &TUniqueId) -> usize {
+    plan.fragments.iter().map(|g| g.instances.len() * feeds(g, node, to)).sum()
+}
+
+/// Whether exchange `node` of fragment `fragment` is the build input of a broadcast hash join
+/// whose table the fragment's instances share (`hashjoin_build_sink.cpp:58-76`): the FE sends it
+/// to the first instance only (`DistributePlanner.java:253-254`).
+pub fn shared_build(plan: &QueryPlan, fragment: usize, node: i32) -> bool {
+    fn find(t: &PlanTree, node: i32) -> bool {
+        let here = t.node.node_type == P::HASH_JOIN_NODE
+            && t.node.hash_join_node.as_ref().is_some_and(|h| h.is_broadcast_join == Some(true))
+            && t.children.get(1).is_some_and(|c| c.node.node_id == node);
+        here || t.children.iter().any(|c| find(c, node))
+    }
+    plan.share_broadcast_build && plan.fragments.get(fragment).is_some_and(|f| find(&f.root, node))
+}
+
 /// Every exchange waits for as many senders as the plan has: each instance of a fragment whose
 /// stream sink names the exchange and one of its instances among its destinations. A wrong count
-/// would drop rows (too few) or wait forever (too many).
+/// would drop rows (too few) or wait forever (too many). A merged fragment's other instances
+/// receive nothing, nor does a shared broadcast build's (the first instance forwards it).
 fn check_senders(plan: &QueryPlan) -> Result<(), ExecError> {
-    for f in &plan.fragments {
+    for (fi, f) in plan.fragments.iter().enumerate() {
         for n in f.root.nodes().into_iter().filter(|n| n.node_type == P::EXCHANGE_NODE) {
             let declared = f.per_exch_num_senders.get(&n.node_id).copied();
-            for r in &f.instances {
-                let senders: usize = plan.fragments.iter().map(|g| g.instances.len() * feeds(g, n.node_id, &r.id)).sum();
+            let shared = shared_build(plan, fi, n.node_id);
+            for (ii, r) in f.instances.iter().enumerate() {
+                if ii > 0 && f.mode == RunMode::Merged {
+                    continue;
+                }
+                let senders = plan_senders(plan, n.node_id, &r.id);
+                if ii > 0 && shared && senders == 0 {
+                    continue;
+                }
                 if declared != Some(senders as i32) {
                     return Err(ExecError::BadRequest(format!(
                         "exchange node {} expects {declared:?} senders, the plan has {senders}",
