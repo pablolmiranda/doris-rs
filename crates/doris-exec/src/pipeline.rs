@@ -22,6 +22,8 @@ pub type ScanRows = Vec<Vec<Vec<Datum>>>;
 pub type ScanFn<'a> = dyn Fn(i64, i64, &[ScanColumn]) -> Result<ScanRows, StorageError> + Sync + 'a;
 /// Takes the result sink's rows.
 pub type ResultFn<'a> = dyn Fn(Block) -> Result<(), ExecError> + Sync + 'a;
+/// Takes a table sink's rows (output expressions evaluated): fragment index, instance index.
+pub type TableFn<'a> = dyn Fn(usize, usize, Block) -> Result<(), ExecError> + Sync + 'a;
 /// Reads the rows row ids name, as these columns, in the ids' order.
 pub type FetchFn<'a> = dyn Fn(&[Vec<u8>], &[ScanColumn]) -> Result<Vec<Vec<Datum>>, StorageError> + Sync + 'a;
 
@@ -37,10 +39,14 @@ pub struct ExecCtx<'a> {
     pub fetch: &'a FetchFn<'a>,
     /// The FE's metadata calls, for information_schema scans.
     pub fe: &'a dyn crate::schema_scan::SchemaFe,
+    /// Takes an OLAP_TABLE_SINK's rows (`INSERT … SELECT`).
+    pub table: &'a TableFn<'a>,
 }
 
 struct Instance<'a> {
     plan: &'a QueryPlan,
+    /// This instance's fragment and its own index in it.
+    at: (usize, usize),
     fragment: &'a FragmentPlan,
     instance: &'a InstancePlan,
     ctx: &'a ExecCtx<'a>,
@@ -73,6 +79,7 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
     let f = &plan.fragments[fragment];
     let me = Instance {
         plan,
+        at: (fragment, instance),
         fragment: f,
         instance: &f.instances[instance],
         ctx,
@@ -513,6 +520,7 @@ impl Instance<'_> {
                 }
                 Ok(())
             }
+            TDataSinkType::OLAP_TABLE_SINK => (self.ctx.table)(self.at.0, self.at.1, project(&f.output_exprs, &out)?),
             other => Err(ExecError::Unsupported {
                 what: crate::query::sink_type_name(other),
             }),

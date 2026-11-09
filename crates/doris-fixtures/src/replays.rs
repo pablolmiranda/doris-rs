@@ -206,6 +206,11 @@ impl Replay {
             .collect()
     }
 
+    /// The reference BE's calls to the FE of one method, in order: whole Thrift messages.
+    pub fn fe_calls(&self, method: &str) -> Vec<&[u8]> {
+        self.fe.iter().filter(|(m, _, _)| m == method).map(|(_, call, _)| call.as_slice()).collect()
+    }
+
     pub fn fe_replies(&self) -> FeReplies {
         let mut f = FeReplies::default();
         for (method, call, reply) in &self.fe {

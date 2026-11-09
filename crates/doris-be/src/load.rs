@@ -84,12 +84,15 @@ fn pstatus(code: i32, msg: Option<String>) -> PStatus {
     PStatus { status_code: code, error_msgs: msg.into_iter().collect() }
 }
 
+/// Where load error logs go: `<first data dir>/error_log`.
+pub(crate) fn error_dir(tablets: &Mutex<TabletManager>) -> PathBuf {
+    let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
+    mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
+}
+
 impl LoadService {
     pub fn new(tablets: Arc<Mutex<TabletManager>>, fe: Arc<dyn FeClient>, master: MasterInfo, http_port: u16) -> LoadService {
-        let error_dir = {
-            let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
-            mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
-        };
+        let error_dir = error_dir(&tablets);
         LoadService {
             inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new(), max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE), next_shard: AtomicU64::new(0) }),
         }

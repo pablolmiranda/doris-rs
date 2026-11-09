@@ -118,6 +118,36 @@ impl ColType {
     }
 }
 
+/// A block value (`crate::block::Block`) as the value `Router::route` takes: decimals as their
+/// text at the column's scale, dates as their text, the rest as they are.
+pub fn datum_value(d: &Datum, c: &ColType) -> Value {
+    use doris_segment::values::{unpack_datetimev2, unpack_datev2};
+    use TPrimitiveType as T;
+    match d {
+        Datum::Null => Value::Null,
+        Datum::Bool(b) => Value::Bool(*b),
+        Datum::Float(f) => Value::Float(f64::from(*f)),
+        Datum::Double(f) => Value::Float(*f),
+        Datum::Bytes(b) => Value::Str(b.clone()),
+        Datum::Int(i) => match c.ptype {
+            T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => Value::Decimal(decimal_text(*i, c.scale)),
+            T::DATEV2 | T::DATE => {
+                let v = unpack_datev2(*i as u32);
+                Value::Date(format!("{:04}-{:02}-{:02}", v.year, v.month, v.day))
+            }
+            T::DATETIMEV2 | T::DATETIME => {
+                let t = unpack_datetimev2(*i as u64);
+                let mut s = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.date.year, t.date.month, t.date.day, t.hour, t.minute, t.second);
+                if t.microsecond > 0 {
+                    s.push_str(&format!(".{:06}", t.microsecond));
+                }
+                Value::Date(s)
+            }
+            _ => Value::Int(*i),
+        },
+    }
+}
+
 /// A string as an integer (`StringParser::string_to_int_internal` without strict casting): an
 /// optional sign, at least one digit, then nothing or a `.digits` suffix, which is dropped
 /// (`is_float_suffix`: "3.12" is 3). None for anything else or past i128.

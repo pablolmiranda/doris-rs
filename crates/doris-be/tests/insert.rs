@@ -83,3 +83,26 @@ fn cancel_finished_is_ok() {
     let reply = svc.cancel_plan_fragment(&PCancelPlanFragmentRequest::default());
     assert_eq!(reply.status.status_code, 0);
 }
+
+/// INSERT … VALUES (one constant UNION_NODE into a table sink) stays the load service's; a
+/// table sink fed by a query is the query service's.
+#[test]
+fn a_values_insert_still_goes_to_the_load_service() {
+    use doris_be::brpc::is_write;
+    use doris_fixtures::replays::{self, plan_list, Step};
+    let v = &doris_fixtures::values::values_vectors()[0];
+    assert!(is_write(&v.request));
+    let r = replays::load("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let select = r.steps.iter().find_map(|s| match s {
+        Step::ExecPlanFragment { request, .. }
+            if plan_list(request).is_some_and(|l| {
+                l.params_list.iter().flatten().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes)).any(|n| n.olap_scan_node.is_some())
+                    && l.params_list.iter().flatten().any(|p| p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.olap_table_sink.is_some()))
+            }) =>
+        {
+            Some(request.clone())
+        }
+        _ => None,
+    });
+    assert!(!is_write(&select.expect("the INSERT … SELECT")));
+}
