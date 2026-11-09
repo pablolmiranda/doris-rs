@@ -30,6 +30,8 @@ arrow-schema = { workspace = true }
 bytes = { workspace = true }
 # decimal products past 128 bits
 ethnum = { workspace = true }
+# LIKE patterns
+regex = { workspace = true }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }

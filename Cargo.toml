@@ -56,5 +56,7 @@ parquet = { version = "53", default-features = false, features = ["snap", "flate
 orc-rust = { version = "0.6", default-features = false }
 # decimal products past 128 bits (M6 s5)
 ethnum = "1"
+# LIKE patterns (M6 s5)
+regex = "1"
 arrow-array = { version = "56", default-features = false }
 arrow-schema = { version = "56", default-features = false }

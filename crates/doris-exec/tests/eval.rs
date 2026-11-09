@@ -233,11 +233,11 @@ fn substring_counts_characters() {
 
 #[test]
 fn unknown_function_is_refused() {
-    let e = call("like", ty(T::BOOLEAN), vec![string("a"), string("%")]);
+    let e = call("md5", ty(T::VARCHAR), vec![string("a")]);
     let err = check_read(&e)
-        .expect_err("like is not supported")
+        .expect_err("md5 is not supported")
         .to_string();
-    assert!(err.contains("function like"), "{err}");
+    assert!(err.contains("function md5"), "{err}");
 }
 
 #[test]
@@ -320,4 +320,34 @@ fn conditionals_evaluate() {
     assert_eq!(one_row(call("ifnull", d.clone(), vec![null(d.clone()), float(1.5, d.clone())])), Datum::Double(1.5));
     let e = call("coalesce", i.clone(), vec![null(i.clone()), null(i.clone()), int(3, i.clone())]);
     assert_eq!(one_row(e), Datum::Int(3));
+}
+
+#[test]
+fn string_functions_evaluate() {
+    // slot 5 is VARCHAR: "a", "b", NULL
+    let (block, slots) = typed_block();
+    let col = |e: doris_thrift::gen::exprs::TExpr| {
+        check_read(&e).expect("supported");
+        eval_column(&e, &block, &slots).expect("eval").1
+    };
+    let v = ty(T::VARCHAR);
+    let like = call("like", ty(T::BOOLEAN), vec![slot(5, v.clone()), string("a%")]);
+    assert_eq!(col(like), vec![Datum::Bool(true), Datum::Bool(false), Datum::Null]);
+    // a column of patterns: each row its own
+    let like = call("like", ty(T::BOOLEAN), vec![string("b"), slot(5, v.clone())]);
+    assert_eq!(col(like), vec![Datum::Bool(false), Datum::Bool(true), Datum::Null]);
+    let like = call("like", ty(T::BOOLEAN), vec![slot(5, v.clone()), string("!%"), string("!")]);
+    assert_eq!(col(like), vec![Datum::Bool(false), Datum::Bool(false), Datum::Null]);
+    let cat = call("concat", v.clone(), vec![slot(5, v.clone()), string("-x")]);
+    assert_eq!(col(cat), vec![Datum::Bytes(b"a-x".to_vec()), Datum::Bytes(b"b-x".to_vec()), Datum::Null]);
+    let len = call("length", ty(T::INT), vec![slot(5, v.clone())]);
+    assert_eq!(col(len), vec![Datum::Int(1), Datum::Int(1), Datum::Null]);
+}
+
+#[test]
+fn like_with_escape_on_an_empty_block() {
+    let block = Block { types: vec![col("s", T::VARCHAR, 0, 0)], rows: vec![] };
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    let e = call("like", ty(T::BOOLEAN), vec![slot(1, ty(T::VARCHAR)), string("!%"), string("!")]);
+    assert_eq!(eval_column(&e, &block, &slots).expect("eval").1, vec![]);
 }

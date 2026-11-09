@@ -56,6 +56,18 @@ fn conditional_call(n: &TExprNode) -> bool {
     scalar(&to) && values.iter().all(scalar)
 }
 
+/// `like`, `concat`, `length` over text arguments.
+fn string_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
+    match name.as_str() {
+        "like" => (args.len() == 2 || args.len() == 3) && args.iter().all(text) && to.ptype == T::BOOLEAN,
+        "concat" => !args.is_empty() && args.iter().all(text) && text(&to),
+        "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
+        _ => false,
+    }
+}
+
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
         Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
@@ -134,6 +146,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
+                Some("like" | "concat" | "length") => string_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -241,8 +254,12 @@ fn eval_at(
         .ok_or_else(|| bad("expression ends early"))?;
     *pos += 1;
     let mut kids = Vec::with_capacity(n.num_children.max(0) as usize);
+    // whether each argument is a constant expression (no slot read), as `is_col_constant`
+    let mut constant = Vec::with_capacity(kids.capacity());
     for _ in 0..n.num_children.max(0) {
+        let start = *pos;
         kids.push(eval_at(nodes, pos, block, slots)?);
+        constant.push(nodes[start..*pos].iter().all(|k| k.node_type != N::SLOT_REF));
     }
     let rows = block.len();
     let boolean = || ColType {
@@ -413,6 +430,30 @@ fn eval_at(
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
                 let out = crate::arith::abs((ta, a), &to)?;
                 (to, out)
+            }
+            Some("like") => {
+                let (_, values) = kids.first().ok_or_else(|| bad("like without its value"))?;
+                let (_, patterns) = kids.get(1).ok_or_else(|| bad("like without its pattern"))?;
+                // a non-constant ESCAPE is ignored (`FunctionLike::open`)
+                let escape = match (kids.get(2), constant.get(2)) {
+                    _ if rows == 0 => None,
+                    (Some((_, e)), Some(true)) => Some(crate::strings::escape_char(match e.first() {
+                        Some(Datum::Bytes(b)) => b,
+                        _ => &[],
+                    })?),
+                    _ => None,
+                };
+                let out = crate::strings::like_column(values, patterns, constant.get(1) == Some(&true), escape)?;
+                (boolean(), out)
+            }
+            Some("concat") => {
+                let t = node_type(n)?;
+                let args: Vec<(&ColType, &[Datum])> = kids.iter().map(|(t, v)| (t, v.as_slice())).collect();
+                (t, crate::strings::concat_column(&args))
+            }
+            Some("length") => {
+                let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
+                (node_type(n)?, crate::strings::length_column(v))
             }
             Some(f @ ("if" | "ifnull" | "coalesce")) => {
                 let to = node_type(n)?;
