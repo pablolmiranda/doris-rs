@@ -142,6 +142,24 @@ FE threads race (`AbstractJobProcessor.updateFragmentExecStatus` cancels before
 in `m6-s4-full-1` and in three runs on its own, and stays off the ratchets. The checker also
 learned the FE's cut of an insert error to 511 characters.
 
+After Milestone 6 story 5 (arithmetic and common scalar functions: integer, DOUBLE and
+decimal arithmetic with C++'s wrapping, NULL-on-zero and overflow errors; `abs`, `round`,
+`if`, `ifnull`, `coalesce`, `like`, `concat` and `length`; `now()`, `current_date()` and text
+with a time zone from the query's clock; run `m6-s5-full-2`, 2026-11-09): 483 eligible
+suites; 514 Epic 1 suites pass the out gate (347 of those that reach the BE) and 402 the
+strict gate (322). The five suites story 4 left waiting on `now()`, `current_date()` and
+named time zones are eligible now and pass. CASE, `nullable`, `assert_true` and
+`ASSERT_NUM_ROWS_NODE` moved to story 6: every suite that uses them also needs a join. Four
+newly eligible suites have needs the corpus cannot show, and join the supplement with their
+evidence from `m6-s5-full-1`: `test_arrow_stream_load_uppercase_column` loads an Arrow file
+(`load:format_arrow`); `test_case_when_to_if` explains a query the C++ BE holds in its SQL
+cache (`be:sql_cache`), and doris-rs keeps none; the two `likeOperatorWorks_order` suites
+return a three-tablet scan without ORDER BY in the C++ BE's scanner order
+(`result:cpp_scan_order`), as `select_with_tablets` does. So eligible is 483, not the 487
+the plan counted. Decimal add, subtract and mod, and DOUBLE mod, are refused: no gate suite
+needs them. Errors carry C++'s status codes (`INVALID_ARGUMENT` for `INT64_MIN % -1`,
+`ARITHMETIC_OVERFLOW_ERRROR` for a decimal product past its precision).
+
 The older directory-level gate also works against any target:
 
 ```

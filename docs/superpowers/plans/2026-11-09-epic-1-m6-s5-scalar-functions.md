@@ -29,6 +29,56 @@ does. Eligible goes 409 → 487, all passing both gates.
 **Spec:** `docs/superpowers/specs/2026-11-08-epic-1-m6-query-breadth-design.md` §2 (row 5), §3,
 §5, §6 ("Each story's plan may add the ones its replayed suites also need").
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **No `bind` pass; a query clock instead.** `clock.rs` (not `bind.rs`) holds a `QueryClock`
+  built from `TQueryGlobals`. `with_clock` sets it for the thread that runs a query instance
+  (`run_instance`) or a load (`values_rows`, `run_sink`, `stream_rows`). `now()`,
+  `current_date()` and a zone after a date-time text read it where they are evaluated. A plan
+  holds expressions in a dozen places, and every evaluation already runs inside one of those
+  scopes. So a column of zoned text converts too, and the planned refusal of it is gone.
+- **Three features beyond the plan**, each needed by a gate suite's replay:
+  - Intermediate projections (`TPlanNode.intermediate_projections_list`) run before the final
+    projection (`test_if_functions`, `test_ifnull`). Before, doris-rs neither ran nor refused
+    them.
+  - Virtual scan slots (`TSlotDescriptor.virtual_column_expr`) are computed for each scanned
+    row, before the scan's conjuncts (both `virtual_slot_ref` suites). C++ computes them after
+    its pushed-down predicates.
+  - FLOAT casts: text is the float's shortest text, and FLOAT/DOUBLE to an integer or decimal
+    is numeric, NULL out of range (`fold_constant_cast`, `test_window_float_sliding_frame`).
+- **Refused, not built:** decimal add, subtract and mod, DOUBLE mod, and any plan with
+  arithmetic when `check_overflow_for_decimal` is off (the FE always sends it on). A NUL byte
+  in a constant `like` pattern on the regex path is refused, because Hyperscan cuts the
+  pattern there; a per-row pattern keeps it, as RE2 does.
+- **Errors carry C++'s codes.** `ExecError::Coded` sends INVALID_ARGUMENT (`INT64_MIN % -1`)
+  and ARITHMETIC_OVERFLOW_ERRROR (as INTERNAL_ERROR, with that name).
+- **The replay harness compares order only when the result fragment's top node sorts** (SORT,
+  or a merging EXCHANGE, looking through MATERIALIZATION and SELECT). The three window replays
+  it compares unordered are listed in `COMPARED_UNORDERED`.
+- **Four newly eligible suites have needs the corpus cannot show.** They are in
+  `needs_supplement.json` with their evidence from `m6-s5-full-1`:
+  - `test_arrow_stream_load_uppercase_column` loads an Arrow file (`load:format_arrow`).
+  - `test_case_when_to_if` explains a query the BE's SQL cache holds (`be:sql_cache`).
+    doris-rs keeps no SQL cache.
+  - Both `likeOperatorWorks_order` suites return an unordered three-tablet scan in the C++
+    BE's scanner order (`result:cpp_scan_order`), as `select_with_tablets` does.
+
+  Eligible is therefore 483, not 487.
+- **Fixes from the final review:** every finding was fixed, Minors included, each test-first.
+  The ledger lists them. The main ones:
+  - `now(NULL)` is NULL.
+  - Narrow decimal rounding wraps at the native width.
+  - A decimal multiply past 38 digits of scale is refused at prepare.
+  - A malformed `round` is refused rather than panicking.
+  - Whitespace after an hour-only zone offset makes the text NULL.
+- **The full run.** `m6-s5-full-2` on the final code (fresh FE, storage wiped): 483 eligible,
+  0 failing in either gate, no ratchet suite lost. 514 suites pass the out gate (347 that reach
+  the BE) and 402 the strict gate (322); story 4 had 436 (269) and 328 (248). The ratchets gain
+  78 out and 74 strict suites. `make -C oracle test`, the readback and swap checks and
+  `cargo test --workspace` pass.
+
 ## Research
 
 **Recount** (`checker/derive.py` with the supplement, supported = `scores/epic1-supported.json`
@@ -452,12 +502,12 @@ The 32 replays: `test_char_default_value`, `test_implicit_cast`,
 - Modify: `oracle/scores/epic1-out.txt`, `oracle/scores/epic1-strict.txt`, `oracle/README.md`
   (a story 5 paragraph after story 4's), this plan (an "As built" section)
 
-- [ ] **Step 1: Full run** (fresh FE, storage wiped; `make epic-check TARGET=rust`). Expected:
+- [x] **Step 1: Full run** (fresh FE, storage wiped; `make epic-check TARGET=rust`). Expected:
   487 eligible, 0 failing in either gate, no ratchet suite lost. Fix any failure test-first,
   then re-run.
-- [ ] **Step 2:** Regenerate the ratchets from the run's `grade.json`, as story 4 did (minus
+- [x] **Step 2:** Regenerate the ratchets from the run's `grade.json`, as story 4 did (minus
   `test_move_column_with_cast`), and confirm that no suite left them.
-- [ ] **Step 3:** Run `make -C oracle test`, the readback and swap checks, and `cargo test -q`.
+- [x] **Step 3:** Run `make -C oracle test`, the readback and swap checks, and `cargo test -q`.
   Expected: PASS.
-- [ ] **Step 4:** Write the README paragraph (numbers, the story 6 move, the calls) and the
+- [x] **Step 4:** Write the README paragraph (numbers, the story 6 move, the calls) and the
   As built section. Then commit ("M6 s5: gate, docs, As built").
