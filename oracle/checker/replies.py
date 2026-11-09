@@ -167,10 +167,14 @@ def substitute(exchange, run_facts):
     """The exchange with every declared deployment fact replaced by its placeholder: a "cell"
     fact replaces a whole row value equal to it, a "substring" fact every occurrence in row
     values, messages, info, column names and the statement text."""
+    out = dict(exchange)
+    reply = out.get("reply")
+    if isinstance(reply, dict) and isinstance(reply.get("message"), str):
+        # the message's length before substitution: whether the FE cut it (marks.fe_cut)
+        out["message_len"] = len(reply["message"])
     rules = fact_rules(run_facts)
     if not rules:
-        return exchange
-    out = dict(exchange)
+        return out
     out["statement"] = sub_text(out.get("statement"), [r for r in rules if r[0] == "substring"])
     out["reply"] = sub_reply(out.get("reply"), rules)
     return out

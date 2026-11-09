@@ -126,6 +126,8 @@ def derive_marks(runs):
 
 FIRST_ERROR = ". first_error_msg: "
 FE_CUT_MAX = 64
+# InsertUtils keeps the whole error message under 512 bytes: a message it cut is 511 long
+FE_CUT_LEN = 511
 
 
 def fe_cut(pat, message):
@@ -133,7 +135,8 @@ def fe_cut(pat, message):
     the error under 512 bytes by cutting the part before ". first_error_msg: ", and where it cuts
     moves with the lengths of deployment facts (the BE host, the error log's shard) in the same
     message. The part after must match; the part before may stop up to FE_CUT_MAX characters
-    sooner than the reference's, inside the reference's last literal text."""
+    sooner than the reference's, inside the reference's last literal text. relax applies it only
+    to a message FE_CUT_LEN long before substitution, the length of a message the FE cut."""
     head_pat, sep, tail_pat = pat.partition(re.escape(FIRST_ERROR))
     head, sep2, tail = message.partition(FIRST_ERROR)
     if not sep or not sep2 or not re.fullmatch(tail_pat, tail, re.S):
@@ -165,7 +168,7 @@ def relax(mark, want, got):
             g.pop(f, None)
         if isinstance(w.get("message"), str) and isinstance(g.get("message"), str) and w["message"] != g["message"]:
             pat = mark.get("message_pattern") or re.escape(w["message"])
-            if re.fullmatch(pat, g["message"], re.S) or fe_cut(pat, g["message"]):
+            if re.fullmatch(pat, g["message"], re.S) or (got.get("message_len") == FE_CUT_LEN and fe_cut(pat, g["message"])):
                 g["message"] = w["message"]
         for j, f in mark.get("masked_column_meta", []):
             for r in (w, g):

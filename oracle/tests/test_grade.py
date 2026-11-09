@@ -226,44 +226,51 @@ class ProbeMarkTests(GradeTestCase):
         other = [[(150, e("select x", 1105, "errCode = 2, query id 77aa timed out"))]]
         self.assertEqual(self.grade(ref, self.W, other)["strict"]["differences"][S]["field"], "message")
 
-    @staticmethod
-    def insert_error(load_id, reason, shard="33", sep=". first_error_msg: ", first="no partition for this tuple"):
-        return [[(150, e("insert into t select * from s", 1105,
-                         f"errCode = 2, detailMessage = [CANCELLED]load_id={load_id}, reason: {reason}"
-                         f"{sep}{first}. url: http://h/api/_load_error_log?file=__shard_{shard}/log_{load_id}"))]]
+    REASON = ("[DATA_QUALITY_ERROR]Encountered unqualified data, stop processing. Please check if the source data "
+              "matches the schema, and consider disabling strict mode or increasing max_filter_ratio. " * 6)
+
+    @classmethod
+    def insert_error(cls, load_id, shard="33", sep=". first_error_msg: ", first="no partition for this tuple", reason=None, cut=True):
+        """An insert error as InsertUtils builds it: with `cut`, the head is cut so the message is
+        511 characters, the tail kept whole."""
+        head = f"errCode = 2, detailMessage = [CANCELLED]load_id={load_id}, reason: {reason or cls.REASON}"
+        tail = f"{sep}{first}. url: http://h/api/_load_error_log?file=__shard_{shard}/log_{load_id}"
+        if cut:
+            head = head[:511 - len(tail)]
+        return [[(150, e("insert into t select * from s", 1105, head + tail))]]
+
+    def cut_reference(self, sep=". first_error_msg: "):
+        return self.reference((self.W, self.insert_error("1a2b", sep=sep)), (self.W, self.insert_error("9f8e", shard="35", sep=sep)))
 
     def test_an_insert_error_head_the_fe_cut_shorter_is_the_same(self):
         # InsertUtils cuts the part before ". first_error_msg: " so the message fits 512 bytes:
-        # where it cuts depends on the BE host's and the shard's lengths, not on the BE
-        reason = "[DATA_QUALITY_ERROR]Encountered unqualified data, consider disabling st"
-        ref = self.reference((self.W, self.insert_error("1a2b", reason)), (self.W, self.insert_error("9f8e", reason, shard="35")))
-        self.assertEqual(self.grade(ref, self.W, self.insert_error("77aa", reason[:-7], shard="4"))["strict"]["passing"], [S])
+        # where it cuts moves with the lengths of deployment facts (here the shard's)
+        verdict = self.grade(self.cut_reference(), self.W, self.insert_error("77aa", shard="4000000"))
+        self.assertEqual(verdict["strict"]["passing"], [S])
 
     def test_an_insert_error_cut_that_varied_on_the_reference_may_be_cut_sooner(self):
-        # the reference's own cut varied ("disabling st" / "disabling stri"): a wildcard ends
-        # the head, and the cut may fall inside the text before it
-        reason = "[DATA_QUALITY_ERROR]Encountered unqualified data, consider disabling st"
-        ref = self.reference((self.W, self.insert_error("1a2b", reason)), (self.W, self.insert_error("9f8e", reason + "ri", shard="35")))
-        self.assertEqual(self.grade(ref, self.W, self.insert_error("77aa", reason[:-7], shard="4"))["strict"]["passing"], [S])
+        # the reference's own cut varied: a wildcard ends the head, and the cut may fall inside
+        # the text before it
+        ref = self.reference((self.W, self.insert_error("1a2b")), (self.W, self.insert_error("9f8e", shard="35000")))
+        self.assertEqual(self.grade(ref, self.W, self.insert_error("77aa", shard="4000000000"))["strict"]["passing"], [S])
+
+    def test_a_shorter_insert_error_the_fe_did_not_cut_differs(self):
+        # a run head that is a prefix of the reference's but whose message is under 511
+        # characters was not cut by the FE: the BE's reason itself is shorter
+        run = self.insert_error("77aa", shard="4000000", reason=self.REASON[:300], cut=False)
+        self.assertEqual(self.grade(self.cut_reference(), self.W, run)["strict"]["differences"][S]["field"], "message")
 
     def test_an_insert_error_head_that_is_not_a_cut_differs(self):
-        reason = "[DATA_QUALITY_ERROR]Encountered unqualified data, consider disabling st"
-        ref = self.reference((self.W, self.insert_error("1a2b", reason)), (self.W, self.insert_error("9f8e", reason)))
-        other = reason[:-7].replace("unqualified", "bad")
-        self.assertEqual(self.grade(ref, self.W, self.insert_error("77aa", other))["strict"]["differences"][S]["field"], "message")
+        run = self.insert_error("77aa", shard="4000000", reason=self.REASON.replace("Encountered", "Encountred"))
+        self.assertEqual(self.grade(self.cut_reference(), self.W, run)["strict"]["differences"][S]["field"], "message")
 
     def test_an_insert_error_cut_with_another_first_error_differs(self):
-        reason = "[DATA_QUALITY_ERROR]Encountered unqualified data, consider disabling st"
-        ref = self.reference((self.W, self.insert_error("1a2b", reason)), (self.W, self.insert_error("9f8e", reason)))
-        run = self.insert_error("77aa", reason[:-7], first="another error")
-        self.assertEqual(self.grade(ref, self.W, run)["strict"]["differences"][S]["field"], "message")
+        run = self.insert_error("77aa", shard="4000000", first="another error")
+        self.assertEqual(self.grade(self.cut_reference(), self.W, run)["strict"]["differences"][S]["field"], "message")
 
     def test_a_message_without_a_first_error_is_not_cut(self):
-        reason = "[DATA_QUALITY_ERROR]Encountered unqualified data, consider disabling st"
-        ref = self.reference((self.W, self.insert_error("1a2b", reason, sep=". other: ")),
-                             (self.W, self.insert_error("9f8e", reason, sep=". other: ")))
-        run = self.insert_error("77aa", reason[:-7], sep=". other: ")
-        self.assertEqual(self.grade(ref, self.W, run)["strict"]["differences"][S]["field"], "message")
+        run = self.insert_error("77aa", shard="4000000", sep=". other: ")
+        self.assertEqual(self.grade(self.cut_reference(sep=". other: "), self.W, run)["strict"]["differences"][S]["field"], "message")
 
     def test_varying_statement_label_becomes_a_pattern(self):
         def run(label):

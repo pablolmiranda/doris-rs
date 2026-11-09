@@ -111,3 +111,30 @@ fn a_missing_json_key_whose_default_is_not_supported_refuses_the_load() {
     let err = stream_rows(&f, &body, u64::MAX).unwrap_err();
     assert!(err.to_string().contains("now"), "{err}");
 }
+
+/// _get_column_default_value keeps the default's text (get_data_at(0).to_string()): a default
+/// that is not the NULL literal but evaluates to NULL is the empty string. Here country's
+/// default becomes CAST(NULL AS VARCHAR), built from id's CAST(0 AS VARCHAR).
+#[test]
+fn a_default_that_evaluates_to_null_is_the_empty_string() {
+    use doris_thrift::gen::exprs::TExprNodeType;
+    let (mut params, body) = json_default_load(true);
+    let null_cast = |d: &mut std::collections::BTreeMap<i32, doris_thrift::gen::exprs::TExpr>| {
+        let mut cast = d.values().find(|e| e.nodes.len() == 2 && e.nodes[1].node_type == TExprNodeType::INT_LITERAL).unwrap().clone();
+        cast.nodes[1].node_type = TExprNodeType::NULL_LITERAL;
+        cast.nodes[1].int_literal = None;
+        let country = *d.iter().find(|(_, e)| e.nodes[0].string_literal.as_ref().is_some_and(|l| l.value == "default_country")).unwrap().0;
+        d.insert(country, cast);
+    };
+    for l in params.local_params.iter_mut().flatten() {
+        for r in l.per_node_scan_ranges.values_mut().flatten() {
+            if let Some(d) = r.scan_range.ext_scan_range.as_mut().and_then(|e| e.file_scan_range.as_mut()).and_then(|f| f.params.as_mut()).and_then(|p| p.default_value_of_src_slot.as_mut()) {
+                null_cast(d);
+            }
+        }
+    }
+    params.file_scan_params.iter_mut().flat_map(|m| m.values_mut()).filter_map(|p| p.default_value_of_src_slot.as_mut()).for_each(null_cast);
+    let f = plan_write(&params).unwrap();
+    let rows = stream_rows(&f, &body, u64::MAX).unwrap();
+    assert_eq!(rows[0].as_ref().unwrap()[1], doris_exec::value::Value::Str(Vec::new()), "{:?}", rows[0]);
+}
