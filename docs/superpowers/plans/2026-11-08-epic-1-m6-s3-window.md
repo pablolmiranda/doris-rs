@@ -17,6 +17,35 @@ does. This makes 14 more gate suites eligible (364 → 378).
 
 **Spec:** `docs/superpowers/specs/2026-11-08-epic-1-m6-query-breadth-design.md` §2, §3, §5.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **Seven replays, 14 suites.** `test_always_nullable_window_function` became a seventh window
+  replay; it is the only one with `first_value`/`last_value`. `rowsFirstLast` can't be replayed
+  ("tablet not created"). `last_value` joined the supported functions, which makes those two
+  suites eligible as well as the 12 in the spec.
+- **The width check lives in `check_windows`.** The tuple-width check needs the descriptor table,
+  so it runs in `check_plan`, not `check_node`. The refusal is the same, at prepare.
+- **A missing `top_n_algorithm` is refused**, not defaulted. The FE always sets it.
+- **Fixes from the final review:**
+  - A window in more than one instance is refused at run time when its float partition keys are
+    equal in value but not in bits (-0.0 and 0.0): the exchange would hash them to different
+    instances. A prepare-time refusal would also refuse eligible plans hashed on a DOUBLE.
+  - A colocated window with no partition keys is refused in more than one instance; the check
+    now runs before the colocate acceptance.
+  - `first_value`/`last_value` ignore nulls whenever they have 2 arguments, as C++ does, whatever
+    the flag says.
+  - `lead`/`lag` need the frame the FE forces (ROWS to the offset); any other frame is refused.
+  - `multi_distinct_count` is refused as a window function.
+  - A global `PARTITION_SORT_NODE` is refused, in one instance too.
+  - Added tests: an exchange with no senders under a window is refused (by `check_senders`); a
+    sum over an empty frame of a non-nullable type is 0; an ignore-nulls `last_value` past the
+    partition keeps the last non-null value.
+- **The full run.** `m6-s3-full-1`, on the final code: 378 eligible, 0 failing either gate; 409
+  suites pass the out gate and 307 the strict gate. The 14 new passes are the 14 newly eligible
+  suites, and nothing was lost. `test_move_column_with_cast` stays off the ratchets.
+
 ## Research
 
 Two reports went into this section, both kept outside the repo:
@@ -155,17 +184,17 @@ goes from 364 to 378.
 - Produces: replay names for Task 2 and Task 3 (const `WINDOWS` in the test file and in
   `doris-be/tests/replay.rs`).
 
-- [ ] **Step 1: Write the failing test** `window_replays_have_analytic_and_partition_sort`.
+- [x] **Step 1: Write the failing test** `window_replays_have_analytic_and_partition_sort`.
   The `WINDOWS` replays load, every one holds an `ANALYTIC_EVAL_NODE`, and
   `check_partitionkey` and `test_partition_topn` hold a `PARTITION_SORT_NODE`.
-- [ ] **Step 2: Run** `cargo test -q -p doris-fixtures --test replays`. Expected: FAIL (the
+- [x] **Step 2: Run** `cargo test -q -p doris-fixtures --test replays`. Expected: FAIL (the
   replays are missing).
-- [ ] **Step 3:** Add the features. Then run `extract-replays --only` for the six suites and the
+- [x] **Step 3:** Add the features. Then run `extract-replays --only` for the six suites and the
   two `last_value` suites, keeping each suite that extracts. Copy them by basename, never with
   `cp -R dir/`.
-- [ ] **Step 4: Run** the test again. Expected: PASS.
+- [x] **Step 4: Run** the test again. Expected: PASS.
   `every_replay_matches_the_reference` in doris-be stays red until Task 3.
-- [ ] **Step 5: Commit** ("M6 s3: the window replays").
+- [x] **Step 5: Commit** ("M6 s3: the window replays").
 
 ### Task 2: ANALYTIC_EVAL_NODE
 
@@ -191,7 +220,7 @@ goes from 364 to 378.
   - `pub fn window_columns(part: &[Vec<Datum>], part_types: &[ColType], order: &[Vec<Datum>], order_types: &[ColType], frame: &Frame, f: &WindowFn, args: &[(ColType, Vec<Datum>)]) -> Result<Vec<Datum>, ExecError>`:
     one result per row, where `part` and `order` are each row's key values.
 
-- [ ] **Step 1: Write the failing unit tests** in `doris-exec/tests/analytic.rs`:
+- [x] **Step 1: Write the failing unit tests** in `doris-exec/tests/analytic.rs`:
   - `row_number_rank_and_dense_rank_restart_per_partition`. Partitions a, a, a, b with order
     keys 1, 1, 2, 5 give row_number 1, 2, 3, 1; rank 1, 1, 3, 1; dense_rank 1, 1, 2, 1.
   - `null_partition_keys_are_one_partition_and_zero_signs_are_peers`. Keys NULL, NULL give
@@ -209,24 +238,24 @@ goes from 364 to 378.
     `0.1 + 0.2` then `+ 0.3`.
   - `a_whole_partition_frame_without_order_keys`. With no order keys, rank is 1 for every row
     and RANGE-to-current min is the partition's min.
-- [ ] **Step 2: Run** `cargo test -q -p doris-exec --test analytic`. Expected: FAIL (no module).
-- [ ] **Step 3: Implement** `analytic.rs` as the Interfaces block says. Partitions are runs of
+- [x] **Step 2: Run** `cargo test -q -p doris-exec --test analytic`. Expected: FAIL (no module).
+- [x] **Step 3: Implement** `analytic.rs` as the Interfaces block says. Partitions are runs of
   equal keys and peer groups are runs of equal order keys. Use `same(a, b)`: NULL = NULL, floats
   by value, everything else by `eval::compare`. Aggregates go through `Accumulator` over the
   frame's rows, in order. A frame that starts at the partition's start may be extended
   incrementally.
-- [ ] **Step 4: Run** the unit tests. Expected: PASS.
-- [ ] **Step 5: Write the failing replay test** `window_functions_match_the_reference`
+- [x] **Step 4: Run** the unit tests. Expected: PASS.
+- [x] **Step 5: Write the failing replay test** `window_functions_match_the_reference`
   (doris-be `replay.rs`, the `WINDOWS` replays). Expected: FAIL with
   `Unsupported ANALYTIC_EVAL_NODE`.
-- [ ] **Step 6: Implement** `Instance::analytic` in `pipeline.rs`:
+- [x] **Step 6: Implement** `Instance::analytic` in `pipeline.rs`:
   1. Run the child.
   2. Evaluate the partition, order and argument exprs over it.
   3. Append the function columns.
   4. Type them onto `output_tuple_id`'s slots. The chunk's slots are the child's slots plus the
      output tuple's.
   5. The generic conjuncts, projections and limit follow.
-- [ ] **Step 7: Write the failing prepare tests**: `a_window_node_must_be_well_formed` and
+- [x] **Step 7: Write the failing prepare tests**: `a_window_node_must_be_well_formed` and
   `a_window_node_must_be_runnable` in doris-be `query.rs`, mutating a replayed plan. Each must
   be refused at prepare with its message:
   - missing parameters: BadRequest "ANALYTIC_EVAL_NODE without its parameters";
@@ -238,7 +267,7 @@ goes from 364 to 378.
     - no partition keys: Unsupported "an ANALYTIC_EVAL_NODE without partition keys in {n} instances";
     - an input fed by a RANDOM stream: Unsupported "an ANALYTIC_EVAL_NODE fed by a RANDOM stream in {n} instances";
     - an input hashed on a column that isn't a partition key: Unsupported "an ANALYTIC_EVAL_NODE hashed on other exprs than its partition keys in {n} instances".
-- [ ] **Step 8: Implement the checks.**
+- [x] **Step 8: Implement the checks.**
   - `check_node` runs `frame` and `WindowFn::from_expr`, and `check_exprs` on the keys.
   - The distribution check in `check_plan` walks down from the node to its feeding exchange:
     - SORT_NODE: map each tuple slot to its `sort_tuple_slot_exprs` slot, or by position when
@@ -247,10 +276,10 @@ goes from 364 to 378.
 
     It then requires the feeding sinks' hash exprs to be a subset of the partition key slots.
     A colocated node (`is_colocate`) is accepted. One instance needs nothing.
-- [ ] **Step 9: Run** `cargo test -q --workspace` and
+- [x] **Step 9: Run** `cargo test -q --workspace` and
   `cargo clippy -q --workspace --all-targets`. Expected: PASS, except
   `every_replay_matches_the_reference` for the partition-sort replays until Task 3.
-- [ ] **Step 10: Commit** ("M6 s3: ANALYTIC_EVAL_NODE").
+- [x] **Step 10: Commit** ("M6 s3: ANALYTIC_EVAL_NODE").
 
 ### Task 3: PARTITION_SORT_NODE
 
@@ -265,30 +294,30 @@ goes from 364 to 378.
   It returns partitions in first-seen order, each sorted (stably) by `cmp`, keeping rows per
   `algo`.
 
-- [ ] **Step 1: Write the failing unit tests**:
+- [x] **Step 1: Write the failing unit tests**:
   - `row_number_keeps_the_first_n_per_partition`;
   - `rank_keeps_ties_at_the_limit`: order keys 1, 1, 2 with N=1 keep both 1s;
   - `dense_rank_keeps_n_distinct_values`;
   - `partitions_come_in_first_seen_order_sorted`;
   - `zero_signs_are_different_partitions_and_nulls_one`.
-- [ ] **Step 2: Run** `cargo test -q -p doris-exec --test partition_sort`. Expected: FAIL.
-- [ ] **Step 3: Implement** it. Group rows by `row_key` of their partition values.
-- [ ] **Step 4: Implement** `Instance::partition_sort`:
+- [x] **Step 2: Run** `cargo test -q -p doris-exec --test partition_sort`. Expected: FAIL.
+- [x] **Step 3: Implement** it. Group rows by `row_key` of their partition values.
+- [x] **Step 4: Implement** `Instance::partition_sort`:
   1. Materialize the child onto the node's tuple, as the SORT_NODE does, with
      `sort_tuple_slot_exprs` or by position. Factor that step out of `sort` and share it.
   2. Evaluate the partition exprs over the child and the ordering exprs over the node's tuple.
   3. N is `partition_inner_limit`, and the algorithm is ROW_NUMBER when `has_global_limit` is
      set.
-- [ ] **Step 5: Write the failing prepare test** `a_partition_sort_node_must_be_well_formed`. Each
+- [x] **Step 5: Write the failing prepare test** `a_partition_sort_node_must_be_well_formed`. Each
   case is refused:
   - missing parameters: BadRequest "PARTITION_SORT_NODE without its parameters";
   - no `sort_info`: BadRequest;
   - a negative limit: BadRequest;
   - `ptopn_phase` TWO_PHASE_GLOBAL in several instances: Unsupported "a global PARTITION_SORT_NODE in {n} instances". No eligible suite has one.
-- [ ] **Step 6: Implement** the checks.
-- [ ] **Step 7: Run** `cargo test -q --workspace` and clippy. Expected: all PASS, including
+- [x] **Step 6: Implement** the checks.
+- [x] **Step 7: Run** `cargo test -q --workspace` and clippy. Expected: all PASS, including
   `every_replay_matches_the_reference` and `window_functions_match_the_reference`.
-- [ ] **Step 8: Commit** ("M6 s3: PARTITION_SORT_NODE").
+- [x] **Step 8: Commit** ("M6 s3: PARTITION_SORT_NODE").
 
 ### Task 4: Gate, docs, As built
 
@@ -296,12 +325,12 @@ goes from 364 to 378.
 - Modify: `oracle/scores/epic1-out.txt`, `oracle/scores/epic1-strict.txt` (from the run)
 - Modify: `oracle/README.md` (an M6 story 3 paragraph), this plan (As built)
 
-- [ ] **Step 1:** Make sure no BE holds the ports. Reset the FE (`make fe-down`, remove
+- [x] **Step 1:** Make sure no BE holds the ports. Reset the FE (`make fe-down`, remove
   `/tmp/doris-rs-oracle/storage`, `make fe-up`), start `make rust-be` with nohup, and run
   `RUN_ID=m6-s3-full-1 make epic-check TARGET=rust`. Expected: `eligible: 378; failing
   out-gate: 0; failing strict: 0`. Triage any failure with superpowers:systematic-debugging.
-- [ ] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
+- [x] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
   `test_move_column_with_cast`. Run `make -C oracle test`, `readback-check` and `swap-check`.
   Expected: all PASS.
-- [ ] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
-- [ ] **Step 4: Commit** ("M6 s3: gate, docs, As built").
+- [x] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
+- [x] **Step 4: Commit** ("M6 s3: gate, docs, As built").
