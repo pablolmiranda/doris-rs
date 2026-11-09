@@ -6,6 +6,7 @@
 //! <value>`); otherwise it becomes NULL.
 use std::collections::BTreeMap;
 
+use doris_thrift::gen::exprs::{TExpr, TExprNodeType};
 use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType, TFileScanRangeParams};
 
 use crate::expr::{check, eval, Slots};
@@ -62,8 +63,7 @@ struct SourceRow {
 }
 
 /// The body's rows, split as `CsvReader` does: records end at the line delimiter and fields at
-/// the column separator, except inside an enclosed field, where the escape character takes the
-/// next character as it is.
+/// the column separator, except inside an enclosed field (see `split_records`).
 fn csv_rows(params: &TFileScanRangeParams, body: &[u8]) -> Vec<Result<SourceRow, RowError>> {
     let attrs = params.file_attributes.clone().unwrap_or_default();
     let text = attrs.text_params.clone().unwrap_or_default();
@@ -73,9 +73,13 @@ fn csv_rows(params: &TFileScanRangeParams, body: &[u8]) -> Vec<Result<SourceRow,
     let escape = text.escape.filter(|e| *e != 0).map(|e| e as u8 as char);
     let trim_quotes = attrs.trim_double_quotes.unwrap_or(false);
     let width = params.num_of_columns_from_file.unwrap_or(0).max(0) as usize;
-    let skip = attrs.skip_lines.unwrap_or(0).max(0) as usize
-        + usize::from(matches!(attrs.header_type.as_deref(), Some("csv_with_names")))
-        + 2 * usize::from(matches!(attrs.header_type.as_deref(), Some("csv_with_names_and_types")));
+    // CsvReader::init_reader: a header type replaces skip_lines
+    let skip = match attrs.header_type.as_deref().map(str::to_ascii_lowercase).as_deref() {
+        Some("csv_with_names") => 1,
+        Some("csv_with_names_and_types") => 2,
+        Some(t) if !t.is_empty() => 0,
+        _ => attrs.skip_lines.unwrap_or(0).max(0) as usize,
+    };
     let ignore_redundant = attrs.ignore_csv_redundant_col == Some(true);
     let mismatch = |found: usize| {
         let mut m = format!(
@@ -95,6 +99,9 @@ fn csv_rows(params: &TFileScanRangeParams, body: &[u8]) -> Vec<Result<SourceRow,
     let validate = attrs.enable_text_validate_utf8.unwrap_or(true);
     let empty_as_null = text.empty_field_as_null.unwrap_or(false);
     let mut out = Vec::new();
+    // CsvReader::_remove_bom: a UTF-8 BOM before the first line is dropped when that line is
+    // read, not skipped
+    let body = if skip == 0 { body.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(body) } else { body };
     let records = split_records(body, sep.as_bytes(), delim.as_bytes(), enclose.map(|c| c as u8), escape.map(|c| c as u8));
     for (raw, fields) in records.into_iter().skip(skip) {
         if raw.is_empty() {
@@ -129,48 +136,85 @@ fn csv_rows(params: &TFileScanRangeParams, body: &[u8]) -> Vec<Result<SourceRow,
 type Record = (Vec<u8>, Vec<(Vec<u8>, bool)>);
 
 fn split_records(body: &[u8], sep: &[u8], delim: &[u8], enclose: Option<u8>, escape: Option<u8>) -> Vec<Record> {
+    // EncloseCsvLineReaderCtx finds the boundaries: a field that starts with the enclose runs to
+    // an enclose that is neither escaped nor doubled; anywhere else the separator and the line
+    // delimiter are found as they are. The field keeps its text as written.
     let mut records = Vec::new();
     let (mut fields, mut cur, mut raw) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut quoted, mut was_quoted) = (false, false);
+    let mut in_enclose = false;
+    let (mut should_escape, mut quote_escape) = (false, false);
     let mut i = 0;
     while i < body.len() {
         let c = body[i];
-        if quoted && Some(c) == escape && i + 1 < body.len() {
-            cur.push(body[i + 1]);
-            raw.extend_from_slice(&body[i..i + 2]);
-            i += 2;
-            continue;
-        }
-        if Some(c) == enclose && (quoted || cur.is_empty()) {
-            quoted = !quoted;
-            was_quoted = true;
+        if in_enclose {
+            if escape != enclose && Some(c) == escape {
+                should_escape = !should_escape;
+            } else if should_escape {
+                should_escape = false;
+            } else if quote_escape {
+                quote_escape = false;
+                if Some(c) != enclose {
+                    // the enclosed part ended: this character is read as outside it
+                    in_enclose = false;
+                    continue;
+                }
+            } else if Some(c) == enclose {
+                quote_escape = true;
+            }
+            cur.push(c);
             raw.push(c);
             i += 1;
             continue;
         }
-        if !quoted && !delim.is_empty() && body[i..].starts_with(delim) {
-            fields.push((std::mem::take(&mut cur), was_quoted));
-            was_quoted = false;
+        if !delim.is_empty() && body[i..].starts_with(delim) {
+            fields.push(field(std::mem::take(&mut cur), enclose, escape));
             records.push((std::mem::take(&mut raw), std::mem::take(&mut fields)));
             i += delim.len();
             continue;
         }
-        if !quoted && !sep.is_empty() && body[i..].starts_with(sep) {
-            fields.push((std::mem::take(&mut cur), was_quoted));
-            was_quoted = false;
+        if !sep.is_empty() && body[i..].starts_with(sep) {
+            fields.push(field(std::mem::take(&mut cur), enclose, escape));
             raw.extend_from_slice(sep);
             i += sep.len();
             continue;
+        }
+        if cur.is_empty() && Some(c) == enclose {
+            in_enclose = true;
+            (should_escape, quote_escape) = (false, false);
         }
         cur.push(c);
         raw.push(c);
         i += 1;
     }
     if !raw.is_empty() {
-        fields.push((cur, was_quoted));
+        fields.push(field(cur, enclose, escape));
         records.push((raw, fields));
     }
     records
+}
+
+/// A field's value, and whether it was enclosed: BaseCsvTextFieldSplitter::_process_value drops
+/// the enclose from a field that starts and ends with it; then, with an escape character,
+/// escape_string_for_csv drops each escape and the first of each doubled enclose.
+fn field(mut f: Vec<u8>, enclose: Option<u8>, escape: Option<u8>) -> (Vec<u8>, bool) {
+    let quoted = enclose.is_some_and(|q| f.len() > 1 && f[0] == q && f[f.len() - 1] == q);
+    if quoted {
+        f.pop();
+        f.remove(0);
+    }
+    if let Some(e) = escape {
+        let q = enclose.unwrap_or(0);
+        let mut out = Vec::with_capacity(f.len());
+        let mut escape_next = false;
+        for (k, &c) in f.iter().enumerate() {
+            escape_next = if (c == q && f.get(k + 1) == Some(&q)) || c == e { !escape_next } else { false };
+            if !escape_next {
+                out.push(c);
+            }
+        }
+        f = out;
+    }
+    (f, quoted)
 }
 
 /// `\t`, `\n`, `\x01`-style escapes in separators.
@@ -228,7 +272,27 @@ fn json_path<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json:
 /// JSON objects as source rows (`NewJsonReader`): each file slot's value by its jsonpath or its
 /// column name. A missing key is NULL for a nullable slot and filters the row otherwise; an
 /// object where no slot matched is filtered.
-fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool], body: &[u8]) -> Vec<Result<SourceRow, RowError>> {
+/// A missing key's text (NewJsonReader::_fill_missing_column): its slot's default, computed
+/// when first needed, so a default doris-rs cannot compute refuses only a load that needs it.
+fn default_text(e: &TExpr) -> Result<Option<String>, ExecError> {
+    check(e)?;
+    match eval(e, &Slots::new()) {
+        Ok(Value::Null) => Ok(None),
+        Ok(Value::Str(b)) => Ok(Some(String::from_utf8_lossy(&b).into_owned())),
+        Ok(other) => Err(ExecError::Unsupported { what: format!("a load column default of value {other:?}") }),
+        Err(e) => Err(ExecError::Unsupported { what: format!("a load column default: {}", e.msg) }),
+    }
+}
+
+/// `defaults`: each file slot's default (default_value_of_src_slot), None for no default (an
+/// empty expression or the NULL literal).
+fn json_rows(
+    params: &TFileScanRangeParams,
+    names: &[String],
+    nullable: &[bool],
+    defaults: &[Option<TExpr>],
+    body: &[u8],
+) -> Result<Vec<Result<SourceRow, RowError>>, ExecError> {
     let attrs = params.file_attributes.clone().unwrap_or_default();
     // `[]` is no jsonpaths: fields are found by column name
     let paths: Option<Vec<String>> =
@@ -281,15 +345,23 @@ fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool],
                 }));
                 continue;
             }
-            if let Some(i) = found.iter().zip(nullable).position(|(v, n)| v.is_none() && !n) {
+            let missing = |i: usize| found[i].is_none() && defaults.get(i).is_none_or(Option::is_none);
+            if let Some(i) = (0..names.len()).find(|i| missing(*i) && !nullable[*i]) {
                 out.push(Err(RowError { msg: format!("The column `{}` is not nullable, but it's not found in jsondata.", names[i]), line }));
                 continue;
             }
-            let fields: Vec<Option<String>> = found.into_iter().map(|v| v.and_then(json_text)).collect();
+            let mut fields = Vec::with_capacity(names.len());
+            for (i, v) in found.into_iter().enumerate() {
+                fields.push(match (v, defaults.get(i).and_then(Option::as_ref)) {
+                    (Some(v), _) => json_text(v),
+                    (None, Some(e)) => default_text(e)?,
+                    (None, None) => None,
+                });
+            }
             out.push(Ok(SourceRow { fields }));
         }
     }
-    out
+    Ok(out)
 }
 
 /// The sink's rows of a stream load body, and how many rows the body held.
@@ -341,7 +413,20 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
     let direct: BTreeMap<i32, i32> = params.dest_sid_to_src_sid_without_trans.clone().unwrap_or_default();
     let strict = params.strict_mode.unwrap_or(false);
     let rows = match params.format_type {
-        Some(TFileFormatType::FORMAT_JSON) => json_rows(&params, &names, &nullable, body),
+        Some(TFileFormatType::FORMAT_JSON) => {
+            let defaults: Vec<Option<TExpr>> = file_slots
+                .iter()
+                .map(|id| {
+                    params
+                        .default_value_of_src_slot
+                        .as_ref()
+                        .and_then(|m| m.get(id))
+                        .filter(|e| e.nodes.first().is_some_and(|n| n.node_type != TExprNodeType::NULL_LITERAL))
+                        .cloned()
+                })
+                .collect();
+            json_rows(&params, &names, &nullable, &defaults, body)?
+        }
         Some(TFileFormatType::FORMAT_PARQUET) => columnar_rows(crate::columnar::parquet_rows(body, &names)?),
         Some(TFileFormatType::FORMAT_ORC) => columnar_rows(crate::columnar::orc_rows(body, &names)?),
         _ => csv_rows(&params, body),
@@ -404,4 +489,77 @@ fn json_error(e: &serde_json::Error) -> String {
         (3, "TAPE_ERROR: The JSON document has an improper structure: missing or superfluous commas, braces, missing keys, etc.")
     };
     format!("Parse json data failed. code: {code}, error info: {info}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_records;
+
+    fn fields(line: &[u8], escape: u8) -> Vec<String> {
+        let records = split_records(line, b",", b"\n", Some(b'"'), Some(escape));
+        assert_eq!(records.len(), 1);
+        records[0].1.iter().map(|(f, _)| String::from_utf8(f.clone()).unwrap()).collect()
+    }
+
+    // enclose_with_escape_doublequote.csv row 5 and its .out row (EncloseCsvLineReaderCtx)
+    #[test]
+    fn a_doubled_enclose_inside_an_enclosed_field_is_one_enclose() {
+        let line = br#"5,"abc""de,fg""h","2023-07-17","""abc""def""","2023-07-22 07:00:00","test ""escape"" in enclose""#;
+        assert_eq!(
+            fields(line, b'\\'),
+            ["5", r#"abc"de,fg"h"#, "2023-07-17", r#""abc"def""#, "2023-07-22 07:00:00", r#"test "escape" in enclose"#]
+        );
+    }
+
+    fn csv_fields(body: &[u8], skip_lines: i32) -> Vec<Vec<Option<String>>> {
+        use doris_thrift::gen::plan_nodes::{TFileAttributes, TFileScanRangeParams, TFileTextScanRangeParams};
+        let text = TFileTextScanRangeParams { column_separator: Some(",".into()), enclose: Some(b'"' as i8), escape: Some(b'\\' as i8), ..Default::default() };
+        let attrs = TFileAttributes { text_params: Some(text), skip_lines: Some(skip_lines), ..Default::default() };
+        let params = TFileScanRangeParams { file_attributes: Some(attrs), num_of_columns_from_file: Some(2), ..Default::default() };
+        super::csv_rows(&params, body).into_iter().map(|r| r.map(|r| r.fields).unwrap_or_default()).collect()
+    }
+
+    // enclose_with_bom.csv: CsvReader::_remove_bom drops a UTF-8 BOM from the first data line
+    #[test]
+    fn a_bom_before_the_first_line_is_dropped() {
+        let body = b"\xEF\xBB\xBF\"14\",a\n15,b\n";
+        assert_eq!(csv_fields(body, 0)[0], [Some("14".to_string()), Some("a".to_string())]);
+    }
+
+    // with lines to skip, the BOM goes with the first, skipped, line
+    #[test]
+    fn a_bom_on_a_skipped_line_is_skipped_with_it() {
+        let body = b"\xEF\xBB\xBFk,v\n15,b\n";
+        assert_eq!(csv_fields(body, 1), [[Some("15".to_string()), Some("b".to_string())]]);
+    }
+
+    // enclose_wrong_position.csv row 6 and its .out row: a field is unquoted only when it starts
+    // and ends with the enclose (BaseCsvTextFieldSplitter::_process_value)
+    #[test]
+    fn an_enclose_that_does_not_wrap_the_field_stays() {
+        let line = br#"6,ab"c,2023-07-20,d"ef",2023-07-20 05:48:31,"g"hi"#;
+        assert_eq!(fields(line, b'\\'), ["6", r#"ab"c"#, "2023-07-20", r#"d"ef""#, "2023-07-20 05:48:31", r#""g"hi"#]);
+    }
+
+    // escape_string_for_csv runs only with an escape character: without one, a doubled enclose
+    // stays doubled
+    #[test]
+    fn without_an_escape_a_doubled_enclose_stays() {
+        let records = split_records(br#""a""b",c"#, b",", b"\n", Some(b'"'), None);
+        let got: Vec<String> = records[0].1.iter().map(|(f, _)| String::from_utf8(f.clone()).unwrap()).collect();
+        assert_eq!(got, [r#"a""b"#, "c"]);
+    }
+
+    // outside an enclosed field the separator is found as is (NORMAL state); then, with an
+    // escape character, escape_string_for_csv drops it from every field
+    #[test]
+    fn an_escape_outside_an_enclosed_field_splits_and_is_dropped() {
+        assert_eq!(fields(br#"a\,b,c"#, b'\\'), ["a", "b", "c"]);
+    }
+
+    // when escape and enclose are the same, C++ uses only the doubled-enclose rule
+    #[test]
+    fn an_escape_that_is_the_enclose_does_not_take_the_next_character() {
+        assert_eq!(fields(br#""a""b","",c"#, b'"'), [r#"a"b"#, "", "c"]);
+    }
 }

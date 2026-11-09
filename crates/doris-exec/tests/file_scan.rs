@@ -51,3 +51,63 @@ fn the_first_failing_column_names_the_error() {
     assert_eq!(errors(&strict_load(false), b"abc\n"), vec!["column(k00) value is incorrect while strict mode is true, src value is abc".to_string()]);
     assert_eq!(errors(&strict_load(true), b"abc\n"), vec!["column(k99) values is null while columns is not nullable".to_string()]);
 }
+
+/// test_json_load_default_value's first load (simple_json.json: no country nor date_time key),
+/// its plan as captured; with `without_now`, date_time's default (CURRENT_TIMESTAMP, planned as
+/// now()) is the NULL literal the FE sends for a column with no default.
+fn json_default_load(without_now: bool) -> (TPipelineFragmentParams, Vec<u8>) {
+    use doris_thrift::gen::exprs::{TExpr, TExprNode};
+    use doris_thrift::gen::exprs::TExprNodeType;
+    let s = stream_loads().into_iter().find(|s| s.suite.ends_with("test_json_load_default_value")).expect("the sample");
+    let mut params = s.put.1.pipeline_params.clone().unwrap();
+    if without_now {
+        let null = |defaults: &mut std::collections::BTreeMap<i32, TExpr>| {
+            for e in defaults.values_mut() {
+                if e.nodes.iter().any(|n| n.fn_.as_ref().is_some_and(|f| f.name.function_name == "now")) {
+                    let mut n: TExprNode = e.nodes[0].clone();
+                    n.node_type = TExprNodeType::NULL_LITERAL;
+                    n.num_children = 0;
+                    n.fn_ = None;
+                    *e = TExpr::new(vec![n]);
+                }
+            }
+        };
+        for l in params.local_params.iter_mut().flatten() {
+            for r in l.per_node_scan_ranges.values_mut().flatten() {
+                if let Some(d) = r.scan_range.ext_scan_range.as_mut().and_then(|e| e.file_scan_range.as_mut()).and_then(|f| f.params.as_mut()).and_then(|p| p.default_value_of_src_slot.as_mut()) {
+                    null(d);
+                }
+            }
+        }
+        params.file_scan_params.iter_mut().flat_map(|m| m.values_mut()).filter_map(|p| p.default_value_of_src_slot.as_mut()).for_each(null);
+    }
+    (params, s.body)
+}
+
+/// NewJsonReader::_fill_missing_column: a missing key reads as its source slot's default
+/// (default_value_of_src_slot) — the .out's `1 default_country beijing 2345671`.
+#[test]
+fn a_missing_json_key_takes_its_column_default() {
+    let (params, body) = json_default_load(true);
+    let f = plan_write(&params).unwrap();
+    let rows = stream_rows(&f, &body, u64::MAX).unwrap();
+    let text: Vec<String> = rows[0]
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|v| match v {
+            doris_exec::value::Value::Str(b) => String::from_utf8_lossy(b).into_owned(),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(text[..4], ["Int(1)", "default_country", "beijing", "Int(2345671)"], "{text:?}");
+}
+
+/// A default doris-rs cannot compute refuses the load rather than storing NULL.
+#[test]
+fn a_missing_json_key_whose_default_is_not_supported_refuses_the_load() {
+    let (params, body) = json_default_load(false);
+    let f = plan_write(&params).unwrap();
+    let err = stream_rows(&f, &body, u64::MAX).unwrap_err();
+    assert!(err.to_string().contains("now"), "{err}");
+}

@@ -10,7 +10,7 @@
 //! and `<OUT>/index.json` lists `{dir, suite, end, format}`. Rolled-back loads come first, then
 //! up to 10 JSON loads, then CSV loads, at most 3 per suite, N in all (default 60).
 //! `extract-stream-loads OUT_DIR --only SUITE...` instead appends every load of the named suites
-//! (Parquet and ORC ones too) that OUT_DIR does not hold yet, leaving the rest as it is.
+//! (Parquet, ORC and csv_with_names ones too) that OUT_DIR does not hold yet, leaving the rest as it is.
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -61,7 +61,7 @@ fn main() {
     let rest: Vec<String> = args.collect();
     let only: Option<BTreeSet<String>> = (rest.first().map(String::as_str) == Some("--only")).then(|| rest[1..].iter().cloned().collect());
     let want: usize = if only.is_some() { 0 } else { rest.first().map(|n| n.parse().expect("N")).unwrap_or(60) };
-    let formats: &[&str] = if only.is_some() { &["csv", "json", "parquet", "orc"] } else { &["csv", "json"] };
+    let formats: &[&str] = if only.is_some() { &["csv", "json", "parquet", "orc", "csv_with_names", "csv_with_names_and_types"] } else { &["csv", "json"] };
     let mut found: Vec<Sample> = Vec::new();
     for path in suite_files(&corpus_dir()) {
         let suite = path.file_name().unwrap().to_string_lossy().trim_end_matches(".bin.gz").to_string();

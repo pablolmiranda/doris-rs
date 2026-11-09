@@ -345,7 +345,9 @@ impl<'a> StreamLoad<'a> {
 
     fn run(&mut self) {
         let fmt = self.header("format").unwrap_or_else(|| "csv".into()).to_ascii_lowercase();
-        let Some((format, compress)) = parse_format(&fmt, &self.header("compress_type").unwrap_or_default()) else {
+        // StreamLoadAction::_on_header: a header-carrying CSV is read as CSV
+        let read_as = if self.header_type().is_empty() { fmt.as_str() } else { "csv" };
+        let Some((format, compress)) = parse_format(read_as, &self.header("compress_type").unwrap_or_default()) else {
             self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {fmt} yet"));
             return;
         };
@@ -510,6 +512,14 @@ impl<'a> StreamLoad<'a> {
     }
 
     /// `StreamLoadAction::_process_put`: the headers as the FE's put request.
+    /// The format header when it names a CSV with a header (`csv_with_names`,
+    /// `csv_with_names_and_types`, any case), as given; else empty.
+    fn header_type(&self) -> String {
+        self.header("format")
+            .filter(|f| f.eq_ignore_ascii_case("csv_with_names") || f.eq_ignore_ascii_case("csv_with_names_and_types"))
+            .unwrap_or_default()
+    }
+
     fn put_request(&self, format: TFileFormatType, compress: TFileCompressType, timeout: Option<i32>) -> Result<TStreamLoadPutRequest, String> {
         let h = |k: &str| self.header(k);
         let skip_lines = match h("skip_lines").filter(|v| !v.is_empty()) {
@@ -576,7 +586,7 @@ impl<'a> StreamLoad<'a> {
             send_batch_parallelism: h("send_batch_parallelism").and_then(|v| v.parse().ok()),
             max_filter_ratio: h("max_filter_ratio").map(|v| OrderedFloat(v.parse().unwrap_or(0.0))),
             load_to_single_tablet: h("load_to_single_tablet").map(|v| v.eq_ignore_ascii_case("true")),
-            header_type: Some(String::new()),
+            header_type: Some(self.header_type()),
             hidden_columns: h("hidden_columns"),
             compress_type: Some(compress),
             file_size: saved.then(|| self.req.body.as_ref().map_or(0, Vec::len) as i64),
