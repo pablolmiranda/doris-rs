@@ -68,6 +68,35 @@ fn string_call(n: &TExprNode) -> bool {
     }
 }
 
+/// The number of nodes in the subtree at `i` (pre-order, `num_children` each).
+fn subtree_len(nodes: &[TExprNode], i: usize) -> usize {
+    let mut len = 1;
+    for _ in 0..nodes.get(i).map_or(0, |n| n.num_children.max(0)) {
+        len += subtree_len(nodes, i + len);
+    }
+    len
+}
+
+/// `round(x[, d])` of a DOUBLE or a DECIMAL32/64/128I into the same type, `d` an INT constant.
+fn round_call(nodes: &[TExprNode], i: usize) -> bool {
+    let n = &nodes[i];
+    let Some((args, to)) = signature(n) else { return false };
+    let x_ok = match args.first() {
+        Some(x) if x.ptype == T::DOUBLE => to.ptype == T::DOUBLE,
+        Some(x) => matches!(x.ptype, T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I) && to.ptype == x.ptype,
+        None => false,
+    };
+    let d_ok = match args.len() {
+        1 => true,
+        2 => {
+            let start = i + 1 + subtree_len(nodes, i + 1);
+            args[1].ptype == T::INT && nodes[start..start + subtree_len(nodes, start)].iter().all(|k| k.node_type != N::SLOT_REF)
+        }
+        _ => false,
+    };
+    x_ok && d_ok
+}
+
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
         Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
@@ -119,7 +148,7 @@ pub fn check_read(e: &TExpr) -> Result<(), ExecError> {
 
 /// As `check_read`, also accepting the aggregate calls of an aggregation node.
 pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
-    for n in &e.nodes {
+    for (i, n) in e.nodes.iter().enumerate() {
         let ok = match n.node_type {
             N::INT_LITERAL
             | N::LARGE_INT_LITERAL
@@ -147,6 +176,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
+                Some("round") => round_call(&e.nodes, i),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -324,6 +354,13 @@ fn eval_at(
                     if let Some(r) = round_datetime(d, &from, &to) {
                         return Ok(r);
                     }
+                    if let Some(r) = float_to_number(d, &to) {
+                        return Ok(r);
+                    }
+                    // a FLOAT as text is the float's own shortest text, not its double's
+                    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
+                        return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
+                    }
                     let v = expr::cast(datum_value(d, &from), &to);
                     if v == Value::Null {
                         Ok(Datum::Null)
@@ -430,6 +467,39 @@ fn eval_at(
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
                 let out = crate::arith::abs((ta, a), &to)?;
                 (to, out)
+            }
+            Some("round") => {
+                let to = node_type(n)?;
+                let (tx, x) = kids.first().ok_or_else(|| bad("round without its argument"))?;
+                let d = match kids.get(1).map(|(_, d)| d.first()) {
+                    None | Some(None) => Some(0),
+                    Some(Some(Datum::Int(d))) => Some(*d),
+                    Some(Some(_)) => None,
+                };
+                match d {
+                    _ if rows == 0 => (to, vec![]),
+                    // a NULL digits argument: every row NULL
+                    None => (to, vec![Datum::Null; rows]),
+                    Some(d) if d > i128::from(i16::MAX) || d < i128::from(i16::MIN) => {
+                        return Err(ExecError::Coded {
+                            code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
+                            name: "INVALID_ARGUMENT",
+                            msg: format!("Scale argument for function round is out of bound: {d}"),
+                        })
+                    }
+                    Some(d) => {
+                        let d = d as i32;
+                        let out = x
+                            .iter()
+                            .map(|v| match v {
+                                Datum::Double(f) => Datum::Double(crate::round::round_double(*f, d)),
+                                Datum::Int(r) => Datum::Int(crate::round::round_decimal(*r, tx.scale, d, to.scale)),
+                                other => other.clone(),
+                            })
+                            .collect();
+                        (to, out)
+                    }
+                }
             }
             Some("like") => {
                 let (_, values) = kids.first().ok_or_else(|| bad("like without its value"))?;
@@ -612,6 +682,44 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A FLOAT or DOUBLE cast to an integer or a decimal, numerically (the non-strict cast; None
+/// for any other cast):
+/// - integers: truncated, NULL when not finite or outside the type
+///   (`cast_to_basic_number_common.h:185-205`);
+/// - decimals: `x * 10^scale` plus ±0.5, truncated; NULL when not finite or at or past the
+///   precision's bound (`cast_to_decimal.h:238-262`).
+fn float_to_number(d: &Datum, to: &ColType) -> Option<Datum> {
+    let x = match d {
+        Datum::Float(f) => f64::from(*f),
+        Datum::Double(f) => *f,
+        _ => return None,
+    };
+    let bits = match to.ptype {
+        T::TINYINT => 8,
+        T::SMALLINT => 16,
+        T::INT => 32,
+        T::BIGINT => 64,
+        T::LARGEINT => 128,
+        T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => 0,
+        _ => return None,
+    };
+    if !x.is_finite() {
+        return Some(Datum::Null);
+    }
+    if bits > 0 {
+        let t = x.trunc();
+        let bound = 2f64.powi(bits - 1);
+        return Some(if t < -bound || t >= bound { Datum::Null } else { Datum::Int(t as i128) });
+    }
+    let max = 10i128.checked_pow(to.precision as u32).map_or(f64::MAX, |m| (m - 1) as f64);
+    // the integer multiplier as a double, as C++ converts it (powi can round differently)
+    let scaled = x * 10i128.checked_pow(to.scale.max(0) as u32).map_or(f64::INFINITY, |m| m as f64);
+    if scaled <= -max || scaled >= max {
+        return Some(Datum::Null);
+    }
+    Some(Datum::Int((scaled + if x >= 0.0 { 0.5 } else { -0.5 }) as i128))
 }
 
 /// A DATETIMEV2 cast to a lower scale: rounded, not cut (`transform_date_scale`).

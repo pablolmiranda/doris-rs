@@ -104,10 +104,18 @@ fn drain(q: &QueryService, req: &PFetchDataRequest) -> Outcome {
     outcome(&replies)
 }
 
+/// Whether a query's rows come in a fixed order: the result fragment's top node sorts (a SORT_NODE,
+/// or an EXCHANGE_NODE merging sorted streams). A sort lower down (a window's) orders each
+/// instance's rows, not the order the instances' rows reach the client.
 fn ordered(plan: &TPipelineFragmentParamsList) -> bool {
-    plan.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()?.plan.as_ref()).flat_map(|p| &p.nodes).any(|n| {
-        n.node_type == TPlanNodeType::SORT_NODE || n.exchange_node.as_ref().is_some_and(|e| e.sort_info.is_some())
-    })
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    plan.params_list
+        .iter()
+        .flatten()
+        .filter_map(|p| p.fragment.as_ref())
+        .filter(|f| f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::RESULT_SINK))
+        .filter_map(|f| f.plan.as_ref()?.nodes.first())
+        .any(|n| n.node_type == TPlanNodeType::SORT_NODE || n.exchange_node.as_ref().is_some_and(|e| e.sort_info.is_some()))
 }
 
 fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
@@ -655,4 +663,52 @@ fn a_panic_while_reporting_ends_the_write() {
     assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
     assert!(be.query.wait_idle(Duration::from_secs(10)), "the running count was lost");
     assert_eq!(be.query.live_state().0, 0);
+}
+
+/// Story 5's replays: arithmetic, conditionals, like, concat, length, round.
+const SCALARS: [&str; 32] = [
+    "correctness_p0.test_char_default_value.test_char_default_value",
+    "correctness_p0.test_implict_cast.test_implicit_cast",
+    "correctness_p0.test_like_predicate_with_nullable.test_like_predicate_with_nullable",
+    "correctness_p0.test_no_grouping_window.test_no_grouping_window",
+    "correctness_p0.test_orderby_mod.test_order_by_mod",
+    "datatype_p0.decimalv3.test_if_functions.test_if_functions",
+    "nereids_p0.aggregate.agg_window_project.agg_window_project",
+    "nereids_p0.aggregate.aggregate_groupby_constant.aggregate_groupby_constant",
+    "nereids_p0.authorization.view_authorization.view_authorization",
+    "nereids_p0.ddl.show_variables.show_variables_command.show_variables_command",
+    "nereids_p0.expression.case_when_to_if.test_case_when_to_if",
+    "nereids_p0.expression.fold_constant.fold_constant_cast.fold_constant_cast",
+    "nereids_p0.select_no_from.sql.projectAggFuncs.projectAggFuncs",
+    "nereids_p0.show.test_show_columns_command.test_show_columns_command",
+    "nereids_p0.sql_functions.math_functions.test_multiply.test_multiply",
+    "nereids_p0.sql_functions.math_functions.test_round_overflow.test_round_overflow",
+    "nereids_p0.sql_functions.string_functions.test_string_function_like.test_string_function_like",
+    "nereids_p0.sql_functions.string_functions.test_string_function_like_pushdown.test_string_function_like_pushdown",
+    "query_p0.aggregate.support_type.count.count.count",
+    "query_p0.select_no_from.sql.projectAggFuncs.projectAggFuncs",
+    "query_p0.sql_functions.conditional_functions.test_ifnull.test_ifnull",
+    "query_p0.sql_functions.math_functions.test_multiply.test_multiply",
+    "query_p0.sql_functions.string_functions.test_like_escape.test_like_escapes",
+    "query_p0.sql_functions.string_functions.test_like_literal.test_like_literal",
+    "query_p0.sql_functions.string_functions.test_like_no_backslash_escapes_mode.test_like_no_backslash_escapes_mode",
+    "query_p0.sql_functions.string_functions.test_like_table.test_like_table",
+    "query_p0.sql_functions.string_functions.test_string_function_like_pushdown.test_string_function_like_pushdown",
+    "query_p0.sql_functions.window_functions.test_window_float_sliding_frame.test_window_float_sliding_frame",
+    "query_p0.union.test_union_decimal_agg.test_union_decimal_agg",
+    "query_p0.view.test_view2.test_view2",
+    "query_p0.virtual_slot_ref.char_type_shrink_before_project.char_type_shrink_before_projec",
+    "query_p0.virtual_slot_ref.virtual_slot_ref_basic.virtual_slot_ref_basic",
+];
+
+#[test]
+fn scalar_functions_match_the_reference() {
+    let mut bad = Vec::new();
+    for s in SCALARS {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
 }

@@ -24,6 +24,9 @@ pub struct SlotInfo {
     pub ty: ColType,
     pub unique_id: i32,
     pub name: String,
+    /// A scan's virtual column (`TSlotDescriptor.virtual_column_expr`): computed from the row's
+    /// other slots, not read (`SegmentIterator::_materialization_of_virtual_column`).
+    pub virtual_expr: Option<TExpr>,
 }
 
 /// Slots by id, and each tuple's slots in descriptor order.
@@ -53,6 +56,7 @@ impl DescTable {
                     ty,
                     unique_id: s.col_unique_id.unwrap_or(-1),
                     name: s.col_name.clone(),
+                    virtual_expr: s.virtual_column_expr.clone(),
                 },
             );
         }
@@ -391,6 +395,12 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         _ => return Err(unsupported(name)),
     }
     check_exprs(n.conjuncts.iter().flatten(), false)?;
+    // `OperatorXBase::init`: one tuple per intermediate projection list, and final projections
+    let stages = n.intermediate_projections_list.as_ref().map_or(0, Vec::len);
+    if stages > 0 && (n.intermediate_output_tuple_id_list.as_ref().map_or(0, Vec::len) != stages || n.projections.is_none() || n.output_tuple_id.is_none()) {
+        return Err(ExecError::BadRequest("intermediate projections without their tuples or final projections".into()));
+    }
+    check_exprs(n.intermediate_projections_list.iter().flatten().flatten(), false)?;
     check_exprs(n.projections.iter().flatten(), false)?;
     Ok(())
 }
@@ -721,6 +731,7 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
     if plan.unchecked_arithmetic {
         return Err(unsupported("arithmetic with check_overflow_for_decimal off"));
     }
+    check_exprs(plan.desc.slots.values().filter_map(|s| s.virtual_expr.as_ref()), false)?;
     for f in &plan.fragments {
         for n in f.root.nodes() {
             check_node(n)?;
