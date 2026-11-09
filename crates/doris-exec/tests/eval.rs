@@ -310,3 +310,14 @@ fn unlisted_arithmetic_is_refused() {
     let err = check_read(&e).expect_err("decimal add is not supported").to_string();
     assert!(err.contains("function add"), "{err}");
 }
+
+#[test]
+fn conditionals_evaluate() {
+    let i = ty(T::INT);
+    let e = call("if", i.clone(), vec![null(ty(T::BOOLEAN)), int(1, i.clone()), int(2, i.clone())]);
+    assert_eq!(one_row(e), Datum::Int(2));
+    let d = ty(T::DOUBLE);
+    assert_eq!(one_row(call("ifnull", d.clone(), vec![null(d.clone()), float(1.5, d.clone())])), Datum::Double(1.5));
+    let e = call("coalesce", i.clone(), vec![null(i.clone()), null(i.clone()), int(3, i.clone())]);
+    assert_eq!(one_row(e), Datum::Int(3));
+}

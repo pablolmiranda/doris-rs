@@ -43,6 +43,19 @@ fn arithmetic_call(n: &TExprNode) -> bool {
     crate::arith::arithmetic_supported(&name, &args, &to)
 }
 
+/// `if`, `ifnull`, `coalesce` over supported scalar types, `if`'s condition BOOLEAN.
+fn conditional_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    let scalar = |t: &ColType| t.supported() || t.ptype == T::NULL_TYPE;
+    let values = match name.as_str() {
+        "if" if args.len() == 3 && args[0].ptype == T::BOOLEAN => &args[1..],
+        "ifnull" if args.len() == 2 => &args[..],
+        "coalesce" if !args.is_empty() => &args[..],
+        _ => return false,
+    };
+    scalar(&to) && values.iter().all(scalar)
+}
+
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
         Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
@@ -120,6 +133,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
                 Some("abs") => arithmetic_call(n),
+                Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -398,6 +412,23 @@ fn eval_at(
                 let to = node_type(n)?;
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
                 let out = crate::arith::abs((ta, a), &to)?;
+                (to, out)
+            }
+            Some(f @ ("if" | "ifnull" | "coalesce")) => {
+                let to = node_type(n)?;
+                let values = if f == "if" { kids.get(1..).unwrap_or_default() } else { &kids[..] };
+                let values = values
+                    .iter()
+                    .map(|(t, v)| v.iter().map(|d| coerce(d.clone(), t, &to)).collect::<Result<Vec<_>, _>>())
+                    .collect::<Result<Vec<_>, _>>()?;
+                let out = match (f, &values[..]) {
+                    ("if", [then, else_]) => {
+                        let (_, c) = kids.first().ok_or_else(|| bad("if without its condition"))?;
+                        crate::cond::if_(c, then, else_)
+                    }
+                    ("if", _) => return Err(bad("if needs three arguments")),
+                    _ => crate::cond::coalesce(&values.iter().map(Vec::as_slice).collect::<Vec<_>>()),
+                };
                 (to, out)
             }
             Some(f @ ("is_null_pred" | "is_not_null_pred")) => {
