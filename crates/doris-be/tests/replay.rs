@@ -420,3 +420,25 @@ fn a_limit_on_a_set_node_applies_after_the_set_operation() {
         assert!(x.what.starts_with("0 rows, the reference "), "{x:?}");
     }
 }
+
+const WINDOWS: [&str; 7] = [
+    "correctness_p0.test_min_max_window.test_min_max_window",
+    "nereids_p0.partition_topn.check_partitionkey.check_partitionkey",
+    "nereids_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
+    "query_p0.dual.dual.dual",
+    "query_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
+    "query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn",
+    "correctness_p0.test_always_nullable_window_function.test_always_nullable_window_function",
+];
+
+#[test]
+fn window_functions_match_the_reference() {
+    let mut bad = Vec::new();
+    for s in WINDOWS {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}

@@ -32,7 +32,7 @@ pub fn set_rows(kind: SetKind, children: Vec<Vec<Vec<Datum>>>) -> Vec<Vec<Datum>
     let mut rows: Vec<Vec<Datum>> = Vec::new();
     let mut index: HashMap<Vec<u8>, usize> = HashMap::new();
     for row in children.next().unwrap_or_default() {
-        if let Entry::Vacant(e) = index.entry(key(&row)) {
+        if let Entry::Vacant(e) = index.entry(row_key(&row)) {
             e.insert(rows.len());
             rows.push(row);
         }
@@ -42,7 +42,7 @@ pub fn set_rows(kind: SetKind, children: Vec<Vec<Vec<Datum>>>) -> Vec<Vec<Datum>
     for child in children {
         let mut hit = vec![false; rows.len()];
         for r in &child {
-            if let Some(&i) = index.get(&key(r)) {
+            if let Some(&i) = index.get(&row_key(r)) {
                 hit[i] = true;
             }
         }
@@ -61,8 +61,9 @@ pub fn set_rows(kind: SetKind, children: Vec<Vec<Vec<Datum>>>) -> Vec<Vec<Datum>
     out
 }
 
-/// A row's key: equal rows (NULL = NULL, floats by their bits) have equal keys.
-fn key(row: &[Datum]) -> Vec<u8> {
+/// A row's key as a C++ hash table keys it: equal rows (NULL = NULL, floats by their bits) have
+/// equal keys.
+pub fn row_key(row: &[Datum]) -> Vec<u8> {
     let mut out = Vec::new();
     for v in row {
         match v {

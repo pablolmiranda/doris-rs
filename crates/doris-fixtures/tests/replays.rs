@@ -110,3 +110,31 @@ fn set_op_replays_have_intersect_and_except() {
     });
     assert!(parallel, "no set node runs in more than one instance");
 }
+
+const WINDOWS: [&str; 7] = [
+    "correctness_p0.test_min_max_window.test_min_max_window",
+    "nereids_p0.partition_topn.check_partitionkey.check_partitionkey",
+    "nereids_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
+    "query_p0.dual.dual.dual",
+    "query_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
+    "query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn",
+    "correctness_p0.test_always_nullable_window_function.test_always_nullable_window_function",
+];
+
+#[test]
+fn window_replays_have_analytic_and_partition_sort() {
+    use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
+    let has = |suite: &str, t: P| {
+        replays::load(suite)
+            .queries()
+            .into_iter()
+            .flat_map(|q| q.params_list.unwrap_or_default())
+            .any(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| n.node_type == t))
+    };
+    for s in WINDOWS {
+        assert!(has(s, P::ANALYTIC_EVAL_NODE), "{s}: no ANALYTIC_EVAL_NODE");
+    }
+    for s in [WINDOWS[1], WINDOWS[5]] {
+        assert!(has(s, P::PARTITION_SORT_NODE), "{s}: no PARTITION_SORT_NODE");
+    }
+}

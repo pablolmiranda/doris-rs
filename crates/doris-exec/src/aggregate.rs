@@ -89,7 +89,7 @@ impl AggSpec {
     }
 }
 
-fn subtree_end(nodes: &[doris_thrift::gen::exprs::TExprNode], at: usize) -> Result<usize, ExecError> {
+pub(crate) fn subtree_end(nodes: &[doris_thrift::gen::exprs::TExprNode], at: usize) -> Result<usize, ExecError> {
     let n = nodes
         .get(at)
         .ok_or_else(|| ExecError::BadRequest("an aggregate's arguments end early".into()))?;
@@ -98,6 +98,30 @@ fn subtree_end(nodes: &[doris_thrift::gen::exprs::TExprNode], at: usize) -> Resu
         end = subtree_end(nodes, end)?;
     }
     Ok(end)
+}
+
+/// One aggregate's running state, the AGGREGATION_NODE's own: the window node folds a frame's
+/// rows through it, in row order.
+#[derive(Debug)]
+pub struct Accumulator {
+    spec: AggSpec,
+    state: State,
+}
+
+impl Accumulator {
+    pub fn new(spec: &AggSpec) -> Result<Accumulator, ExecError> {
+        Ok(Accumulator { spec: spec.clone(), state: State::new(spec)? })
+    }
+
+    /// Adds one row's arguments.
+    pub fn update(&mut self, args: &[(&ColType, &Datum)]) -> Result<(), ExecError> {
+        self.state.update(&self.spec, args)
+    }
+
+    /// The value over the rows added so far: NULL over none, but 0 for `count`.
+    pub fn finish(&self) -> Result<Datum, ExecError> {
+        self.state.finish(&self.spec)
+    }
 }
 
 /// An aggregation over its input.

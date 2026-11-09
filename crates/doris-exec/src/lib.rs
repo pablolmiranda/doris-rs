@@ -3,6 +3,7 @@
 //! OLAP table sink that routes rows to tablets, writes rowsets and commits them.
 
 pub mod aggregate;
+pub mod analytic;
 pub mod block;
 pub mod error_log;
 pub mod eval;
@@ -10,6 +11,7 @@ pub mod exchange;
 pub mod expr;
 pub mod file_scan;
 pub mod fragment;
+pub mod partition_sort;
 pub mod pipeline;
 pub mod query;
 pub mod route;

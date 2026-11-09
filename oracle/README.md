@@ -114,6 +114,16 @@ order is child 0's first-seen order, with a one-column NULL row first, as C++ gi
 `set_operation_exprid_reuse` (not yet eligible) has two replies, #18 and #27, that follow C++'s
 hash order; first-seen order happens to match them today.
 
+After Milestone 6 story 3 (window functions: `ANALYTIC_EVAL_NODE`, `PARTITION_SORT_NODE`; run
+`m6-s3-full-1`, 2026-11-08): 378 eligible suites, all passing both gates; 409 Epic 1 suites pass
+the out gate (242 of those that reach the BE) and 307 the strict gate (227). The 14 new passes
+are the 14 newly eligible suites. Two of them, `test_always_nullable_window_function` and
+`rowsFirstLast`, came with `last_value`. Frames are the whole partition, RANGE to the current
+row, and ROWS with offsets; a RANGE with offsets is refused. A window split over several
+instances is refused at run time when its float partition keys hold both -0.0 and 0.0, because
+the exchange hashes them apart. The global phase of `PARTITION_SORT_NODE` is refused; the FE
+sends only the local phase in the gate suites.
+
 The older directory-level gate also works against any target:
 
 ```

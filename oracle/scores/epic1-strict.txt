@@ -1,4 +1,5 @@
 # Epic 1 suites known to pass the strict gate on doris-rs (checker/grade.py fails if one stops)
+correctness_p0.test_always_nullable_window_function.test_always_nullable_window_function
 correctness_p0.test_cast_decimal.test_cast_decimal
 correctness_p0.test_cast_in.test_cast_in
 correctness_p0.test_constant_having.test_constant_having
@@ -9,6 +10,7 @@ correctness_p0.test_inlineview_error_msg.test_inlineview_error_msg
 correctness_p0.test_join_should_not_reorder.test_join_should_not_reorder
 correctness_p0.test_many_inlineview.test_many_inlineview
 correctness_p0.test_merge_topn_offset.test_merge_topn_offset
+correctness_p0.test_min_max_window.test_min_max_window
 correctness_p0.test_rand_filter.test_rand_filter
 correctness_p0.test_runtimefilter_with_window.test_runtimefilter_with_window
 correctness_p0.test_scan_topn_limit.test_scan_topn_limit
@@ -126,11 +128,13 @@ nereids_p0.limit.sql.withLimitZero.withLimitZero
 nereids_p0.limit.sql.withOrderBy.withOrderBy
 nereids_p0.limit.sql.withSimpleLimit.withSimpleLimit
 nereids_p0.limit.sql.withSubq.withSubq
+nereids_p0.partition_topn.check_partitionkey.check_partitionkey
 nereids_p0.pkfk.test_pk_fk_drop_table.test_pk_fk_drop_table
 nereids_p0.runtime_filter.check_rf.check_rf
 nereids_p0.runtime_filter.runtime_filter.runtime_filter
 nereids_p0.select_no_from.sql.projectConstants.projectConstants
 nereids_p0.select_no_from.sql.projectFunctions.projectFunctions
+nereids_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving
 nereids_p0.select_no_from.sql.withUnionAll.withUnionAll
 nereids_p0.select_no_from.sql.withWhereClause.withWhereClause
 nereids_p0.select_no_from.sql.withWhereFalse.withWhereFalse
@@ -218,6 +222,7 @@ query_p0.cache.test_partition_instance_query_cache.test_partition_instance_query
 query_p0.cast.test_cast_decimalv3.test_cast_with_decimalv3
 query_p0.common_sub_expression.dist_expr_list.dist_expr_list.dist_expr_list
 query_p0.dry_run.dry_run.dry_run
+query_p0.dual.dual.dual
 query_p0.empty_table.load.load
 query_p0.empty_table.sql.avg_decimal.avg_decimal
 query_p0.empty_table.sql.empty_set_node.empty_set_node
@@ -242,6 +247,7 @@ query_p0.runtimefilterV2.rfv2.rfv2
 query_p0.scan_range.test_scan_range.test_scan_range
 query_p0.select_no_from.sql.projectConstants.projectConstants
 query_p0.select_no_from.sql.projectFunctions.projectFunctions
+query_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving
 query_p0.select_no_from.sql.withUnionAll.withUnionAll
 query_p0.select_no_from.sql.withWhereClause.withWhereClause
 query_p0.select_no_from.sql.withWhereFalse.withWhereFalse
@@ -276,6 +282,14 @@ query_p0.sql_functions.string_functions.load.load
 query_p0.sql_functions.string_functions.sql.like_backslash_begin_1.like_backslash_begin_1
 query_p0.sql_functions.string_functions.sql.like_backslash_begin_2.like_backslash_begin_2
 query_p0.sql_functions.window_functions.load.load
+query_p0.sql_functions.window_functions.sql.leadLag.leadLag
+query_p0.sql_functions.window_functions.sql.noOrderAllRowsPeers_order.noOrderAllRowsPeers_order
+query_p0.sql_functions.window_functions.sql.rangeCurrent_order.rangeCurrent_order
+query_p0.sql_functions.window_functions.sql.rangeNoPartition_order.rangeNoPartition_order
+query_p0.sql_functions.window_functions.sql.rangeUnbounded_order.rangeUnbounded_order
+query_p0.sql_functions.window_functions.sql.rowsFirstLast.rowsFirstLast
+query_p0.sql_functions.window_functions.sql.rowsUnbounded_order.rowsUnbounded_order
+query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn
 query_p0.stats.query_stats_test.query_stats_test
 query_p0.system.test_runtime_filter.test_runtime_filter
 query_p0.system.test_storage_page_size.test_storage_page_size

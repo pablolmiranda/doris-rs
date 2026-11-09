@@ -600,3 +600,205 @@ fn a_set_node_needs_its_children_to_be_exchanges_in_several_instances() {
     assert_ne!(st.status_code, 0, "accepted");
     assert!(st.error_msgs.iter().any(|e| e.contains("over an EMPTY_SET_NODE in 4 instances")), "{st:?}");
 }
+
+/// A check_partitionkey plan whose window node runs in 4 instances (over a sort and a hashed
+/// exchange, with no partition sort), with a function that changes the plan and prepares it.
+fn window_plan_prepare() -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
+    window_plan_prepare_in("nereids_p0.partition_topn.check_partitionkey.check_partitionkey", TPlanNodeType::ANALYTIC_EVAL_NODE, 2, true)
+}
+
+/// A plan of `suite` with a `node` in at least `instances` instances (and, if `no_partition_sort`,
+/// no PARTITION_SORT_NODE), with a function that changes the plan and prepares it.
+fn window_plan_prepare_in(
+    suite: &str,
+    node: TPlanNodeType,
+    instances: usize,
+    no_partition_sort: bool,
+) -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    let nodes = |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        l.params_list.iter().flatten().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| x.nodes.clone()).map(move |n| (p.local_params.as_ref().map_or(0, |l| l.len()), n))).collect::<Vec<_>>()
+    };
+    let wanted = move |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        let ns = nodes(l);
+        ns.iter().any(|(k, n)| *k >= instances && n.node_type == node) && !(no_partition_sort && ns.iter().any(|(_, n)| n.node_type == TPlanNodeType::PARTITION_SORT_NODE))
+    };
+    let (req, list) = replays::load(suite)
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(wanted).map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{suite}: a {node:?} plan in {instances} instances"));
+    move |change| {
+        let mut l = list.clone();
+        change(&mut l);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    }
+}
+
+fn window_node_of(l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList) -> &mut doris_thrift::gen::plan_nodes::TPlanNode {
+    set_node_of(l, TPlanNodeType::ANALYTIC_EVAL_NODE)
+}
+
+fn window_of(n: &mut doris_thrift::gen::plan_nodes::TPlanNode) -> &mut doris_thrift::gen::plan_nodes::TAnalyticNode {
+    n.analytic_node.as_mut().unwrap()
+}
+
+type Prepare = dyn Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus;
+
+fn refused_by(prepare: &Prepare, change: &dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList), want: &str) {
+    let st = prepare(change);
+    assert_ne!(st.status_code, 0, "{want}: accepted");
+    assert!(st.error_msgs.iter().any(|e| e.contains(want)), "{want}: {st:?}");
+}
+
+#[test]
+fn a_window_node_must_be_well_formed() {
+    use doris_thrift::gen::plan_nodes::{TAnalyticWindow, TAnalyticWindowBoundary, TAnalyticWindowBoundaryType as B, TAnalyticWindowType as W};
+    let prepare = window_plan_prepare();
+    let st = prepare(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    let name = |n: &mut doris_thrift::gen::plan_nodes::TPlanNode, f: &str| {
+        window_of(n).analytic_functions[0].nodes[0].fn_.as_mut().unwrap().name.function_name = f.into();
+    };
+    refused_by(&prepare, &|l| window_node_of(l).analytic_node = None, "ANALYTIC_EVAL_NODE without its parameters");
+    refused_by(&prepare, &|l| name(window_node_of(l), "no_such_function"), "function no_such_function");
+    refused_by(
+        &prepare,
+        &|l| {
+            let b = |t, v| TAnalyticWindowBoundary { type_: t, range_offset_predicate: None, rows_offset_value: v };
+            window_of(window_node_of(l)).window = Some(TAnalyticWindow { type_: W::RANGE, window_start: Some(b(B::PRECEDING, Some(1))), window_end: Some(b(B::CURRENT_ROW, None)) });
+        },
+        "a RANGE window with offsets",
+    );
+    // the FE forces each rank-family function's frame; any other is refused, not guessed
+    refused_by(&prepare, &|l| name(window_node_of(l), "rank"), "rank over a ROWS window");
+    refused_by(&prepare, &|l| name(window_node_of(l), "lead"), "a lead offset that is not a non-negative literal");
+    refused_by(
+        &prepare,
+        &|l| {
+            let w = window_of(window_node_of(l));
+            w.analytic_functions.push(w.analytic_functions[0].clone());
+        },
+        "for a tuple of",
+    );
+}
+
+#[test]
+fn a_window_node_must_be_runnable() {
+    use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList as L;
+    use doris_thrift::gen::partitions::TPartitionType;
+    let prepare = window_plan_prepare();
+    refused_by(&prepare, &|l| window_of(window_node_of(l)).partition_exprs.clear(), "an ANALYTIC_EVAL_NODE without partition keys in 4 instances");
+    refused_by(
+        &prepare,
+        &|l| {
+            let w = window_of(window_node_of(l));
+            w.partition_exprs = w.order_by_exprs.clone();
+        },
+        "an ANALYTIC_EVAL_NODE hashed on other exprs than its partition keys in 4 instances",
+    );
+    // the window's sort sits on an exchange; its feeding sinks send at random
+    let random = |l: &mut L| {
+        let exchange = {
+            let plan = l.params_list.as_mut().unwrap().iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE)).unwrap();
+            let at = plan.nodes.iter().position(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE).unwrap();
+            plan.nodes[at..].iter().find(|n| n.node_type == TPlanNodeType::EXCHANGE_NODE).unwrap().node_id
+        };
+        for p in l.params_list.as_mut().unwrap() {
+            if let Some(s) = p.fragment.as_mut().unwrap().output_sink.as_mut().and_then(|s| s.stream_sink.as_mut()) {
+                if s.dest_node_id == exchange {
+                    s.output_partition.type_ = TPartitionType::RANDOM;
+                }
+            }
+        }
+    };
+    refused_by(&prepare, &random, "an ANALYTIC_EVAL_NODE fed by a RANDOM stream in 4 instances");
+}
+
+/// A check_partitionkey plan with a PARTITION_SORT_NODE in 4 instances, with a function that
+/// changes the plan and prepares it.
+fn partition_sort_plan_prepare() -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    let wanted = |l: &doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        l.params_list.iter().flatten().any(|p| {
+            p.local_params.as_ref().is_some_and(|l| l.len() > 1)
+                && p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes).any(|n| n.node_type == TPlanNodeType::PARTITION_SORT_NODE)
+        })
+    };
+    let (req, list) = replays::load("nereids_p0.partition_topn.check_partitionkey.check_partitionkey")
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { request, .. } => plan_list(request).filter(wanted).map(|l| (request.clone(), l)),
+            _ => None,
+        })
+        .expect("a partition sort plan in 4 instances");
+    move |change| {
+        let mut l = list.clone();
+        change(&mut l);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    }
+}
+
+#[test]
+fn a_partition_sort_node_must_be_well_formed() {
+    use doris_thrift::gen::plan_nodes::TPartTopNPhase;
+    let prepare = partition_sort_plan_prepare();
+    let st = prepare(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    fn ps(l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList) -> &mut doris_thrift::gen::plan_nodes::TPlanNode {
+        set_node_of(l, TPlanNodeType::PARTITION_SORT_NODE)
+    }
+    refused_by(&prepare, &|l| ps(l).partition_sort_node = None, "PARTITION_SORT_NODE without its parameters");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().sort_info = None, "a PARTITION_SORT_NODE without its sort");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().partition_inner_limit = Some(-1), "without a limit of 0 or more");
+    refused_by(&prepare, &|l| ps(l).partition_sort_node.as_mut().unwrap().top_n_algorithm = None, "without its algorithm");
+    // the global phase's output must be exact and sorted per partition across all instances;
+    // no eligible suite has one
+    refused_by(
+        &prepare,
+        &|l| ps(l).partition_sort_node.as_mut().unwrap().ptopn_phase = Some(TPartTopNPhase::TWO_PHASE_GLOBAL),
+        "a global PARTITION_SORT_NODE",
+    );
+    // in one instance too: the window reads it with no sort between, and C++ emits partitions
+    // in an order doris-rs does not reproduce
+    let one = window_plan_prepare_in("query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn", TPlanNodeType::PARTITION_SORT_NODE, 1, false);
+    assert_eq!(one(&|_| {}).status_code, 0);
+    refused_by(&one, &|l| ps(l).partition_sort_node.as_mut().unwrap().ptopn_phase = Some(TPartTopNPhase::TWO_PHASE_GLOBAL), "a global PARTITION_SORT_NODE");
+}
+
+#[test]
+fn a_colocated_window_node_needs_partition_keys_in_several_instances() {
+    // test_min_max_window's window node runs colocated in its 4-instance scan fragment
+    let prepare = window_plan_prepare_in("correctness_p0.test_min_max_window.test_min_max_window", TPlanNodeType::ANALYTIC_EVAL_NODE, 2, true);
+    assert_eq!(prepare(&|_| {}).status_code, 0);
+    refused_by(&prepare, &|l| window_of(window_node_of(l)).partition_exprs.clear(), "an ANALYTIC_EVAL_NODE without partition keys in 4 instances");
+}
+
+#[test]
+fn a_window_over_an_exchange_without_senders_is_refused() {
+    let prepare = window_plan_prepare();
+    let orphan = |l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        let exchange = {
+            let plan = l.params_list.as_mut().unwrap().iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE)).unwrap();
+            let at = plan.nodes.iter().position(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE).unwrap();
+            plan.nodes[at..].iter().find(|n| n.node_type == TPlanNodeType::EXCHANGE_NODE).unwrap().node_id
+        };
+        for p in l.params_list.as_mut().unwrap() {
+            if let Some(s) = p.fragment.as_mut().unwrap().output_sink.as_mut().and_then(|s| s.stream_sink.as_mut()) {
+                if s.dest_node_id == exchange {
+                    s.dest_node_id = 9999;
+                }
+            }
+        }
+    };
+    // check_senders refuses it before the window's walk would see an exchange fed by nothing
+    refused_by(&prepare, &orphan, "senders, the plan has 0");
+}

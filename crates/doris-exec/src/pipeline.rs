@@ -100,6 +100,8 @@ impl Instance<'_> {
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
+            P::ANALYTIC_EVAL_NODE => self.analytic(t)?,
+            P::PARTITION_SORT_NODE => self.partition_sort(t)?,
             P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
             P::MATERIALIZATION_NODE => self.materialize(t)?,
             _ => {
@@ -319,20 +321,100 @@ impl Instance<'_> {
         Ok(Chunk { block: self.typed(block, &slots)?, slots })
     }
 
+    /// ANALYTIC_EVAL_NODE: each input row, in input order, then one column per function, typed
+    /// onto the output tuple. The input is sorted by partition keys, then order keys.
+    fn analytic(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::analytic::{frame, window_columns, WindowFn};
+        let a = t.node.analytic_node.as_ref().ok_or_else(|| ExecError::BadRequest("ANALYTIC_EVAL_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        let slots = slot_map(&child.slots);
+        let n = child.block.len();
+        let frame = frame(a.window.as_ref())?;
+        // each row's key values over the given exprs, and their types
+        let keys = |exprs: &[TExpr]| -> Result<(Vec<crate::value::ColType>, Vec<Vec<Datum>>), ExecError> {
+            let mut types = Vec::new();
+            let mut rows = vec![Vec::new(); n];
+            for e in exprs {
+                let (ty, values) = eval_column(e, &child.block, &slots)?;
+                types.push(ty);
+                for (row, v) in rows.iter_mut().zip(values) {
+                    row.push(v);
+                }
+            }
+            Ok((types, rows))
+        };
+        let (part_types, part) = keys(&a.partition_exprs)?;
+        let (order_types, order) = keys(&a.order_by_exprs)?;
+        let instances = self.fragment.instances.len();
+        if instances > 1 && crate::analytic::split_float_keys(&part, &part_types) {
+            return Err(ExecError::Unsupported {
+                what: format!("an ANALYTIC_EVAL_NODE over float partition keys equal in value but not in bits (-0.0 and 0.0) in {instances} instances"),
+            });
+        }
+        let out_slots = self.plan.desc.tuple_slots(a.output_tuple_id)?.to_vec();
+        if out_slots.len() != a.analytic_functions.len() {
+            return Err(ExecError::BadRequest(format!(
+                "an ANALYTIC_EVAL_NODE with {} functions for a tuple of {} slots",
+                a.analytic_functions.len(),
+                out_slots.len()
+            )));
+        }
+        let mut results = Block { types: Vec::new(), rows: vec![Vec::new(); n] };
+        for e in &a.analytic_functions {
+            let f = WindowFn::from_expr(e)?;
+            let args = f.args.iter().map(|x| eval_column(x, &child.block, &slots)).collect::<Result<Vec<_>, _>>()?;
+            let values = window_columns(&part, &part_types, &order, &order_types, &frame, &f, &args)?;
+            results.types.push(f.ret.clone());
+            for (row, v) in results.rows.iter_mut().zip(values) {
+                row.push(v);
+            }
+        }
+        let results = self.typed(results, &out_slots)?;
+        let Chunk { block: Block { mut types, rows }, slots: mut all } = child;
+        types.extend(results.types);
+        let rows = rows.into_iter().zip(results.rows).map(|(mut r, f)| {
+            r.extend(f);
+            r
+        });
+        all.extend(out_slots);
+        Ok(Chunk { block: Block { types, rows: rows.collect() }, slots: all })
+    }
+
     fn sort(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let n = &t.node;
         let s = n.sort_node.as_ref().ok_or_else(|| ExecError::BadRequest("SORT_NODE without its parameters".into()))?;
         let child = self.child(t, 0)?;
-        let input = match (&s.sort_info.sort_tuple_slot_exprs, n.row_tuples.first()) {
+        let input = self.sort_input(n, &s.sort_info, child)?;
+        sorted(input, &s.sort_info.ordering_exprs, &s.sort_info, s.offset.unwrap_or(0).max(0) as usize, limit(n.limit))
+    }
+
+    /// A sort's input on its own tuple: its slot exprs over the child, or the child's columns by
+    /// position when there are none.
+    fn sort_input(&self, n: &doris_thrift::gen::plan_nodes::TPlanNode, info: &doris_thrift::gen::plan_nodes::TSortInfo, child: Chunk) -> Result<Chunk, ExecError> {
+        Ok(match (&info.sort_tuple_slot_exprs, n.row_tuples.first()) {
             (Some(exprs), Some(tuple)) => {
                 let slots = self.plan.desc.tuple_slots(*tuple)?.to_vec();
                 Chunk { block: self.typed(project(exprs, &child)?, &slots)?, slots }
             }
-            // no slot expressions: the sort tuple takes the child's columns by position
             (None, Some(tuple)) => self.relabel(child, *tuple)?,
             _ => child,
-        };
-        sorted(input, &s.sort_info.ordering_exprs, &s.sort_info, s.offset.unwrap_or(0).max(0) as usize, limit(n.limit))
+        })
+    }
+
+    /// PARTITION_SORT_NODE: each partition's top rows (`partition_sort`). The partition exprs
+    /// read the child; the ordering exprs read the node's own tuple.
+    fn partition_sort(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let n = &t.node;
+        let (p, info, algo, limit) = crate::query::partition_sort_node(n)?;
+        let child = self.child(t, 0)?;
+        let part = project(p, &child)?.rows;
+        let input = self.sort_input(n, info, child)?;
+        let key_block = project(&info.ordering_exprs, &input)?;
+        let ks = keys(info, &(0..info.ordering_exprs.len()).collect::<Vec<_>>());
+        let cmp = |a: usize, b: usize| cmp_rows(&key_block.rows[a], &key_block.rows[b], &key_block.types, &ks);
+        let Chunk { block: Block { types, rows }, slots } = input;
+        let rows = crate::partition_sort::partition_top_n(rows, &part, cmp, algo, limit);
+        Ok(Chunk { block: Block { types, rows }, slots })
     }
 
     fn materialize(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
