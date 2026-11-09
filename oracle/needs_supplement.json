@@ -38,6 +38,30 @@
     "result:cpp_scan_order"
    ],
    "reason": "Exchange 37, SELECT * FROM table_no_partition with no ORDER BY, returns its two rows (one per tablet) in the C++ BE's scanner order, stable over the 5 reference runs; doris-rs returns the same rows in another order, which the strict gate compares (doris-rs run m5-full-1, 2026-11-07). Neither instance order nor tablet order reproduces it."
+  },
+  "load_p0.stream_load.test_arrow_stream_load_uppercase_column.test_arrow_stream_load_uppercase_column": {
+   "needs": [
+    "load:format_arrow"
+   ],
+   "reason": "Its stream loads send Arrow IPC files (format arrow); doris-rs refuses the format, so the loads fail (doris-rs run m6-s5-full-1, 2026-11-09). The needs index records the load's column mapping (concat) but not its file format."
+  },
+  "nereids_p0.expression.case_when_to_if.test_case_when_to_if": {
+   "needs": [
+    "be:sql_cache"
+   ],
+   "reason": "Its explain rewritten plan at exchange 17 shows LogicalSqlCache on the reference: the select before it was stored in the BE's SQL cache (update_cache) and the FE's explain reads it back (fetch_cache, NereidsSqlCacheManager.tryParseSql). doris-rs keeps no SQL cache and answers fetch_cache with a miss, so the FE plans afresh and the explain has 3 rows, not 6 (doris-rs run m6-s5-full-1, 2026-11-09; replayed by hand with cache_last_version_interval_second 0). The corpus shows the RPCs but not that a hit is needed."
+  },
+  "nereids_p0.sql_functions.string_functions.sql.likeOperatorWorks_order.likeOperatorWorks_order": {
+   "needs": [
+    "result:cpp_scan_order"
+   ],
+   "reason": "The suite's like query, select name from tpch_tiny_nation where name like '%AN' with no ORDER BY, returns its three rows from three tablets in the C++ BE's scanner order (JAPAN, IRAN, JORDAN), stable over the 5 reference runs; doris-rs returns the same rows in another order, which the strict gate compares at exchange 11 (doris-rs run m6-s5-full-1, 2026-11-09). As for select_with_tablets, no instance or tablet order reproduces it."
+  },
+  "query_p0.sql_functions.string_functions.sql.likeOperatorWorks_order.likeOperatorWorks_order": {
+   "needs": [
+    "result:cpp_scan_order"
+   ],
+   "reason": "The suite's like query, select name from tpch_tiny_nation where name like '%AN' with no ORDER BY, returns its three rows from three tablets in the C++ BE's scanner order (JAPAN, IRAN, JORDAN), stable over the 5 reference runs; doris-rs returns the same rows in another order, which the strict gate compares at exchange 11 (doris-rs run m6-s5-full-1, 2026-11-09). As for select_with_tablets, no instance or tablet order reproduces it."
   }
  },
  "groups": []
