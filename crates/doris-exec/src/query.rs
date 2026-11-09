@@ -395,6 +395,7 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         // const_expr_lists and first_materialized_child_idx are ignored, as C++ ignores them; the
         // tuple, types and distribution are checked in check_plan (check_sets)
         P::INTERSECT_NODE | P::EXCEPT_NODE => check_exprs(set_node(n)?.2.iter().flatten(), false)?,
+        P::HASH_JOIN_NODE => check_hash_join(n)?,
         _ => return Err(unsupported(name)),
     }
     check_exprs(n.conjuncts.iter().flatten(), false)?;
@@ -406,6 +407,69 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     check_exprs(n.intermediate_projections_list.iter().flatten().flatten(), false)?;
     check_exprs(n.projections.iter().flatten(), false)?;
     Ok(())
+}
+
+/// Whether two key types hash and compare alike: equal up to nullability, every string type
+/// being one (`DataTypeString`), as `hashjoin_build_sink.cpp:734-746` requires.
+fn same_key_type(a: &ColType, b: &ColType) -> bool {
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    let string = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
+    (string(a) && string(b)) || (a.ptype, a.precision, a.scale) == (b.ptype, b.precision, b.scale)
+}
+
+/// HASH_JOIN_NODE: an op doris-rs runs, eq keys of one type on both sides, and exprs it evaluates.
+fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
+    use crate::hash_join::{join_op, JoinOp};
+    let h = n.hash_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("HASH_JOIN_NODE without its parameters".into()))?;
+    let op = join_op(h.join_op).ok_or_else(|| unsupported(format!("a HASH_JOIN_NODE with join op {}", join_op_name(h.join_op))))?;
+    let mark = h.is_mark == Some(true);
+    match op {
+        JoinOp::Cross => return Err(unsupported("a HASH_JOIN_NODE with join op CROSS_JOIN")),
+        JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter => return Err(unsupported("an ASOF join")),
+        JoinOp::NullAwareLeftSemi if !mark => return Err(unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join")),
+        _ if mark => return Err(unsupported("a mark join")),
+        _ => {}
+    }
+    if h.vintermediate_tuple_id_list.as_ref().is_none_or(Vec::is_empty) {
+        return Err(ExecError::BadRequest("a HASH_JOIN_NODE without its intermediate tuples".into()));
+    }
+    for e in &h.eq_join_conjuncts {
+        use doris_thrift::gen::opcodes::TExprOpcode;
+        if !matches!(e.opcode, None | Some(TExprOpcode::EQ) | Some(TExprOpcode::EQ_FOR_NULL)) {
+            return Err(unsupported(format!("a hash join key compared by {:?}", e.opcode)));
+        }
+        let ty = |x: &TExpr| x.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true));
+        match (ty(&e.left), ty(&e.right)) {
+            (Some(a), Some(b)) if same_key_type(&a, &b) => {}
+            (Some(a), Some(b)) => return Err(unsupported(format!("hash join keys of types {} and {}", a.type_name(), b.type_name()))),
+            _ => return Err(unsupported("a hash join key of a nested type")),
+        }
+        check_exprs([&e.left, &e.right], false)?;
+    }
+    check_exprs(h.other_join_conjuncts.iter().flatten().chain(h.mark_join_conjuncts.iter().flatten()), false)
+}
+
+/// A join op's Thrift name.
+pub fn join_op_name(op: doris_thrift::gen::plan_nodes::TJoinOp) -> String {
+    const NAMES: &[&str] = &[
+        "INNER_JOIN",
+        "LEFT_OUTER_JOIN",
+        "LEFT_SEMI_JOIN",
+        "RIGHT_OUTER_JOIN",
+        "FULL_OUTER_JOIN",
+        "CROSS_JOIN",
+        "MERGE_JOIN",
+        "RIGHT_SEMI_JOIN",
+        "LEFT_ANTI_JOIN",
+        "RIGHT_ANTI_JOIN",
+        "NULL_AWARE_LEFT_ANTI_JOIN",
+        "NULL_AWARE_LEFT_SEMI_JOIN",
+        "ASOF_LEFT_INNER_JOIN",
+        "ASOF_RIGHT_INNER_JOIN",
+        "ASOF_LEFT_OUTER_JOIN",
+        "ASOF_RIGHT_OUTER_JOIN",
+    ];
+    usize::try_from(op.0).ok().and_then(|i| NAMES.get(i)).map_or_else(|| format!("{op:?}"), |s| s.to_string())
 }
 
 /// An INTERSECT_NODE's or EXCEPT_NODE's kind, tuple and result expr lists (one per child, all of

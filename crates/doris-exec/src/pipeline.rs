@@ -106,6 +106,7 @@ impl Instance<'_> {
             P::SELECT_NODE => self.child(t, 0)?,
             P::UNION_NODE => self.constants(t)?,
             P::INTERSECT_NODE | P::EXCEPT_NODE => self.set_op(t)?,
+            P::HASH_JOIN_NODE => self.hash_join(t)?,
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
@@ -300,6 +301,92 @@ impl Instance<'_> {
         }
         out.block.rows = crate::set_op::set_rows(kind, children);
         Ok(out)
+    }
+
+    /// The slots of a join's intermediate tuples, in order.
+    fn intermediate(&self, tuples: Option<&Vec<i32>>, name: &str) -> Result<Vec<i32>, ExecError> {
+        let tuples = tuples.filter(|t| !t.is_empty()).ok_or_else(|| ExecError::BadRequest(format!("a {name} without its intermediate tuples")))?;
+        let mut slots = Vec::new();
+        for t in tuples {
+            slots.extend_from_slice(self.plan.desc.tuple_slots(*t)?);
+        }
+        Ok(slots)
+    }
+
+    /// HASH_JOIN_NODE: the build child (1) first; for the ops C++ short-circuits on an empty build
+    /// side the probe child is never run (`hashjoin_build_sink.cpp:318-339`). Then the join, in
+    /// the intermediate tuple's layout.
+    fn hash_join(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::hash_join::{hash_join, join_op, HashJoin, JoinOp, Side};
+        let n = &t.node;
+        let h = n.hash_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("HASH_JOIN_NODE without its parameters".into()))?;
+        let op = join_op(h.join_op).ok_or_else(|| ExecError::Unsupported { what: format!("a HASH_JOIN_NODE {:?}", h.join_op) })?;
+        let mark = h.is_mark == Some(true);
+        let slots = self.intermediate(h.vintermediate_tuple_id_list.as_ref(), "HASH_JOIN_NODE")?;
+        let build = self.child(t, 1)?;
+        let short_circuit = matches!(op, JoinOp::Inner | JoinOp::LeftSemi | JoinOp::RightOuter | JoinOp::RightSemi | JoinOp::RightAnti | JoinOp::AsofLeftInner);
+        if build.block.is_empty() && short_circuit && !mark {
+            return self.chunk_of(Vec::new(), &slots);
+        }
+        let probe = self.child(t, 0)?;
+        let keys = |c: &Chunk, left: bool| -> Result<Vec<Vec<Datum>>, ExecError> {
+            let map = slot_map(&c.slots);
+            let mut cols = Vec::with_capacity(h.eq_join_conjuncts.len());
+            for e in &h.eq_join_conjuncts {
+                cols.push(eval_column(if left { &e.left } else { &e.right }, &c.block, &map)?.1);
+            }
+            Ok((0..c.block.len()).map(|r| cols.iter().map(|col| col[r].clone()).collect()).collect())
+        };
+        let null_safe = h.eq_join_conjuncts.iter().map(|e| e.opcode == Some(doris_thrift::gen::opcodes::TExprOpcode::EQ_FOR_NULL)).collect();
+        let (pw, bw) = (probe.slots.len(), build.slots.len());
+        let layout = Layout::new(slots.len(), pw, bw, mark)?;
+        let conjuncts = |exprs: &[TExpr], rows: &[Vec<Datum>]| -> Result<Vec<Option<bool>>, ExecError> {
+            // the candidate rows have no mark yet: its slot reads NULL
+            let rows = rows
+                .iter()
+                .map(|r| {
+                    let mut r = r.clone();
+                    if mark {
+                        r.push(Datum::Null);
+                    }
+                    layout.apply(&r)
+                })
+                .collect();
+            let chunk = self.chunk_of(rows, &slots)?;
+            let map = slot_map(&chunk.slots);
+            let mut out = vec![Some(true); chunk.block.len()];
+            for e in exprs {
+                let (_, v) = eval_column(e, &chunk.block, &map)?;
+                for (o, d) in out.iter_mut().zip(&v) {
+                    *o = and3(*o, truth(d));
+                }
+            }
+            Ok(out)
+        };
+        let other_exprs = h.other_join_conjuncts.clone().unwrap_or_default();
+        let mark_exprs = h.mark_join_conjuncts.clone().unwrap_or_default();
+        let other = |rows: &[Vec<Datum>]| conjuncts(&other_exprs, rows);
+        let mark_conj = |rows: &[Vec<Datum>]| conjuncts(&mark_exprs, rows);
+        let j = HashJoin {
+            op,
+            null_safe,
+            mark,
+            other: (!other_exprs.is_empty()).then_some(&other as &crate::hash_join::Cond),
+            mark_conj: (!mark_exprs.is_empty()).then_some(&mark_conj as &crate::hash_join::Cond),
+        };
+        let probe_side = Side { keys: keys(&probe, true)?, rows: probe.block.rows, width: pw };
+        let build_side = Side { keys: keys(&build, false)?, rows: build.block.rows, width: bw };
+        let rows = hash_join(&j, probe_side, build_side)?;
+        self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
+    }
+
+    /// Rows typed as the given slots.
+    fn chunk_of(&self, rows: Vec<Vec<Datum>>, slots: &[i32]) -> Result<Chunk, ExecError> {
+        let types = slots.iter().map(|s| self.plan.desc.slot(*s).map(|s| s.ty.clone())).collect::<Result<_, _>>()?;
+        Ok(Chunk {
+            block: self.typed(Block { types, rows }, slots)?,
+            slots: slots.to_vec(),
+        })
     }
 
     fn exchange(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
@@ -735,5 +822,67 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
             Ok(parts)
         }
         other => Err(ExecError::Unsupported { what: format!("a DATA_STREAM_SINK partitioned as {other:?}") }),
+    }
+}
+
+/// Where a joined row (probe columns, build columns, then the mark) goes in the join's
+/// intermediate tuple: all of it, the probe side (left semi and anti joins without other
+/// conjuncts) or the build side (right semi and anti joins), each with the mark if any
+/// (`join_probe_operator.cpp:54-62`, `hashjoin_probe_operator.cpp:618-621`).
+#[derive(Debug, Clone, Copy)]
+pub struct Layout {
+    probe: usize,
+    build: usize,
+    keep_probe: bool,
+    keep_build: bool,
+}
+
+impl Layout {
+    pub fn new(slots: usize, probe: usize, build: usize, mark: bool) -> Result<Layout, ExecError> {
+        let m = usize::from(mark);
+        let (keep_probe, keep_build) = if slots == probe + build + m {
+            (true, true)
+        } else if slots == probe + m {
+            (true, false)
+        } else if slots == build + m {
+            (false, true)
+        } else {
+            return Err(ExecError::BadRequest(format!(
+                "a join's intermediate tuple has {slots} slots for {probe} probe and {build} build columns"
+            )));
+        };
+        Ok(Layout { probe, build, keep_probe, keep_build })
+    }
+
+    pub fn apply(&self, row: &[Datum]) -> Vec<Datum> {
+        let mut out = Vec::with_capacity(row.len());
+        if self.keep_probe {
+            out.extend_from_slice(&row[..self.probe]);
+        }
+        if self.keep_build {
+            out.extend_from_slice(&row[self.probe..self.probe + self.build]);
+        }
+        out.extend_from_slice(&row[self.probe + self.build..]);
+        out
+    }
+}
+
+fn truth(d: &Datum) -> Option<bool> {
+    match d {
+        Datum::Null => None,
+        Datum::Bool(b) => Some(*b),
+        Datum::Int(i) => Some(*i != 0),
+        Datum::Float(f) => Some(*f != 0.0),
+        Datum::Double(f) => Some(*f != 0.0),
+        Datum::Bytes(_) => Some(true),
+    }
+}
+
+/// Three-valued AND.
+fn and3(a: Option<bool>, b: Option<bool>) -> Option<bool> {
+    match (a, b) {
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (Some(true), Some(true)) => Some(true),
+        _ => None,
     }
 }
