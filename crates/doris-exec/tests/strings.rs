@@ -131,3 +131,14 @@ fn length_counts_bytes() {
         vec![Datum::Int(2), Datum::Int(0), Datum::Null]
     );
 }
+
+#[test]
+fn a_regex_pattern_holding_nul_is_refused() {
+    // Hyperscan compiles the pattern's c_str(): a NUL cuts it short, which doris-rs does not copy
+    let err = Like::constant(b"a%b\0c", None).unwrap_err();
+    assert!(err.to_string().contains("NUL"), "{err}");
+    // a row's pattern is compiled by RE2 at its full length (compile_regex, StringPiece)
+    assert!(Like::per_row(b"a%b\0c", None).unwrap().matches(b"axxb\0c"));
+    // the fast paths compare bytes, NUL included
+    assert!(Like::constant(b"a\0%", None).unwrap().matches(b"a\0z"));
+}

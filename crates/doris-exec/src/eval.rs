@@ -99,7 +99,9 @@ fn round_call(nodes: &[TExprNode], i: usize) -> bool {
         1 => true,
         2 => {
             let start = i + 1 + subtree_len(nodes, i + 1);
-            args[1].ptype == T::INT && nodes[start..start + subtree_len(nodes, start)].iter().all(|k| k.node_type != N::SLOT_REF)
+            // a node list shorter than its num_children claim is malformed: not accepted
+            args[1].ptype == T::INT
+                && nodes.get(start..start + subtree_len(nodes, start)).is_some_and(|d| d.iter().all(|k| k.node_type != N::SLOT_REF))
         }
         _ => false,
     };
@@ -482,12 +484,14 @@ fn eval_at(
                 let to = node_type(n)?;
                 let clock = crate::clock::current().ok_or_else(|| ExecError::Internal(format!("{f}() without the query's clock")))?;
                 let out = if f == "now" {
-                    // now(n): a NULL n is 0, row by row (CurrentDateTimeImpl)
-                    let scale = |r: usize| match kids.first().map(|(_, v)| &v[r]) {
-                        Some(Datum::Int(s)) => *s as i32,
-                        _ => 0,
-                    };
-                    (0..rows).map(|r| Datum::Int(clock.now(scale(r)).into())).collect()
+                    // now(n) row by row; a NULL n is a NULL row (the default NULL handling)
+                    (0..rows)
+                        .map(|r| match kids.first().map(|(_, v)| &v[r]) {
+                            None => Datum::Int(clock.now(0).into()),
+                            Some(Datum::Int(s)) => Datum::Int(clock.now(*s as i32).into()),
+                            Some(_) => Datum::Null,
+                        })
+                        .collect()
                 } else {
                     vec![Datum::Int(clock.today().into()); rows]
                 };

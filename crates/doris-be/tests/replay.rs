@@ -105,8 +105,9 @@ fn drain(q: &QueryService, req: &PFetchDataRequest) -> Outcome {
 }
 
 /// Whether a query's rows come in a fixed order: the result fragment's top node sorts (a SORT_NODE,
-/// or an EXCHANGE_NODE merging sorted streams). A sort lower down (a window's) orders each
-/// instance's rows, not the order the instances' rows reach the client.
+/// or an EXCHANGE_NODE merging sorted streams), under nothing but nodes that keep their child's
+/// order (a top-n's MATERIALIZATION_NODE, a SELECT_NODE). A sort lower down (a window's) orders
+/// each instance's rows, not the order the instances' rows reach the client.
 fn ordered(plan: &TPipelineFragmentParamsList) -> bool {
     use doris_thrift::gen::data_sinks::TDataSinkType;
     plan.params_list
@@ -114,8 +115,16 @@ fn ordered(plan: &TPipelineFragmentParamsList) -> bool {
         .flatten()
         .filter_map(|p| p.fragment.as_ref())
         .filter(|f| f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::RESULT_SINK))
-        .filter_map(|f| f.plan.as_ref()?.nodes.first())
-        .any(|n| n.node_type == TPlanNodeType::SORT_NODE || n.exchange_node.as_ref().is_some_and(|e| e.sort_info.is_some()))
+        .filter_map(|f| f.plan.as_ref())
+        .any(|p| {
+            // pre-order: a single-child node's child is the next node
+            let keeps_order = |n: &&doris_thrift::gen::plan_nodes::TPlanNode| {
+                matches!(n.node_type, TPlanNodeType::MATERIALIZATION_NODE | TPlanNodeType::SELECT_NODE) && n.num_children == 1
+            };
+            p.nodes.iter().find(|n| !keeps_order(n)).is_some_and(|n| {
+                n.node_type == TPlanNodeType::SORT_NODE || n.exchange_node.as_ref().is_some_and(|e| e.sort_info.is_some())
+            })
+        })
 }
 
 fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
@@ -712,3 +721,29 @@ fn scalar_functions_match_the_reference() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+/// The replays whose result queries sort somewhere (a window's sort, a sort under a parallel
+/// result sink) but not at the result fragment's top: `ordered` compares their rows unordered.
+/// Listed so that a change to the set shows in review.
+const COMPARED_UNORDERED: &[&str] = &[
+    "correctness_p0.test_no_grouping_window.test_no_grouping_window",
+    "nereids_p0.aggregate.agg_window_project.agg_window_project",
+    "query_p0.sql_functions.window_functions.test_window_float_sliding_frame.test_window_float_sliding_frame",
+];
+
+#[test]
+fn replays_compared_unordered_are_listed() {
+    let any_sort = |plan: &TPipelineFragmentParamsList| {
+        plan.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()?.plan.as_ref()).flat_map(|p| &p.nodes).any(|n| {
+            n.node_type == TPlanNodeType::SORT_NODE || n.exchange_node.as_ref().is_some_and(|e| e.sort_info.is_some())
+        })
+    };
+    let mut got: Vec<String> = replays::all()
+        .iter()
+        .filter(|r| r.queries().iter().filter(|q| replays::is_result_query(q)).any(|q| any_sort(q) && !ordered(q)))
+        .map(|r| r.suite.clone())
+        .collect();
+    got.sort();
+    assert_eq!(got, COMPARED_UNORDERED, "{got:#?}");
+}
+

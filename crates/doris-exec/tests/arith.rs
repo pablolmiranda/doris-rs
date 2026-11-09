@@ -200,3 +200,22 @@ fn refuses_unlisted_signatures() {
     assert!(!arithmetic_supported("add", &[d128.clone(), d128.clone()], &d128));
     assert!(!arithmetic_supported("mod", &[dbl.clone(), dbl.clone()], &dbl));
 }
+
+#[test]
+fn narrow_decimal_rounding_wraps_as_cpp_does() {
+    // F/multiply.cpp:477-484: `res + m/2` is computed in the result's native int64, so a product
+    // at i64::MAX wraps negative before the division, and passes the precision check
+    let t = ty(T::DECIMAL64, 18, 1);
+    let a = 188_232_082_384_791_343; // x 49 = i64::MAX
+    let out = run("multiply", &t, &ints(&[a]), &t, &ints(&[49]), &t);
+    assert_eq!(out, ints(&[-922_337_203_685_477_580]));
+}
+
+#[test]
+fn decimal_scales_past_38_digits_are_refused() {
+    let d = |p, s| ty(T::DECIMAL128I, p, s);
+    // 10^(38+38-0) does not fit i128: refused at prepare, not panicking at run time
+    assert!(!arithmetic_supported("multiply", &[d(38, 38), d(38, 38)], &d(38, 0)));
+    assert!(!arithmetic_supported("multiply", &[d(38, 2), d(38, 2)], &d(39, 4)));
+    assert!(arithmetic_supported("multiply", &[d(38, 20), d(38, 18)], &d(38, 0)));
+}

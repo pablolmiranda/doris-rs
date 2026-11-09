@@ -413,3 +413,10 @@ fn float_casts_to_numbers_are_numeric() {
     assert_eq!(cast(1e30, d.clone()), Datum::Null);
     assert_eq!(cast(f64::INFINITY, d), Datum::Null);
 }
+
+#[test]
+fn a_round_with_missing_children_is_refused_not_a_panic() {
+    let mut e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(1, ty(T::INT))]);
+    e.nodes.truncate(2); // round(x, <missing>)
+    assert!(check_read(&e).is_err());
+}

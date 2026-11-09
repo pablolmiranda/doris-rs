@@ -185,9 +185,13 @@ pub fn current() -> Option<QueryClock> {
 
 /// The cast grammar's zone after a time part: `±h[h][[:]mm]` with minutes 00, 30 or 45 (and +14
 /// only at :00), or a name.
+/// Trailing whitespace may follow a whole zone; an hour-only offset followed by anything, a space
+/// too, must go on with two minute digits.
 fn suffix_zone(z: &str) -> Option<QueryZone> {
     let Some(rest) = z.strip_prefix(['+', '-']) else {
-        return find_zone(z);
+        // a name runs to the first whitespace; only whitespace may follow it
+        let name = z.trim_end();
+        return if name.contains(char::is_whitespace) { None } else { find_zone(name) };
     };
     let sign = if z.starts_with('-') { -1 } else { 1 };
     let run = rest.bytes().take_while(u8::is_ascii_digit).count();
@@ -197,10 +201,11 @@ fn suffix_zone(z: &str) -> Option<QueryZone> {
     let mut m = 0;
     if !tail.is_empty() {
         tail = tail.strip_prefix(':').unwrap_or(tail);
-        if tail.len() != 2 || !tail.bytes().all(|b| b.is_ascii_digit()) {
+        let digits = tail.get(..2).filter(|d| d.bytes().all(|b| b.is_ascii_digit()))?;
+        if !tail[2..].trim_end().is_empty() {
             return None;
         }
-        m = tail.parse().ok()?;
+        m = digits.parse().ok()?;
     }
     if h >= 15 || ![0, 30, 45].contains(&m) || (h == 14 && m != 0) {
         return None;
@@ -211,7 +216,7 @@ fn suffix_zone(z: &str) -> Option<QueryZone> {
 /// Splits a date-time text at its zone: the first character after the time part's separator
 /// that is not a digit, `:`, `.` or whitespace. None when the text has no zone.
 pub fn split_zone(s: &str) -> Option<(&str, &str)> {
-    let s = s.trim();
+    let s = s.trim_start();
     let sep = s.find([' ', 'T'])?;
     let at = s[sep + 1..].find(|c: char| !(c.is_ascii_digit() || c == ':' || c == '.' || c.is_whitespace()))? + sep + 1;
     Some((s[..at].trim_end(), &s[at..]))
@@ -220,7 +225,7 @@ pub fn split_zone(s: &str) -> Option<(&str, &str)> {
 /// A packed DATETIMEV2 written in `zone`, as civil time in the query zone; None for an unknown
 /// zone, no query clock, or a year past 9999.
 pub fn convert_from(packed: u64, zone: &str) -> Option<u64> {
-    let given = suffix_zone(zone.trim_end())?;
+    let given = suffix_zone(zone)?;
     let query = current()?.zone;
     let y = (packed >> 46) as i32;
     let civil = NaiveDate::from_ymd_opt(y, ((packed >> 42) & 0xF) as u32, ((packed >> 37) & 0x1F) as u32)?.and_hms_opt(
@@ -237,5 +242,5 @@ pub fn convert_from(packed: u64, zone: &str) -> Option<u64> {
 
 /// Whether a zone is one the cast accepts (a DATEV2 target only checks it).
 pub fn valid_zone(zone: &str) -> bool {
-    suffix_zone(zone.trim_end()).is_some()
+    suffix_zone(zone).is_some()
 }

@@ -159,3 +159,41 @@ fn a_query_plan_carries_its_clock() {
     .expect("plan");
     assert_eq!(datetimev2_text(plan.clock.now(0), 0), "2010-01-01 08:15:30");
 }
+
+#[test]
+fn now_of_null_is_null() {
+    use doris_exec::block::Block;
+    use doris_exec::eval::{eval_column, SlotMap};
+    use doris_exec::expr::{eval, Slots};
+    use doris_fixtures::build::{call, null, scalar, ty};
+    use doris_segment::writer::Datum;
+    // FunctionCurrentDateOrDateTime keeps the default NULL handling: a NULL argument row is NULL
+    let c = QueryClock::from_globals(&globals(1_262_304_930_123, Some(123_456_789), "Asia/Shanghai"));
+    let e = call("now", scalar(T::DATETIMEV2, -1, 0, 3), vec![null(ty(T::INT))]);
+    let block = Block {
+        types: vec![],
+        rows: vec![vec![]],
+    };
+    let (_, v) = with_clock(&c, || eval_column(&e, &block, &SlotMap::default())).unwrap();
+    assert_eq!(v, vec![Datum::Null]);
+    assert_eq!(with_clock(&c, || eval(&e, &Slots::new())).unwrap(), Value::Null);
+}
+
+#[test]
+fn now_cuts_its_fraction() {
+    // from_unixtime(ts, nanos, tz, scale): nanos / 10^(9-scale), cut, never rounded up
+    let c = QueryClock::from_globals(&globals(1_262_304_930_000, Some(123_999_999), "UTC"));
+    assert_eq!(datetimev2_text(c.now(3), 3), "2010-01-01 00:15:30.123");
+    assert_eq!(datetimev2_text(c.now(0), 0), "2010-01-01 00:15:30");
+}
+
+#[test]
+fn whitespace_after_a_zone() {
+    let d = |s: &str| Some(Value::Date(s.into()));
+    // an hour-only offset takes two minute digits whenever anything follows it, a space too
+    assert_eq!(cast_in("+02:00", "2010-01-05 08:15:30+08 ", &dt(0)), None);
+    assert_eq!(cast_in("+02:00", "2010-01-05 08:15:30+08", &dt(0)), d("2010-01-05 02:15:30"));
+    assert_eq!(cast_in("+02:00", "2010-01-05 08:15:30+08:00 ", &dt(0)), d("2010-01-05 02:15:30"));
+    assert_eq!(cast_in("+02:00", "2010-01-05 08:15:30Europe/London  ", &dt(0)), d("2010-01-05 10:15:30"));
+    assert_eq!(cast_in("+02:00", "2010-01-05 08:15:30Europe/London x", &dt(0)), None);
+}

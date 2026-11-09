@@ -239,6 +239,12 @@ impl Like {
         let p = with_escape(pattern, escape);
         Ok(Like(match classify(&p) {
             Some(k) => k,
+            // Hyperscan compiles a constant pattern's c_str(): a NUL would cut it short there
+            None if p.contains(&0) => {
+                return Err(ExecError::Unsupported {
+                    what: "a like pattern holding a NUL byte".into(),
+                })
+            }
             None => Kind::Regex(compile(&p)?),
         }))
     }

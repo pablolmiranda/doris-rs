@@ -97,8 +97,9 @@ fn eval_at(nodes: &[TExprNode], pos: &mut usize, slots: &Slots) -> Result<Value,
             let clock = crate::clock::current().ok_or_else(|| RowError::new(format!("{f}() without the query's clock")))?;
             if f == "now" {
                 let scale = match children.first() {
+                    None => 0,
                     Some(Value::Int(s)) => *s as i32,
-                    _ => 0,
+                    Some(_) => return Ok(Value::Null),
                 };
                 Value::Date(crate::row_text::datetimev2_text(clock.now(scale), scale.clamp(0, 6)))
             } else {

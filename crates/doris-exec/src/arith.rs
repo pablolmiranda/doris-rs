@@ -68,7 +68,8 @@ pub fn arithmetic_supported(op: &str, args: &[ColType], to: &ColType) -> bool {
     }
     if let (Some(_), Some(_), Some(_)) = (decimal_bits(a), decimal_bits(b), decimal_bits(to)) {
         return match op {
-            "multiply" => a.scale + b.scale >= to.scale,
+            // the rescale multiplier 10^(sa+sb-sr) and the bound 10^p - 1 must fit i128
+            "multiply" => a.scale + b.scale >= to.scale && a.scale + b.scale - to.scale <= 38 && to.precision <= 38,
             "divide" => a.scale - b.scale == to.scale,
             _ => false,
         };
@@ -191,9 +192,9 @@ fn decimal_op(op: &str, a: (&ColType, i128), b: (&ColType, i128), to: &ColType) 
     };
     let r = if m > 1 {
         if p >= 0 {
-            p.wrapping_add(m / 2) / m
+            wrap(p.wrapping_add(m / 2), bits) / m
         } else {
-            p.wrapping_sub(m / 2) / m
+            wrap(p.wrapping_sub(m / 2), bits) / m
         }
     } else {
         p
