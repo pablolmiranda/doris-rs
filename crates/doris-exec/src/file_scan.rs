@@ -6,7 +6,6 @@
 //! <value>`); otherwise it becomes NULL.
 use std::collections::BTreeMap;
 
-use doris_thrift::gen::exprs::TExprNodeType;
 use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType, TFileScanRangeParams};
 
 use crate::expr::{check, eval, Slots};
@@ -53,10 +52,9 @@ pub fn check_stream(f: &WriteFragment) -> Result<(), ExecError> {
     Ok(())
 }
 
-/// A source row: its fields, and the line the error log prints for it.
+/// A source row: its fields, None for NULL.
 struct SourceRow {
     fields: Vec<Option<String>>,
-    line: String,
 }
 
 /// The body's rows, split as `CsvReader` does: records end at the line delimiter and fields at
@@ -115,8 +113,7 @@ fn csv_rows(params: &TFileScanRangeParams, body: &[u8]) -> Vec<Result<SourceRow,
             out.push(Err(RowError { msg: mismatch(fields.len()), line: raw_text }));
             continue;
         }
-        let shown = fields.iter().take(width).map(|f| f.clone().unwrap_or_else(|| "\\N".into())).collect::<Vec<_>>().join(" ");
-        out.push(Ok(SourceRow { fields: fields.into_iter().take(width).collect(), line: shown }));
+        out.push(Ok(SourceRow { fields: fields.into_iter().take(width).collect() }));
     }
     out
 }
@@ -285,9 +282,7 @@ fn json_rows(params: &TFileScanRangeParams, names: &[String], nullable: &[bool],
                 continue;
             }
             let fields: Vec<Option<String>> = found.into_iter().map(|v| v.and_then(json_text)).collect();
-            // a cast error prints the fields, as the CSV reader does
-            let line = fields.iter().map(|f| f.clone().unwrap_or_else(|| "NULL".into())).collect::<Vec<_>>().join(" ");
-            out.push(Ok(SourceRow { fields, line }));
+            out.push(Ok(SourceRow { fields }));
         }
     }
     out
@@ -346,7 +341,10 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
         .into_iter()
         .map(|row| {
             let row = row?;
-            let err = |msg: String| RowError { msg, line: row.line.clone() };
+            // a column's error prints the source block's row (Block::dump_one_line): the file's
+            // fields, a NULL as NULL
+            let src_line = row.fields.iter().map(|f| f.as_deref().unwrap_or("NULL")).collect::<Vec<_>>().join(" ");
+            let err = |msg: String| RowError { msg, line: src_line.clone() };
             let mut src = Slots::new();
             for (id, field) in file_slots.iter().zip(&row.fields) {
                 src.insert(*id, field.clone().map_or(Value::Null, |t| Value::Str(t.into_bytes())));
@@ -359,14 +357,14 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
                 let v = match (exprs.get(&slot.id), direct.get(&slot.id)) {
                     (Some(e), _) => {
                         let v = eval(e, &src).map_err(|e| err(e.msg))?;
-                        // strict mode: a non-NULL field that a cast turned into NULL
-                        if strict && v == Value::Null && e.nodes.first().is_some_and(|n| n.node_type == TExprNodeType::CAST_EXPR) {
-                            let input = eval(&doris_thrift::gen::exprs::TExpr { nodes: e.nodes[1..].to_vec() }, &src).unwrap_or(Value::Null);
-                            if let Value::Str(b) = input {
+                        // FileScanner::_convert_to_output_block: in strict mode, a column mapped
+                        // straight from a source column whose non-NULL value came out NULL
+                        if strict && v == Value::Null {
+                            if let Some(Value::Str(b)) = direct.get(&slot.id).and_then(|s| src.get(s)) {
                                 return Err(err(format!(
                                     "column({}) value is incorrect while strict mode is true, src value is {}",
                                     slot.col_name,
-                                    String::from_utf8_lossy(&b)
+                                    String::from_utf8_lossy(b)
                                 )));
                             }
                         }
@@ -378,12 +376,9 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
                 dest.insert(slot.id, v);
             }
             // FileScanner::_convert_to_output_block: a NULL for a slot that is not nullable
+            // (its line, the source row's, as Block::dump_one_line prints it)
             if let Some(slot) = dest_slots.iter().find(|s| s.null_indicator_bit < 0 && dest.get(&s.id) == Some(&Value::Null)) {
-                let shown: Vec<String> = dest_slots.iter().map(|s| render_value(dest.get(&s.id).unwrap_or(&Value::Null))).collect();
-                return Err(RowError {
-                    msg: format!("column({}) values is null while columns is not nullable", slot.col_name),
-                    line: shown.join(" "),
-                });
+                return Err(err(format!("column({}) values is null while columns is not nullable", slot.col_name)));
             }
             if output.is_empty() {
                 return Ok(dest_slots.iter().map(|s| dest.get(&s.id).cloned().unwrap_or(Value::Null)).collect());
@@ -393,17 +388,6 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
         .collect())
 }
 
-
-fn render_value(v: &Value) -> String {
-    match v {
-        Value::Null => "NULL".into(),
-        Value::Bool(b) => u8::from(*b).to_string(),
-        Value::Int(i) => i.to_string(),
-        Value::Float(f) => f.to_string(),
-        Value::Str(b) => String::from_utf8_lossy(b).into_owned(),
-        Value::Decimal(s) | Value::Date(s) => s.clone(),
-    }
-}
 
 /// A parse failure as simdjson reports it through `NewJsonReader` (the truncated document the
 /// corpus shows; other syntax errors get simdjson's generic tape error).

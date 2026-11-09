@@ -9,7 +9,9 @@
 //!   `<OUT>/<nn>/end_call.bin`, `end_reply.bin`           loadTxnCommit or loadTxnRollback
 //! and `<OUT>/index.json` lists `{dir, suite, end, format}`. Rolled-back loads come first, then
 //! up to 10 JSON loads, then CSV loads, at most 3 per suite, N in all (default 60).
-use std::collections::BTreeMap;
+//! `extract-stream-loads OUT_DIR --only SUITE...` instead appends every load of the named suites
+//! (Parquet and ORC ones too) that OUT_DIR does not hold yet, leaving the rest as it is.
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use doris_thrift::gen::frontend_service::{
@@ -55,11 +57,17 @@ struct Sample {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let out = PathBuf::from(args.next().expect("usage: extract-stream-loads OUT_DIR [N]"));
-    let want: usize = args.next().map(|n| n.parse().expect("N")).unwrap_or(60);
+    let out = PathBuf::from(args.next().expect("usage: extract-stream-loads OUT_DIR [N | --only SUITE...]"));
+    let rest: Vec<String> = args.collect();
+    let only: Option<BTreeSet<String>> = (rest.first().map(String::as_str) == Some("--only")).then(|| rest[1..].iter().cloned().collect());
+    let want: usize = if only.is_some() { 0 } else { rest.first().map(|n| n.parse().expect("N")).unwrap_or(60) };
+    let formats: &[&str] = if only.is_some() { &["csv", "json", "parquet", "orc"] } else { &["csv", "json"] };
     let mut found: Vec<Sample> = Vec::new();
     for path in suite_files(&corpus_dir()) {
         let suite = path.file_name().unwrap().to_string_lossy().trim_end_matches(".bin.gz").to_string();
+        if only.as_ref().is_some_and(|o| !o.contains(&suite)) {
+            continue;
+        }
         let recs = read_suite(&path).expect("read suite");
         for (i, r) in recs.iter().enumerate() {
             if field(r, "protocol") != "http" || field(r, "kind") != "request" || !field(r, "path").ends_with("/_stream_load") {
@@ -70,7 +78,7 @@ fn main() {
             // outside M4: group commit, 2PC, partial update, and the FE's own audit log loads
             let internal = field(r, "path").contains("/__internal_schema/") || h.contains_key("skip_record_to_audit_log_table");
             if h.contains_key("group_commit")
-                || !matches!(format.as_str(), "csv" | "json")
+                || !formats.contains(&format.as_str())
                 || h.contains_key("two_phase_commit")
                 || h.contains_key("partial_columns")
                 || internal
@@ -129,6 +137,29 @@ fn main() {
                 ],
             });
         }
+    }
+    if only.is_some() {
+        let index_path = out.join("index.json");
+        let mut index: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&index_path).expect("index.json")).expect("json");
+        let held: BTreeSet<Vec<u8>> = index
+            .iter()
+            .filter_map(|e| std::fs::read(out.join(e["dir"].as_str()?).join("http_request.bin")).ok())
+            .collect();
+        for s in &found {
+            if held.contains(&s.records[0].1) {
+                continue;
+            }
+            let n = index.len();
+            let dir = out.join(format!("{n:02}"));
+            std::fs::create_dir_all(&dir).expect("mkdir");
+            for (name, bytes) in &s.records {
+                std::fs::write(dir.join(name), bytes).expect("write");
+            }
+            index.push(serde_json::json!({"dir": format!("{n:02}"), "suite": s.suite, "end": s.end, "format": s.format}));
+            eprintln!("{} ({}, {}): added as {n:02}", s.suite, s.format, s.end);
+        }
+        std::fs::write(index_path, serde_json::to_string_pretty(&index).unwrap() + "\n").expect("write index");
+        return;
     }
     let mut picked: Vec<usize> = Vec::new();
     let mut per_suite: BTreeMap<String, usize> = BTreeMap::new();

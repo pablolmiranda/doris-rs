@@ -118,6 +118,34 @@ impl ColType {
     }
 }
 
+/// A string as an integer (`StringParser::string_to_int_internal` without strict casting): an
+/// optional sign, at least one digit, then nothing or a `.digits` suffix, which is dropped
+/// (`is_float_suffix`: "3.12" is 3). None for anything else or past i128.
+fn parse_int(t: &str) -> Option<i128> {
+    let digits_start = usize::from(t.starts_with(['+', '-']));
+    let rest = &t[digits_start..];
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    let suffix = &rest[end..];
+    if !(suffix.is_empty() || suffix.starts_with('.') && suffix[1..].bytes().all(|b| b.is_ascii_digit())) {
+        return None;
+    }
+    t[..digits_start + end].parse().ok()
+}
+
+/// An unscaled decimal as its text at `scale` ("1234.5000", "-0.5000").
+pub fn decimal_text(unscaled: i128, scale: i32) -> String {
+    if scale <= 0 {
+        return unscaled.to_string();
+    }
+    let p = 10u128.pow(scale as u32);
+    let sign = if unscaled < 0 { "-" } else { "" };
+    let a = unscaled.unsigned_abs();
+    format!("{sign}{}.{:0w$}", a / p, a % p, w = scale as usize)
+}
+
 /// A datetime column's scale: v1 DATETIME holds whole seconds.
 fn datetime_scale(col: &ColType) -> i32 {
     if col.ptype == TPrimitiveType::DATETIME {
@@ -313,7 +341,7 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             _ => return None,
         },
         T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT => {
-            let v: i128 = t.parse().ok()?;
+            let v = parse_int(t)?;
             let bits = match col.ptype {
                 T::TINYINT => 8,
                 T::SMALLINT => 16,
@@ -333,7 +361,8 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             if col.precision > 0 && v.unsigned_abs() >= 10u128.pow(col.precision.clamp(1, 38) as u32) {
                 return None;
             }
-            Value::Decimal(t.to_string())
+            // the value at the column's scale, as a decimal prints
+            Value::Decimal(decimal_text(v, col.scale))
         }
         T::DATEV2 | T::DATE => {
             parse_datev2(t)?;

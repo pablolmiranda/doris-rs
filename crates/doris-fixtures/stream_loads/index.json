@@ -358,5 +358,167 @@
     "end": "commit",
     "format": "csv",
     "suite": "load_p0.stream_load.test_stream_load_with_aes_encrypt.test_stream_load_with_aes_encrypt"
+  },
+  {
+    "dir": "60",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "61",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "62",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "63",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "64",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "65",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "66",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "67",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "68",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "69",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "70",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "71",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "72",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "73",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "74",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "75",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "76",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "77",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "78",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "79",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "80",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "81",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "82",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "83",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "84",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "85",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "86",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
   }
 ]

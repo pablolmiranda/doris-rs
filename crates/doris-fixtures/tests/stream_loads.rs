@@ -4,7 +4,8 @@ use doris_fixtures::stream_loads::{stream_loads, LoadEnd};
 #[test]
 fn samples_decode() {
     let all = stream_loads();
-    assert_eq!(all.len(), 60);
+    // 60 sampled, then whole suites appended (extract-stream-loads --only)
+    assert!(all.len() >= 60, "{}", all.len());
     for s in &all {
         assert!(s.path.ends_with("/_stream_load"), "{}", s.dir);
         assert!(s.reply.trim_start().starts_with('{'), "{}: {}", s.dir, s.reply);
