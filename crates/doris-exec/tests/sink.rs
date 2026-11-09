@@ -149,3 +149,40 @@ fn an_over_long_string_is_filtered() {
         )
     );
 }
+
+/// test_coalesce_new's line-43 insert: three rows into a UNIQUE merge-on-write table with a
+/// DATETIME v1 column `dt`. The suite sets `enable_date_conversion=false` before it and back
+/// after it, so a refusal here leaves the FE creating v1 columns for every later suite.
+#[test]
+fn a_v1_datetime_insert_is_written() {
+    let v = values_vectors().into_iter().find(|v| v.suite.ends_with("test_coalesce_new")).expect("the vector");
+    let f = plan_write(&v.params()).expect("plans");
+    let tmp = tempfile::tempdir().unwrap();
+    let mgr = manager(&v, tmp.path()).expect("its tablets");
+    let mut got = run(&v, &f, &mgr, tmp.path());
+    let mut expected = v.report.clone();
+    if let Some(c) = expected.commit_infos.as_mut() {
+        c.sort_by_key(|i| i.tablet_id);
+    }
+    mask(&mut got, &expected);
+    assert_eq!(got.status.as_ref().map(|s| s.status_code), Some(TStatusCode::OK));
+    assert_eq!(got, expected);
+}
+
+/// `RawValue::zlib_crc32` hashes a v1 date as its text (`to_buffer`), not its bytes.
+#[test]
+fn v1_dates_hash_their_text() {
+    let v = values_vectors().into_iter().find(|v| v.suite.ends_with("test_coalesce_new")).expect("the vector");
+    let mut f = plan_write(&v.params()).expect("plans");
+    f.sink.partition.distributed_columns = Some(vec!["dt".into()]);
+    let part = f.sink.partition.partitions[0].clone();
+    let buckets = part.num_buckets as u32;
+    let router = doris_exec::route::Router::new(&f).unwrap();
+    for row in f.values_rows().unwrap() {
+        let row = row.unwrap();
+        let Value::Date(text) = &row[2] else { panic!("{row:?}") };
+        let want = part.indexes[0].tablets[(crc32fast::hash(text.as_bytes()) % buckets) as usize];
+        let routed = router.route(&row).unwrap();
+        assert_eq!(routed.tablets[0].1, want, "{text}");
+    }
+}

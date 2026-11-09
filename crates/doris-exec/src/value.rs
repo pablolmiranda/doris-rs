@@ -75,6 +75,8 @@ impl ColType {
             TPrimitiveType::LARGEINT => "LARGEINT".into(),
             TPrimitiveType::FLOAT => "FLOAT".into(),
             TPrimitiveType::DOUBLE => "DOUBLE".into(),
+            TPrimitiveType::DATE => "Date".into(),
+            TPrimitiveType::DATETIME => "DateTime".into(),
             TPrimitiveType::DATEV2 => "DateV2".into(),
             TPrimitiveType::DATETIMEV2 => format!("DateTimeV2({})", self.scale),
             TPrimitiveType::DECIMAL32 | TPrimitiveType::DECIMAL64 | TPrimitiveType::DECIMAL128I => {
@@ -85,7 +87,14 @@ impl ColType {
         }
     }
 
-    /// Whether the M4 writer stores this type.
+    /// Whether the writer stores this type: every type queries read, and v1 DATE and DATETIME,
+    /// which doris-rs writes but does not read (the FE creates v1 columns while its
+    /// `enable_date_conversion` is false).
+    pub fn writable(&self) -> bool {
+        self.supported() || matches!(self.ptype, TPrimitiveType::DATE | TPrimitiveType::DATETIME)
+    }
+
+    /// Whether doris-rs reads (and writes) this type.
     pub fn supported(&self) -> bool {
         matches!(
             self.ptype,
@@ -106,6 +115,15 @@ impl ColType {
                 | TPrimitiveType::VARCHAR
                 | TPrimitiveType::STRING
         )
+    }
+}
+
+/// A datetime column's scale: v1 DATETIME holds whole seconds.
+fn datetime_scale(col: &ColType) -> i32 {
+    if col.ptype == TPrimitiveType::DATETIME {
+        0
+    } else {
+        col.scale
     }
 }
 
@@ -180,12 +198,13 @@ pub fn to_datum(v: &Value, col: &ColType, strict: bool) -> Result<Datum, RowErro
             Value::Int(i) => Datum::Int(10i128.checked_pow(col.scale.max(0) as u32).and_then(|p| i.checked_mul(p)).ok_or_else(bad)?),
             _ => return Err(bad()),
         },
-        T::DATEV2 => match v {
+        // v1 DATE and DATETIME are v2-packed in memory too; the segment writer stores them as v1
+        T::DATEV2 | T::DATE => match v {
             Value::Date(s) => Datum::Int(parse_datev2(s).ok_or_else(bad)?.into()),
             _ => return Err(bad()),
         },
-        T::DATETIMEV2 => match v {
-            Value::Date(s) => Datum::Int(parse_datetimev2(s, col.scale).ok_or_else(bad)?.into()),
+        T::DATETIMEV2 | T::DATETIME => match v {
+            Value::Date(s) => Datum::Int(parse_datetimev2(s, datetime_scale(col)).ok_or_else(bad)?.into()),
             _ => return Err(bad()),
         },
         _ => return Err(row_err(col, format!("type {} is not supported", col.type_name()))),
@@ -316,12 +335,12 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             }
             Value::Decimal(t.to_string())
         }
-        T::DATEV2 => {
+        T::DATEV2 | T::DATE => {
             parse_datev2(t)?;
             Value::Date(t.to_string())
         }
-        T::DATETIMEV2 => {
-            parse_datetimev2(t, col.scale)?;
+        T::DATETIMEV2 | T::DATETIME => {
+            parse_datetimev2(t, datetime_scale(col))?;
             Value::Date(t.to_string())
         }
         _ => return None,

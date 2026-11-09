@@ -147,7 +147,7 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         })
         .collect::<Result<Vec<_>, _>>()?;
     for c in base.values().map(ColType::from_column).chain(dest.iter().cloned()) {
-        if !c.supported() {
+        if !c.writable() {
             return Err(ExecError::Unsupported { what: format!("column {} of type {}", c.name, c.type_name()) });
         }
     }

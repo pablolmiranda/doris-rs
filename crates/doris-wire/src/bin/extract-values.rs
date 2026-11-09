@@ -8,7 +8,8 @@
 //!   `<OUT>/<nn>/finish.bin`    the finishTask call answering that task
 //! and `<OUT>/index.json` lists `{dir, suite, kinds}`. Statements that bring a constant
 //! expression kind not yet sampled come first, then the rest, at most 3 per suite, N in all
-//! (default 60).
+//! (default 60). `extract-values OUT_DIR --only SUITE...` instead appends the first statement of
+//! each named suite to OUT_DIR, leaving its other vectors as they are.
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -68,13 +69,18 @@ fn values_insert(r: &SuiteRecord) -> Option<((i64, i64), i64, BTreeSet<String>)>
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let out = PathBuf::from(args.next().expect("usage: extract-values OUT_DIR [N]"));
-    let want: usize = args.next().map(|n| n.parse().expect("N")).unwrap_or(60);
+    let out = PathBuf::from(args.next().expect("usage: extract-values OUT_DIR [N | --only SUITE...]"));
+    let rest: Vec<String> = args.collect();
+    let only: Option<BTreeSet<String>> = (rest.first().map(String::as_str) == Some("--only")).then(|| rest[1..].iter().cloned().collect());
+    let want: usize = if only.is_some() { 0 } else { rest.first().map(|n| n.parse().expect("N")).unwrap_or(60) };
 
     // every complete statement: (suite, kinds, the four records)
     let mut found: Vec<(String, BTreeSet<String>, [Vec<u8>; 4])> = Vec::new();
     for path in suite_files(&corpus_dir()) {
         let suite = path.file_name().unwrap().to_string_lossy().trim_end_matches(".bin.gz").to_string();
+        if only.as_ref().is_some_and(|o| !o.contains(&suite)) {
+            continue;
+        }
         let records = read_suite(&path).expect("read suite");
         for (i, r) in records.iter().enumerate() {
             let Some((qid, txn, kinds)) = values_insert(r) else { continue };
@@ -105,6 +111,27 @@ fn main() {
                 found.push((suite.clone(), kinds, [r.data.clone(), rep.data.clone(), pb.data.clone(), fin.data.clone()]));
             }
         }
+    }
+
+    if let Some(only) = only {
+        let index_path = out.join("index.json");
+        let mut index: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&index_path).expect("index.json")).expect("json");
+        for suite in &only {
+            let Some((_, kinds, recs)) = found.iter().find(|(s, _, _)| s == suite) else {
+                eprintln!("{suite}: no complete VALUES statement");
+                continue;
+            };
+            let n = index.len();
+            let dir = out.join(format!("{n:02}"));
+            std::fs::create_dir_all(&dir).expect("mkdir");
+            for (name, bytes) in ["fragment.bin", "report.bin", "publish.bin", "finish.bin"].iter().zip(recs) {
+                std::fs::write(dir.join(name), bytes).expect("write");
+            }
+            index.push(serde_json::json!({"dir": format!("{n:02}"), "suite": suite, "kinds": kinds}));
+            eprintln!("{suite}: added as {n:02}");
+        }
+        std::fs::write(index_path, serde_json::to_string_pretty(&index).unwrap() + "\n").expect("write index");
+        return;
     }
 
     // new kinds first, then the rest; at most 3 per suite

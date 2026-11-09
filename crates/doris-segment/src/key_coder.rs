@@ -1,12 +1,13 @@
 //! `KeyCoder` (`storage/key_coder.h`): keys as bytes that compare like the values. Each key
 //! column is `0x01` (KEY_NULL_FIRST_MARKER) for NULL, else `0x02` (KEY_NORMAL_MARKER) and the
-//! value: signed integers and decimals sign-flipped big-endian, BOOL/DATEV2/DATETIMEV2 plain
-//! big-endian, CHAR the padded value, VARCHAR/STRING the bytes. A short key (`_encode_keys`)
-//! covers the first `num_short_key_columns` key columns and cuts strings to `index_length`; a
-//! full key (`_full_encode_keys`, segment min/max) covers every key column whole.
+//! value: signed integers, decimals and DATETIME (v1) sign-flipped big-endian; BOOL, DATE (v1,
+//! 3 bytes), DATEV2 and DATETIMEV2 plain big-endian; CHAR the padded value; VARCHAR/STRING the
+//! bytes. A short key (`_encode_keys`) covers the first `num_short_key_columns` key columns and
+//! cuts strings to `index_length`; a full key (`_full_encode_keys`, segment min/max) covers
+//! every key column whole.
 use crate::column::field_type::*;
 use crate::column::element_size;
-use crate::writer::{char_padded, ColumnSpec, Datum, SegmentSchema};
+use crate::writer::{char_padded, date_v1, datetime_v1, ColumnSpec, Datum, SegmentSchema};
 
 const KEY_NULL_FIRST_MARKER: u8 = 0x01;
 const KEY_NORMAL_MARKER: u8 = 0x02;
@@ -43,6 +44,9 @@ fn encode_value(spec: &ColumnSpec, d: &Datum, short: bool, out: &mut Vec<u8>) {
         (BOOL, Datum::Bool(v)) => out.push(u8::from(*v)),
         (DATEV2, Datum::Int(v)) => out.extend_from_slice(&(*v as u32).to_be_bytes()),
         (DATETIMEV2, Datum::Int(v)) => out.extend_from_slice(&(*v as u64).to_be_bytes()),
+        // v1 dates: the stored value, DATE unsigned in 3 bytes, DATETIME as a signed integer
+        (DATE, Datum::Int(v)) => out.extend_from_slice(&date_v1(*v).to_be_bytes()[1..]),
+        (DATETIME, Datum::Int(v)) => out.extend_from_slice(&((datetime_v1(*v) as u64) ^ (1 << 63)).to_be_bytes()),
         (_, Datum::Int(v)) => {
             let size = element_size(ft).unwrap_or(16);
             let bits = size * 8;

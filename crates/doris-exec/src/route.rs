@@ -164,11 +164,11 @@ fn render(c: &ColType, d: &Datum) -> String {
         Datum::Null => "NULL".into(),
         Datum::Bool(b) => u8::from(*b).to_string(),
         Datum::Int(i) => match c.ptype {
-            TPrimitiveType::DATEV2 => {
+            TPrimitiveType::DATEV2 | TPrimitiveType::DATE => {
                 let v = unpack_datev2(*i as u32);
                 format!("{:04}-{:02}-{:02}", v.year, v.month, v.day)
             }
-            TPrimitiveType::DATETIMEV2 => {
+            TPrimitiveType::DATETIMEV2 | TPrimitiveType::DATETIME => {
                 let t = unpack_datetimev2(*i as u64);
                 let mut s = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.date.year, t.date.month, t.date.day, t.hour, t.minute, t.second);
                 if c.scale > 0 {
@@ -202,6 +202,8 @@ fn hash_bytes(c: &ColType, d: &Datum) -> Vec<u8> {
     };
     match d {
         Datum::Null => vec![0; 4],
+        // v1 dates hash their text (`VecDateTimeValue::to_buffer`)
+        Datum::Int(_) if matches!(c.ptype, T::DATE | T::DATETIME) => render(c, d).into_bytes(),
         Datum::Bool(b) => vec![u8::from(*b)],
         Datum::Int(i) => i.to_le_bytes()[..width].to_vec(),
         Datum::Float(f) => f.to_le_bytes().to_vec(),

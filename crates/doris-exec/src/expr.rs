@@ -24,7 +24,7 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
             | TExprNodeType::DATE_LITERAL
             | TExprNodeType::NULL_LITERAL
             | TExprNodeType::SLOT_REF => true,
-            TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.supported()),
+            TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.writable()),
             TExprNodeType::FUNCTION_CALL => function_name(n).as_deref() == Some("substring"),
             _ => false,
         };
@@ -32,7 +32,7 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
             return Err(ExecError::Unsupported { what: describe(n) });
         }
         if let Some(c) = ColType::from_type_desc("", &n.type_, true) {
-            if !c.supported() && n.node_type != TExprNodeType::NULL_LITERAL {
+            if !c.writable() && n.node_type != TExprNodeType::NULL_LITERAL {
                 return Err(ExecError::Unsupported { what: format!("type {}", c.type_name()) });
             }
         } else {

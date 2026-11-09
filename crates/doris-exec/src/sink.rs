@@ -81,7 +81,8 @@ pub fn row_bytes(cols: &[ColType], nullable: &[bool], row: &[Value]) -> i64 {
                 T::BOOLEAN | T::TINYINT => 1,
                 T::SMALLINT => 2,
                 T::INT | T::FLOAT | T::DATEV2 | T::DECIMAL32 => 4,
-                T::BIGINT | T::DOUBLE | T::DATETIMEV2 | T::DECIMAL64 => 8,
+                // a v1 date in a block is a VecDateTimeValue, 8 bytes
+                T::BIGINT | T::DOUBLE | T::DATETIMEV2 | T::DECIMAL64 | T::DATE | T::DATETIME => 8,
                 _ => 16,
             };
             data + i64::from(nullable)

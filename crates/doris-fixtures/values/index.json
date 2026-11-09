@@ -643,5 +643,14 @@
       "TExprNodeType(9)/TPrimitiveType(6)"
     ],
     "suite": "compaction.test_compaction_uniq_keys_row_store.test_compaction_uniq_keys_row_store"
+  },
+  {
+    "dir": "60",
+    "kinds": [
+      "TExprNodeType(17)/TPrimitiveType(15)",
+      "TExprNodeType(7)/TPrimitiveType(10)",
+      "TExprNodeType(9)/TPrimitiveType(5)"
+    ],
+    "suite": "query_p0.sql_functions.conditional_functions.test_coalesce_new.test_coalesce_new"
   }
 ]
