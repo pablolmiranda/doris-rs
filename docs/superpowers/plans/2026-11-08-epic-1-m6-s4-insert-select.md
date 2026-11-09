@@ -28,6 +28,62 @@ oracle.
 user widened this story on 2026-11-08: "Fix them in story 4 too" (the 10 suites that fail for
 other reasons), and "Use crates" for the Parquet and ORC readers.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **The replays came first.** Task 5's four INSERT … SELECT replays (and `write:INSERT_SELECT`
+  in `supported.json`, which `extract-replays` needs) landed in Task 4. Task 4's tests then ran
+  on recorded plans, not hand-built ones. `extract-replays` now rejects only partial-update
+  writes.
+- **`TableSink::finish` takes the query's failure** (`Option<TStatus>`). A failed write
+  reports its counters and error log and commits nothing. Each instance keeps its routed rows,
+  and they are merged in instance order, so a write's rows are deterministic.
+- **Errors are counted per instance, as C++ does** (one `RuntimeState` per instance). The 52nd
+  error row of an instance cancels a zero-tolerance load, and the cancel names the sink's load
+  id. The report's URL and first error come from the first instance, in plan order, that
+  logged errors.
+- **Parquet without zstd.** The `parquet` crate is built with snap, flate2 and lz4. A
+  zstd-compressed file fails to read with an error. Parquet floats, dates, timestamps,
+  booleans and binary are refused, as are ORC types beyond ints, strings and decimals. C++'s
+  text for those types was not checked, and the gate's files hold none. An ORC CHAR reads
+  without its padding.
+- **The first full run (`m6-s4-full-1`) failed 7 out and 8 strict**, all in suites this story
+  freed. Fixed, each test-first against recorded loads:
+  - CSV enclose and escape follow `EncloseCsvLineReaderCtx` and
+    `_deserialize_nullable_string`, including a BOM. The BOM is stripped only before the
+    file's first line; C++ also strips one at a later block start, which no file produces.
+  - `csv_with_names` and `csv_with_names_and_types` replace `skip_lines`.
+  - A missing JSON key takes its column's default. The default is evaluated only when a key is
+    missing, so a load that always carries the key still works if its default is `now()`.
+  - The checker learned the FE's cut of an insert error to 511 characters, which it applies
+    only when the raw message is exactly 511 characters long.
+- **Five suites wait for story 5.** `test_current_date`, `test_get_stream_load_state` and both
+  `test_json_load_default*` need `now()` or `current_date()` in a load; `test_timezone` needs
+  a cast with a named time zone. They are in `needs_supplement.json` with their evidence, and
+  doris-rs refuses those loads (NOT_IMPLEMENTED) rather than loading wrong data. Eligible is
+  409, not 414. The `enable_date_conversion` group left the supplement.
+- **Fixes from the two reviews** (the final review, and a review of the run-1 fixes): every
+  finding was fixed, Minors included, each test-first; the ledger lists them. The main ones:
+  - Parquet logical types the record API does not render are refused.
+  - A v1 DATETIME drops its fraction.
+  - A write the FE cancels commits nothing.
+  - A table sink that cannot route is refused at prepare.
+  - A `\N` with an escape character set is NULL, not `N`.
+  - A quoted `\N`, or a quoted empty field with `empty_field_as_null`, is NULL.
+- **The full run.** `m6-s4-full-3`, on the final code: 409 eligible; 436 suites pass the out
+  gate (269 that reach the BE) and 328 the strict gate (248). That is 27 and 21 new passes,
+  with nothing lost. `test_coalesce_new` now fails at line 54, not 43.
+- **One eligible suite failed in that run:** `test_insert_partition_fail_url`. Its last insert
+  is cancelled for too many bad rows, on C++ (the replay's report `0058`) as on doris-rs, and
+  the two reports are equal. In the FE, `updateFragmentExecStatus` cancels the query, and so
+  wakes the insert thread, before `LoadProcessor` records the report's URL and first error.
+  The FE log shows the insert thread winning that race in the failed run and losing it in the
+  passing ones. The reference lost the same race in the twin suite `test_insert_strict_fail_url`
+  with the same message, which is why that suite is on the ignore list. No BE can close the
+  window. This suite passed in `m6-s4-full-1` and in three runs on its own, and it stays off
+  the ratchets. `test_move_column_with_cast` also stays off.
+
 ## Research
 
 **Recount** (`checker/derive.py`, supported = `scores/epic1-supported.json` + `write:INSERT_SELECT`,
@@ -188,7 +244,7 @@ reference.
     use it; `supported()` is unchanged and still gates reads.
   - The v1 type names are `"Date"` and `"DateTime"`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `doris-segment` `round_trips_every_type` gains a DATE and a DATETIME column, written from
     v2-packed `Datum::Int` and read back as the same values.
   - `v1_date_keys_encode_as_cpp`: the key bytes are the big-endian 3 bytes of `y<<9|m<<5|d` for
@@ -201,14 +257,14 @@ reference.
   - `v1_reads_stay_refused`: `ColType::supported()` is false for DATE/DATETIME.
   - Also: `corpus_rows_rewrite_equal` must cover the v1 columns of the corpus table `scalar_more`
     (`c_datev1`, `c_datetimev1`) once `field_type_of` knows their names. Check that it does.
-- [ ] **Step 2: Run them.** `cargo test -q -p doris-segment -p doris-exec --no-fail-fast`.
+- [x] **Step 2: Run them.** `cargo test -q -p doris-segment -p doris-exec --no-fail-fast`.
   Expected: they FAIL on "DATE"/"DATETIME" unsupported.
-- [ ] **Step 3: Implement** as in Research.
+- [x] **Step 3: Implement** as in Research.
   - Convert from v2-packed to v1 only in `value_bytes` and `encode_value`.
   - `to_datum` takes DATE through `parse_datev2` and DATETIME through `parse_datetimev2(s, 0)`.
   - `parse_text` gets arms for both.
-- [ ] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
-- [ ] **Step 5: Commit** ("M6 s4: v1 DATE/DATETIME writes").
+- [x] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
+- [x] **Step 5: Commit** ("M6 s4: v1 DATE/DATETIME writes").
 
 ### Task 2: Stream-load casts and `concat`
 
@@ -225,7 +281,7 @@ reference.
     argument is NULL, and casts each argument to a string first.
   - A decimal → CHAR/VARCHAR/STRING cast gives the value at full scale (`1234.0000`, `-0.5000`).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `a_string_with_a_fraction_casts_to_its_integer_part`: `"3.12"` → 3 for TINYINT through
     LARGEINT. `"3."` → 3. `"3.1x"`, `"x3"`, `"2e+128"` and `"2147483648"` (INT) → None.
     Cite `is_float_suffix` for the exact accepted suffix, and follow it.
@@ -238,12 +294,12 @@ reference.
   - `only_a_direct_column_with_a_value_filters_in_strict_mode`: test_stream_load_strict_mode load 21
     (columns `k01, k00=cast(concat('invalid', k01) as bigint)`, strict, ratio 0.3, its 10 rows).
     Expected: 7 loaded, 3 filtered, and k00 NULL on every row.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `parse_text` is shared with the insert path. C++'s non-strict cast uses
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** `parse_text` is shared with the insert path. C++'s non-strict cast uses
   the same `string_to_int` rule, so apply it once.
-- [ ] **Step 4: Run** the workspace tests and clippy. Expected: all PASS, including the existing
+- [x] **Step 4: Run** the workspace tests and clippy. Expected: all PASS, including the existing
   stream-load and insert tests.
-- [ ] **Step 5: Commit** ("M6 s4: stream-load casts and concat").
+- [x] **Step 5: Commit** ("M6 s4: stream-load casts and concat").
 
 ### Task 3: Parquet and ORC stream loads
 
@@ -269,7 +325,7 @@ reference.
   - A column the reader can't turn into text, such as a nested type or an unsupported physical or
     logical type, gives `ExecError::Unsupported` naming it.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `the_decimal_parquet_file_reads_as_cpp_text` and `the_decimal_orc_file_reads_as_cpp_text`: the
     5 rows of each fixture, as the text of the recorded rows (`replies` for test_load_with_decimal:
     sql1 and sql2 give the same rows). The ORC values stored at scale 0 come out at the column's
@@ -281,15 +337,15 @@ reference.
     - the streamLoadPut the FakeFe gets has `file_type` FILE_LOCAL, `format_type` FORMAT_PARQUET (6)
       or FORMAT_ORC (8), compress PLAIN, `file_size` equal to the body length, and a `path`;
     - the reply is Success 5/5/0.
-- [ ] **Step 2: Run them.** Expected: FAIL (no module; format refused).
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run them.** Expected: FAIL (no module; format refused).
+- [x] **Step 3: Implement.**
   - `columnar.rs` over the `parquet` row API without arrow, and over orc-rust's arrow batches.
   - Decimal text: the unscaled i128 printed at the scale.
   - `stream_rows` takes the Parquet/ORC rows into the same source-row path as CSV/JSON.
   - `put_request` mirrors C++ for these formats. The `path` follows the recorded PUT's form
     (`<root>/mini_download/…`); the FE only echoes it, and doris-rs reads the body from memory.
-- [ ] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
-- [ ] **Step 5: Commit** ("M6 s4: Parquet and ORC stream loads").
+- [x] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
+- [x] **Step 5: Commit** ("M6 s4: Parquet and ORC stream loads").
 
 ### Task 4: INSERT … SELECT
 
@@ -332,7 +388,7 @@ reference.
   - `ExecCtx.table: &TableFn`, where `type TableFn<'a> = dyn Fn(usize /*fragment*/, usize
     /*instance*/, Block) -> Result<(), ExecError> + Sync + 'a`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `sink.rs`:
     - `a_table_sink_fed_by_two_instances_commits_once`: 2 instances push 2 rows and 1 row.
       Expected: one commit over every tablet of the touched partition, `dpp.norm.ALL`=3, and two
@@ -358,8 +414,8 @@ reference.
     - `the_statistics_delete_is_refused_naming_partial_update`: the S0 shape is refused at prepare
       with "partial update".
   - `doris-be/tests/insert.rs`: `a_values_insert_still_goes_to_the_load_service`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
   - `run_sink` becomes `TableSink::new` + one `push` + `finish`, so VALUES and stream loads keep
     their behaviour, plus the C++ report shape:
     - counters and instance reports only when there were rows;
@@ -373,8 +429,8 @@ reference.
     fields.
   - On failure, every fragment's report is LOAD when the plan writes, and the sink commits nothing.
   - SELECT queries keep reporting nothing on success.
-- [ ] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
-- [ ] **Step 5: Commit** ("M6 s4: INSERT … SELECT").
+- [x] **Step 4: Run** the workspace tests and clippy. Expected: all PASS.
+- [x] **Step 5: Commit** ("M6 s4: INSERT … SELECT").
 
 ### Task 5: Replays and features
 
@@ -389,16 +445,16 @@ reference.
 - Test: `crates/doris-fixtures/tests/replays.rs` (`INSERT_SELECTS`), `crates/doris-be/tests/replay.rs`
   (`insert_selects_match_the_reference`)
 
-- [ ] **Step 1:** Allow `write:INSERT_SELECT` suites in extract-replays, then extract the four.
+- [x] **Step 1:** Allow `write:INSERT_SELECT` suites in extract-replays, then extract the four.
   Ledger each that won't extract, with its reason.
-- [ ] **Step 2: Write the failing test** `insert_selects_match_the_reference`. Expected: every
+- [x] **Step 2: Write the failing test** `insert_selects_match_the_reference`. Expected: every
   replayed query's rows equal the reference's, and every write fragment's report commits the same
   tablets as the reference's. Run it. Expected: PASS on Task 4's code. A replay that fails is a
   finding to fix, not to drop.
-- [ ] **Step 3:** Update supported.json and the supplement, then recount with `derive`. Expected:
+- [x] **Step 3:** Update supported.json and the supplement, then recount with `derive`. Expected:
   eligible 414.
-- [ ] **Step 4: Run** the workspace tests, clippy and `make -C oracle test`. Expected: all PASS.
-- [ ] **Step 5: Commit** ("M6 s4: INSERT … SELECT replays and features").
+- [x] **Step 4: Run** the workspace tests, clippy and `make -C oracle test`. Expected: all PASS.
+- [x] **Step 5: Commit** ("M6 s4: INSERT … SELECT replays and features").
 
 ### Task 6: Gate, docs, As built
 
@@ -407,13 +463,13 @@ reference.
 - Modify: `oracle/README.md` (an M6 story 4 paragraph; the supplement paragraph loses the
   `enable_date_conversion` group), this plan (As built)
 
-- [ ] **Step 1:** Make sure no BE holds the ports. Reset the FE (`make fe-down`, remove
+- [x] **Step 1:** Make sure no BE holds the ports. Reset the FE (`make fe-down`, remove
   `/tmp/doris-rs-oracle/storage`, `make fe-up`), start `make rust-be` with nohup, and run
   `RUN_ID=m6-s4-full-1 make epic-check TARGET=rust`. Expected: `eligible: 414; failing out-gate: 0;
   failing strict: 0`. Also check that `test_coalesce_new` now fails at line 54, not 43. Triage any
   failure with superpowers:systematic-debugging.
-- [ ] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
+- [x] **Step 2:** Stop the BE. Regenerate the ratchets from the grade, leaving out
   `test_move_column_with_cast`. Run `make -C oracle test`, then `readback-check`, then
   `swap-check`. Run them one at a time: they share the FE container. Expected: all PASS.
-- [ ] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
-- [ ] **Step 4: Commit** ("M6 s4: gate, docs, As built").
+- [x] **Step 3:** Write the README paragraph and the As built section, with the run's numbers.
+- [x] **Step 4: Commit** ("M6 s4: gate, docs, As built").

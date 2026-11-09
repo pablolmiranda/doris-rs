@@ -124,6 +124,24 @@ instances is refused at run time when its float partition keys hold both -0.0 an
 the exchange hashes them apart. The global phase of `PARTITION_SORT_NODE` is refused; the FE
 sends only the local phase in the gate suites.
 
+After Milestone 6 story 4 (INSERT … SELECT: the OLAP table sink in the query pipeline, with
+v1 DATE/DATETIME writes, stream-load casts, Parquet and ORC stream loads, CSV enclose and
+escape, `csv_with_names`, and JSON column defaults; run `m6-s4-full-3`, 2026-11-09): 409
+eligible suites; 436 Epic 1 suites pass the out gate (269 of those that reach the BE) and 328
+the strict gate (248). The `state:fe enable_date_conversion=true` group is gone from the
+supplement: doris-rs now writes the v1 DATE columns `test_coalesce_new` leaves behind. Five
+suites join it one by one instead, each with its evidence: `test_current_date`,
+`test_get_stream_load_state` and the two `test_json_load_default*` need `now()` or
+`current_date()` in a load, and `test_timezone` a cast with a named time zone. Those are story
+5's functions. One eligible suite failed in the run: `test_insert_partition_fail_url`. Its
+last insert is cancelled for too many bad rows, on C++ as on doris-rs, and the FE words the
+error before it has read the report's error-log URL about half the time under load. The two
+FE threads race (`AbstractJobProcessor.updateFragmentExecStatus` cancels before
+`LoadProcessor` records the URL). The reference lost the same race in the twin suite
+`test_insert_strict_fail_url`, which is why that one is on the ignore list. The suite passed
+in `m6-s4-full-1` and in three runs on its own, and stays off the ratchets. The checker also
+learned the FE's cut of an insert error to 511 characters.
+
 The older directory-level gate also works against any target:
 
 ```
