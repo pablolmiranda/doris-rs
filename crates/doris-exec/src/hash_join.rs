@@ -70,6 +70,18 @@ pub struct HashJoin<'a> {
     pub mark: bool,
     pub other: Option<&'a Cond<'a>>,
     pub mark_conj: Option<&'a Cond<'a>>,
+    /// ASOF joins: the `match_condition` op, and the index of the ASOF value in the keys (after
+    /// the eq keys).
+    pub asof: Option<(AsofOp, usize)>,
+}
+
+/// An ASOF `match_condition`: `probe OP build`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AsofOp {
+    Ge,
+    Gt,
+    Le,
+    Lt,
 }
 
 /// A key value as C++ compares it: by its bits.
@@ -128,9 +140,9 @@ pub fn hash_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum
     let unsupported = |what: &str| Err(ExecError::Unsupported { what: what.to_string() });
     match j.op {
         Cross => return unsupported("a HASH_JOIN_NODE with the CROSS_JOIN op"),
-        AsofLeftInner | AsofLeftOuter => return unsupported("an ASOF join"),
-        NullAwareLeftSemi if !j.mark => return unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join"),
-        _ if j.mark => return unsupported("a mark join"),
+        AsofLeftInner | AsofLeftOuter => return asof_join(j, probe, build),
+        _ if j.mark => return mark_join(j, probe, build),
+        NullAwareLeftSemi => return unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join"),
         _ => {}
     }
     let (pw, bw) = (probe.width, build.width);
@@ -224,6 +236,197 @@ pub fn hash_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum
     Ok(out)
 }
 
+/// An ASOF join's `match_condition` (`probe OP build`): its op and its two sides.
+pub fn asof_condition(e: &doris_thrift::gen::exprs::TExpr) -> Result<(AsofOp, TExprPair), ExecError> {
+    let root = e
+        .nodes
+        .first()
+        .ok_or_else(|| ExecError::BadRequest("an empty ASOF match condition".into()))?;
+    let name = root.fn_.as_ref().map(|f| f.name.function_name.to_ascii_lowercase()).unwrap_or_default();
+    let how = match name.as_str() {
+        "ge" => AsofOp::Ge,
+        "gt" => AsofOp::Gt,
+        "le" => AsofOp::Le,
+        "lt" => AsofOp::Lt,
+        _ => {
+            return Err(ExecError::Unsupported {
+                what: format!("an ASOF match condition {name:?}"),
+            })
+        }
+    };
+    if root.num_children != 2 {
+        return Err(ExecError::BadRequest("an ASOF match condition without two sides".into()));
+    }
+    let mid = crate::aggregate::subtree_end(&e.nodes, 1)?;
+    let end = crate::aggregate::subtree_end(&e.nodes, mid)?;
+    let side = |a: usize, b: usize| doris_thrift::gen::exprs::TExpr {
+        nodes: e.nodes[a..b].to_vec(),
+    };
+    Ok((how, (side(1, mid), side(mid, end))))
+}
+
+/// The probe and build sides of a comparison.
+pub type TExprPair = (doris_thrift::gen::exprs::TExpr, doris_thrift::gen::exprs::TExpr);
+
+/// A mark join (`process_hash_table_probe_impl.h:741-892`): every probe row once, with its mark
+/// last. The mark is TRUE when some candidate passes; else NULL when the join is null-aware and
+/// the probe key or a build key is NULL, or a candidate's conjuncts were NULL; else FALSE. An empty
+/// build side gives FALSE. Anti joins flip TRUE and FALSE.
+fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, ExecError> {
+    use JoinOp::*;
+    let null_aware = matches!(j.op, NullAwareLeftAnti | NullAwareLeftSemi);
+    let anti = match j.op {
+        LeftSemi | NullAwareLeftSemi => false,
+        LeftAnti | NullAwareLeftAnti => true,
+        other => {
+            return Err(ExecError::Unsupported {
+                what: format!("a mark join with op {other:?}"),
+            })
+        }
+    };
+    let (pw, bw) = (probe.width, build.width);
+    let mut chains: HashMap<Vec<Bits>, Vec<usize>> = HashMap::new();
+    let mut null_keyed = Vec::new();
+    for (i, k) in build.keys.iter().enumerate() {
+        match key(k, &j.null_safe) {
+            Some(k) => chains.entry(k).or_default().push(i),
+            None => null_keyed.push(i),
+        }
+    }
+    let build_null = !null_keyed.is_empty();
+    // each probe row's candidate pairs: (build row, whether the pair came from a NULL key)
+    let mut candidates: Vec<Vec<(usize, bool)>> = Vec::with_capacity(probe.rows.len());
+    let mut probe_null = Vec::with_capacity(probe.rows.len());
+    for k in &probe.keys {
+        let k = key(k, &j.null_safe);
+        probe_null.push(k.is_none());
+        let mut c: Vec<(usize, bool)> = match &k {
+            Some(k) => chains.get(k).map(|c| c.iter().rev().map(|b| (*b, false)).collect()).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        // null-aware with other conjuncts also tries the NULL-keyed build rows, and a NULL probe
+        // key every build row, each as a NULL comparison (PI:631-652, 783-786)
+        if null_aware && j.other.is_some() {
+            match k {
+                Some(_) => c.extend(null_keyed.iter().map(|b| (*b, true))),
+                None => c = (0..build.rows.len()).map(|b| (b, true)).collect(),
+            }
+        }
+        candidates.push(c);
+    }
+    let pairs: Vec<Vec<Datum>> = candidates
+        .iter()
+        .enumerate()
+        .flat_map(|(p, c)| c.iter().map(move |(b, _)| (p, *b)))
+        .map(|(p, b)| joined(Some(&probe.rows[p]), pw, Some(&build.rows[b]), bw))
+        .collect();
+    let eval = |cond: Option<&Cond>| -> Result<Vec<Option<bool>>, ExecError> {
+        match cond {
+            Some(c) if !pairs.is_empty() => c(&pairs),
+            _ => Ok(vec![Some(true); pairs.len()]),
+        }
+    };
+    let (other, mark_conj) = (eval(j.other)?, eval(j.mark_conj)?);
+    let mut at = 0;
+    let mut out = Vec::with_capacity(probe.rows.len());
+    for (p, c) in candidates.iter().enumerate() {
+        let mut found = false;
+        let mut null = false;
+        for (_, from_null) in c {
+            let v = and3(other[at], mark_conj[at]);
+            at += 1;
+            if *from_null {
+                // a NULL comparison: NULL unless the other conjuncts are false
+                null |= v != Some(false);
+            } else if v == Some(true) {
+                found = true;
+            } else if v.is_none() {
+                null = true;
+            }
+        }
+        let mark = if build.rows.is_empty() {
+            Some(false)
+        } else if found {
+            Some(true)
+        } else if null || (null_aware && j.other.is_none() && (probe_null[p] || build_null)) {
+            None
+        } else {
+            Some(false)
+        };
+        let mark = mark.map(|m| m != anti);
+        let mut row = joined(Some(&probe.rows[p]), pw, None, bw);
+        row.push(mark.map_or(Datum::Null, Datum::Bool));
+        out.push(row);
+    }
+    Ok(out)
+}
+
+/// Three-valued AND.
+fn and3(a: Option<bool>, b: Option<bool>) -> Option<bool> {
+    match (a, b) {
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (Some(true), Some(true)) => Some(true),
+        _ => None,
+    }
+}
+
+/// An ASOF join (`exec/common/join_utils.h:255-320`): per probe row, of the build rows with its
+/// eq keys, the one nearest its ASOF value on the `match_condition`'s side. A NULL key or value
+/// matches nothing. C++ breaks a tie on the ASOF value with an unstable sort; doris-rs refuses
+/// a tie between rows that differ.
+fn asof_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, ExecError> {
+    let (how, at) = j
+        .asof
+        .ok_or_else(|| ExecError::BadRequest("an ASOF join without its match condition".into()))?;
+    let (pw, bw) = (probe.width, build.width);
+    let value = |k: &[Datum]| match k.get(at) {
+        Some(Datum::Int(v)) => Some(*v),
+        _ => None,
+    };
+    let mut chains: HashMap<Vec<Bits>, Vec<(i128, usize)>> = HashMap::new();
+    for (i, k) in build.keys.iter().enumerate() {
+        if let (Some(eq), Some(v)) = (key(&k[..at.min(k.len())], &j.null_safe), value(k)) {
+            chains.entry(eq).or_default().push((v, i));
+        }
+    }
+    let mut out = Vec::new();
+    for (p, k) in probe.keys.iter().enumerate() {
+        let row = Some(&probe.rows[p]);
+        let found = match (key(&k[..at.min(k.len())], &j.null_safe), value(k)) {
+            (Some(eq), Some(v)) => chains.get(&eq).and_then(|c| {
+                let fits = |b: i128| match how {
+                    AsofOp::Ge => b <= v,
+                    AsofOp::Gt => b < v,
+                    AsofOp::Le => b >= v,
+                    AsofOp::Lt => b > v,
+                };
+                let better = |a: i128, b: i128| if matches!(how, AsofOp::Ge | AsofOp::Gt) { a > b } else { a < b };
+                let best = c
+                    .iter()
+                    .filter(|(b, _)| fits(*b))
+                    .map(|(b, _)| *b)
+                    .reduce(|x, y| if better(y, x) { y } else { x })?;
+                Some(c.iter().filter(|(b, _)| *b == best).map(|(_, i)| *i).collect::<Vec<_>>())
+            }),
+            _ => None,
+        };
+        match found {
+            Some(rows) => {
+                let first = rows[0];
+                if rows.iter().any(|r| build.rows[*r] != build.rows[first]) {
+                    return Err(ExecError::Unsupported {
+                        what: "an ASOF match among equal values".into(),
+                    });
+                }
+                out.push(joined(row, pw, Some(&build.rows[first]), bw));
+            }
+            None if j.op == JoinOp::AsofLeftOuter => out.push(joined(row, pw, None, bw)),
+            None => {}
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +463,7 @@ mod tests {
             mark: false,
             other: None,
             mark_conj: None,
+            asof: None,
         }
     }
 
@@ -390,5 +594,124 @@ mod tests {
         assert!(run(&j, &[Some(2), None], &[Some(1), None]).is_empty());
         assert_eq!(run(&j, &[None, Some(1)], &[]), [(Some(0), None), (Some(1), None)]);
         assert_eq!(run(&j, &[None, Some(2), Some(1)], &[Some(1)]), [(Some(1), None)]);
+    }
+
+    /// The mark (the last column) of each output row.
+    fn marks(j: &HashJoin, probe: &[Option<i128>], build: &[Option<i128>]) -> Vec<Option<bool>> {
+        hash_join(j, side(probe), side(build))
+            .unwrap()
+            .iter()
+            .map(|r| match r.last() {
+                Some(Datum::Bool(b)) => Some(*b),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn marked(op: JoinOp) -> HashJoin<'static> {
+        HashJoin { mark: true, ..join(op) }
+    }
+
+    #[test]
+    fn mark_semi_three_valued() {
+        let j = marked(JoinOp::NullAwareLeftSemi);
+        assert_eq!(marks(&j, &[Some(1), Some(2), None], &[Some(1), None]), [Some(true), None, None]);
+        assert_eq!(marks(&j, &[Some(2)], &[Some(1)]), [Some(false)]);
+        assert_eq!(marks(&j, &[None], &[]), [Some(false)]);
+    }
+
+    #[test]
+    fn mark_anti_flips() {
+        let j = marked(JoinOp::NullAwareLeftAnti);
+        assert_eq!(marks(&j, &[Some(1), Some(2), None], &[Some(1), None]), [Some(false), None, None]);
+        assert_eq!(marks(&j, &[Some(2)], &[Some(1)]), [Some(true)]);
+        assert_eq!(marks(&j, &[None], &[]), [Some(true)]);
+    }
+
+    fn null_cond(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+        Ok(vec![None; rows.len()])
+    }
+
+    #[test]
+    fn mark_with_conjunct_null_is_null() {
+        let j = HashJoin {
+            mark_conj: Some(&null_cond),
+            ..marked(JoinOp::LeftSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1), Some(2)], &[Some(1)]), [None, Some(false)]);
+    }
+
+    #[test]
+    fn mark_emits_every_probe_row_once() {
+        let got = hash_join(&marked(JoinOp::LeftSemi), side(&[Some(3), Some(1), None]), side(&[Some(1), Some(1)])).unwrap();
+        assert_eq!(got.len(), 3);
+        assert_eq!(got.iter().map(|r| idx(&r[1])).collect::<Vec<_>>(), [Some(0), Some(1), Some(2)]);
+        assert_eq!(
+            got.iter().map(|r| r.last().cloned()).collect::<Vec<_>>(),
+            [Some(Datum::Bool(false)), Some(Datum::Bool(true)), Some(Datum::Bool(false))]
+        );
+    }
+
+    /// Rows `[k, v, x]` keyed on k, with v the ASOF value as the last key.
+    fn asof_side(rows: &[(i128, Option<i128>, &str)]) -> Side {
+        Side {
+            rows: rows
+                .iter()
+                .map(|(k, v, x)| vec![Datum::Int(*k), v.map_or(Datum::Null, Datum::Int), Datum::Bytes(x.as_bytes().to_vec())])
+                .collect(),
+            keys: rows
+                .iter()
+                .map(|(k, v, _)| vec![Datum::Int(*k), v.map_or(Datum::Null, Datum::Int)])
+                .collect(),
+            width: 3,
+        }
+    }
+
+    fn asof(op: JoinOp, how: AsofOp) -> HashJoin<'static> {
+        HashJoin {
+            asof: Some((how, 1)),
+            ..join(op)
+        }
+    }
+
+    /// The build x of each output row.
+    fn picked(j: &HashJoin, probe: &[(i128, Option<i128>, &str)], build: &[(i128, Option<i128>, &str)]) -> Vec<Option<String>> {
+        hash_join(j, asof_side(probe), asof_side(build))
+            .unwrap()
+            .iter()
+            .map(|r| match &r[5] {
+                Datum::Bytes(b) => Some(String::from_utf8_lossy(b).into_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn asof_picks_the_nearest() {
+        let build = [(1, Some(5), "b5"), (1, Some(9), "b9"), (1, Some(12), "b12"), (2, Some(10), "other")];
+        let probe = [(1, Some(10), "p")];
+        let one = |how, p: &[(i128, Option<i128>, &str)]| picked(&asof(JoinOp::AsofLeftInner, how), p, &build);
+        assert_eq!(one(AsofOp::Ge, &probe), [Some("b9".to_string())]);
+        assert_eq!(one(AsofOp::Gt, &probe), [Some("b9".to_string())]);
+        assert_eq!(one(AsofOp::Le, &probe), [Some("b12".to_string())]);
+        assert_eq!(one(AsofOp::Lt, &probe), [Some("b12".to_string())]);
+        assert_eq!(one(AsofOp::Gt, &[(1, Some(9), "p")]), [Some("b5".to_string())]);
+        assert_eq!(one(AsofOp::Ge, &[(1, Some(9), "p")]), [Some("b9".to_string())]);
+        // no match: dropped by INNER, NULL-extended by OUTER; a NULL value never matches
+        assert!(one(AsofOp::Lt, &[(1, Some(12), "p")]).is_empty());
+        let outer = picked(&asof(JoinOp::AsofLeftOuter, AsofOp::Lt), &[(1, Some(12), "p"), (1, None, "q")], &build);
+        assert_eq!(outer, [None, None]);
+    }
+
+    #[test]
+    fn asof_tie_is_refused() {
+        let j = asof(JoinOp::AsofLeftInner, AsofOp::Ge);
+        let err = hash_join(&j, asof_side(&[(1, Some(10), "p")]), asof_side(&[(1, Some(9), "a"), (1, Some(9), "b")])).unwrap_err();
+        assert!(
+            matches!(&err, ExecError::Unsupported { what } if what.contains("an ASOF match among equal values")),
+            "{err:?}"
+        );
+        let same = picked(&j, &[(1, Some(10), "p")], &[(1, Some(9), "a"), (1, Some(9), "a")]);
+        assert_eq!(same, [Some("a".to_string())]);
     }
 }

@@ -425,10 +425,22 @@ fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
     let mark = h.is_mark == Some(true);
     match op {
         JoinOp::Cross => return Err(unsupported("a HASH_JOIN_NODE with join op CROSS_JOIN")),
-        JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter => return Err(unsupported("an ASOF join")),
         JoinOp::NullAwareLeftSemi if !mark => return Err(unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join")),
-        _ if mark => return Err(unsupported("a mark join")),
+        JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti | JoinOp::NullAwareLeftSemi => {}
+        _ if mark => return Err(unsupported(format!("a mark join with join op {}", join_op_name(h.join_op)))),
         _ => {}
+    }
+    if matches!(op, JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter) {
+        use doris_thrift::gen::types::TPrimitiveType as T;
+        let m = h.match_condition.as_ref().ok_or_else(|| ExecError::BadRequest("an ASOF join without its match condition".into()))?;
+        let (_, (p, b)) = crate::hash_join::asof_condition(m)?;
+        for side in [&p, &b] {
+            let ty = side.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true));
+            if !ty.is_some_and(|t| matches!(t.ptype, T::DATEV2 | T::DATETIMEV2)) {
+                return Err(unsupported("an ASOF match on a type other than DATEV2 or DATETIMEV2"));
+            }
+        }
+        check_exprs([&p, &b], false)?;
     }
     if h.vintermediate_tuple_id_list.as_ref().is_none_or(Vec::is_empty) {
         return Err(ExecError::BadRequest("a HASH_JOIN_NODE without its intermediate tuples".into()));

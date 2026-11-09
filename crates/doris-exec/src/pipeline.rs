@@ -329,11 +329,20 @@ impl Instance<'_> {
             return self.chunk_of(Vec::new(), &slots);
         }
         let probe = self.child(t, 0)?;
+        // an ASOF join's value is the last key
+        let asof = match (&h.match_condition, matches!(op, JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter)) {
+            (Some(m), true) => Some(crate::hash_join::asof_condition(m)?),
+            (None, true) => return Err(ExecError::BadRequest("an ASOF join without its match condition".into())),
+            _ => None,
+        };
         let keys = |c: &Chunk, left: bool| -> Result<Vec<Vec<Datum>>, ExecError> {
             let map = slot_map(&c.slots);
-            let mut cols = Vec::with_capacity(h.eq_join_conjuncts.len());
+            let mut cols = Vec::with_capacity(h.eq_join_conjuncts.len() + 1);
             for e in &h.eq_join_conjuncts {
                 cols.push(eval_column(if left { &e.left } else { &e.right }, &c.block, &map)?.1);
+            }
+            if let Some((_, (p, b))) = &asof {
+                cols.push(eval_column(if left { p } else { b }, &c.block, &map)?.1);
             }
             Ok((0..c.block.len()).map(|r| cols.iter().map(|col| col[r].clone()).collect()).collect())
         };
@@ -373,6 +382,7 @@ impl Instance<'_> {
             mark,
             other: (!other_exprs.is_empty()).then_some(&other as &crate::hash_join::Cond),
             mark_conj: (!mark_exprs.is_empty()).then_some(&mark_conj as &crate::hash_join::Cond),
+            asof: asof.as_ref().map(|(how, _)| (*how, h.eq_join_conjuncts.len())),
         };
         let probe_side = Side { keys: keys(&probe, true)?, rows: probe.block.rows, width: pw };
         let build_side = Side { keys: keys(&build, false)?, rows: build.block.rows, width: bw };
