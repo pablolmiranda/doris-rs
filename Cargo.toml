@@ -54,5 +54,7 @@ fs4 = "1"
 # Parquet and ORC stream loads: no arrow for Parquet; orc-rust reads into arrow arrays
 parquet = { version = "53", default-features = false, features = ["snap", "flate2", "lz4"] }
 orc-rust = { version = "0.6", default-features = false }
+# decimal products past 128 bits (M6 s5)
+ethnum = "1"
 arrow-array = { version = "56", default-features = false }
 arrow-schema = { version = "56", default-features = false }

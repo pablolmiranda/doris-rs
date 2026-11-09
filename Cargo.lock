@@ -473,6 +473,7 @@ dependencies = [
  "doris-segment",
  "doris-storage",
  "doris-thrift",
+ "ethnum",
  "flate2",
  "orc-rust",
  "parquet",
@@ -607,6 +608,12 @@ dependencies = [
  "libc",
  "windows-sys",
 ]
+
+[[package]]
+name = "ethnum"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 
 [[package]]
 name = "fallible-streaming-iterator"

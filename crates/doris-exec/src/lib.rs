@@ -4,6 +4,7 @@
 
 pub mod aggregate;
 pub mod analytic;
+pub mod arith;
 pub mod block;
 pub mod columnar;
 pub mod error_log;
@@ -42,6 +43,10 @@ pub enum ExecError {
     /// A query that failed while it ran (an overflow, a malformed value).
     #[error("{0}")]
     Internal(String),
+    /// A query failure with the C++ BE's own status: the `TStatusCode` value it sends, and the
+    /// code name it prints in `[...]` (`Status::to_thrift`).
+    #[error("{msg}")]
+    Coded { code: i32, name: &'static str, msg: String },
 }
 
 /// A row the sink filters: the C++ error message, and the source line (empty for VALUES).

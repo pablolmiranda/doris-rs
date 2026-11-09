@@ -30,9 +30,22 @@ fn function_name(n: &TExprNode) -> Option<String> {
         .map(|f| f.name.function_name.to_ascii_lowercase())
 }
 
+/// A call's argument types (from its `TFunction`) and result type (the node's).
+fn signature(n: &TExprNode) -> Option<(Vec<ColType>, ColType)> {
+    let f = n.fn_.as_ref()?;
+    let args = f.arg_types.iter().map(|t| ColType::from_type_desc("", t, true)).collect::<Option<Vec<_>>>()?;
+    Some((args, ColType::from_type_desc("", &n.type_, true)?))
+}
+
+/// A call `arith::arithmetic_supported` accepts, by its name and signature.
+fn arithmetic_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::arith::arithmetic_supported(&name, &args, &to)
+}
+
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
-        Some(f) if n.node_type == N::FUNCTION_CALL || n.node_type == N::AGG_EXPR => {
+        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
             format!("function {f}")
         }
         _ => format!("expression {}", node_name(n)),
@@ -103,10 +116,12 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                         | TExprOpcode::COMPOUND_NOT
                 )
             ),
-            N::FUNCTION_CALL => matches!(
-                function_name(n).as_deref(),
-                Some("substring" | "is_null_pred" | "is_not_null_pred")
-            ),
+            N::ARITHMETIC_EXPR => arithmetic_call(n),
+            N::FUNCTION_CALL => match function_name(n).as_deref() {
+                Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
+                Some("abs") => arithmetic_call(n),
+                _ => false,
+            },
             N::AGG_EXPR => {
                 aggregates && AGGREGATES.contains(&function_name(n).unwrap_or_default().as_str())
             }
@@ -371,7 +386,20 @@ fn eval_at(
             });
             (boolean(), bools(out))
         }
+        N::ARITHMETIC_EXPR => {
+            let to = node_type(n)?;
+            let op = function_name(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
+            let [(ta, a), (tb, b)] = <[_; 2]>::try_from(kids).map_err(|_| bad(format!("{op} needs two arguments")))?;
+            let out = crate::arith::arithmetic(&op, (&ta, &a), (&tb, &b), &to)?;
+            (to, out)
+        }
         N::FUNCTION_CALL => match function_name(n).as_deref() {
+            Some("abs") => {
+                let to = node_type(n)?;
+                let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
+                let out = crate::arith::abs((ta, a), &to)?;
+                (to, out)
+            }
             Some(f @ ("is_null_pred" | "is_not_null_pred")) => {
                 let (_, v) = kids
                     .first()

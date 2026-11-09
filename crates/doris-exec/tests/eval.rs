@@ -280,3 +280,33 @@ fn text_against_a_number_is_refused() {
         assert!(err.contains("text against"), "{err}");
     }
 }
+
+/// An ARITHMETIC_EXPR, as the FE sends it: a call node of that type (decimal ones carry no opcode).
+fn arith(name: &str, ret: doris_thrift::gen::types::TTypeDesc, args: Vec<doris_thrift::gen::exprs::TExpr>) -> doris_thrift::gen::exprs::TExpr {
+    let mut e = call(name, ret, args);
+    e.nodes[0].node_type = doris_thrift::gen::exprs::TExprNodeType::ARITHMETIC_EXPR;
+    e
+}
+
+#[test]
+fn arithmetic_and_abs_evaluate() {
+    let big = ty(T::BIGINT);
+    assert_eq!(one_row(arith("add", big.clone(), vec![int(2, big.clone()), int(3, big.clone())])), Datum::Int(5));
+    let d = scalar(T::DECIMAL128I, -1, 38, 12);
+    let e = arith(
+        "multiply",
+        d,
+        vec![decimal("0.000000001", scalar(T::DECIMAL128I, -1, 27, 9)), decimal("0.00050000", scalar(T::DECIMAL64, -1, 16, 8))],
+    );
+    assert_eq!(one_row(e), Datum::Int(1));
+    let e = call("abs", ty(T::LARGEINT), vec![int(i64::MIN, big.clone())]);
+    assert_eq!(one_row(e), Datum::Int(9_223_372_036_854_775_808));
+}
+
+#[test]
+fn unlisted_arithmetic_is_refused() {
+    let d = scalar(T::DECIMAL128I, -1, 38, 2);
+    let e = arith("add", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.00", d)]);
+    let err = check_read(&e).expect_err("decimal add is not supported").to_string();
+    assert!(err.contains("function add"), "{err}");
+}

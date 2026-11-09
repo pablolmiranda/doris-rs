@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use doris_thrift::gen::data_sinks::{TDataSink, TDataSinkType, TDataStreamSink, TMultiCastDataStreamSink, TPlanFragmentDestination};
 use doris_thrift::gen::descriptors::TDescriptorTable;
-use doris_thrift::gen::exprs::TExpr;
+use doris_thrift::gen::exprs::{TExpr, TExprNodeType};
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
 use doris_thrift::gen::partitions::TPartitionType;
 use doris_thrift::gen::plan_nodes::{TPlanNode, TPlanNodeType as P, TSortInfo, TopNAlgorithm};
@@ -138,6 +138,9 @@ pub struct QueryPlan {
     pub binary_rows: bool,
     /// `dry_run_query`: the result sink counts rows and sends none.
     pub dry_run: bool,
+    /// Arithmetic under `check_overflow_for_decimal` false, whose decimal multiply rounds
+    /// differently (`F/multiply.cpp:401-422`); the FE always sends true.
+    pub unchecked_arithmetic: bool,
 }
 
 impl QueryPlan {
@@ -228,6 +231,8 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
         parallel_result_sink: o.and_then(|o| o.enable_parallel_result_sink).unwrap_or(true),
         binary_rows: o.and_then(|o| o.mysql_row_binary_format).unwrap_or(false),
         dry_run: o.and_then(|o| o.dry_run_query).unwrap_or(false),
+        unchecked_arithmetic: o.and_then(|o| o.check_overflow_for_decimal) == Some(false)
+            && format!("{list:?}").contains(&format!("node_type: {:?}", TExprNodeType::ARITHMETIC_EXPR)),
     })
 }
 
@@ -712,6 +717,9 @@ fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
 pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
     if plan.binary_rows {
         return Err(unsupported("results in the MySQL binary row format"));
+    }
+    if plan.unchecked_arithmetic {
+        return Err(unsupported("arithmetic with check_overflow_for_decimal off"));
     }
     for f in &plan.fragments {
         for n in f.root.nodes() {

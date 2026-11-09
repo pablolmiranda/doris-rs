@@ -28,6 +28,8 @@ orc-rust = { workspace = true }
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true }
 bytes = { workspace = true }
+# decimal products past 128 bits
+ethnum = { workspace = true }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }
