@@ -553,3 +553,106 @@ fn window_functions_match_the_reference() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+/// A suite replayed up to its first INSERT … SELECT: its tables created and loaded, and that
+/// request, not yet sent.
+fn before_insert_select(suite: &str) -> (Be, doris_proto::doris::PExecPlanFragmentRequest, TPipelineFragmentParamsList) {
+    let r = replays::load(suite);
+    let be = be();
+    let replies = Mutex::new(r.fe_replies());
+    be.fe.answer_from(Box::new(move |method, call| replies.lock().unwrap().reply(method, call)));
+    for s in &r.steps {
+        match s {
+            Step::SubmitTasks(tasks) => {
+                be.agent.submit_tasks(tasks.clone());
+                assert!(be.agent.wait_idle(Duration::from_secs(60)));
+            }
+            Step::ExecPlanFragment { request, .. } if is_write(request) => {
+                assert_eq!(be.load.exec_plan_fragment(request).status.status_code, 0);
+                assert!(be.load.wait_idle(Duration::from_secs(60)));
+            }
+            Step::ExecPlanFragment { request, .. } => {
+                if let Some(plan) = plan_list(request).filter(writes_table) {
+                    return (be, request.clone(), plan);
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("{suite}: no INSERT … SELECT");
+}
+
+fn exec_reports(be: &Be) -> Vec<TReportExecStatusParams> {
+    be.fe
+        .load_calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            doris_be::testing::LoadCall::ExecStatus(_, p) => Some(p),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The FE cancels a write while it runs (`insert_timeout`, KILL): nothing is committed, and
+/// every fragment reports CANCELLED, with no commit infos.
+#[test]
+fn a_write_the_fe_cancels_commits_nothing() {
+    let (be, req, plan) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let before = exec_reports(&be).len();
+    let qid = query_id(&plan);
+    {
+        // the instances wait on the tablets while the cancel arrives
+        let _held = be.tablets.lock().unwrap();
+        assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+        std::thread::sleep(Duration::from_millis(200));
+        be.query.cancel(&doris_proto::doris::PCancelPlanFragmentRequest {
+            finst_id: doris_proto::doris::PUniqueId { hi: qid.0, lo: qid.1 },
+            query_id: Some(doris_proto::doris::PUniqueId { hi: qid.0, lo: qid.1 }),
+            cancel_status: Some(doris_proto::doris::PStatus { status_code: 1, error_msgs: vec!["insert timeout".into()] }),
+            ..Default::default()
+        });
+    }
+    assert!(be.query.wait_idle(Duration::from_secs(30)));
+    let reports = &exec_reports(&be)[before..];
+    assert_eq!(reports.len(), plan.params_list.as_ref().unwrap().len(), "{reports:?}");
+    for p in reports {
+        assert_eq!(p.status.as_ref().map(|s| s.status_code), Some(doris_thrift::gen::status::TStatusCode::CANCELLED), "{p:?}");
+        assert_eq!(p.commit_infos, None);
+    }
+}
+
+/// One instance fails (its scan's tablet is gone) while the others run: nothing is committed,
+/// and the write reports the error, with no commit infos.
+#[test]
+fn one_failed_instance_fails_the_whole_write() {
+    let (be, req, plan) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let before = exec_reports(&be).len();
+    let first = plan.params_list.as_ref().unwrap()[0].local_params.as_ref().unwrap()[0].clone();
+    let tablet = first.per_node_scan_ranges.values().flatten().find_map(|r| r.scan_range.palo_scan_range.as_ref()).unwrap().tablet_id;
+    let schema_hash = be.tablets.lock().unwrap().tablet(tablet).unwrap().schema_hash.unwrap_or(0);
+    be.tablets
+        .lock()
+        .unwrap()
+        .drop_tablet(&doris_thrift::gen::agent_service::TDropTabletReq::new(tablet, Some(schema_hash), None, None))
+        .unwrap();
+    assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+    assert!(be.query.wait_idle(Duration::from_secs(30)));
+    let reports = &exec_reports(&be)[before..];
+    assert!(!reports.is_empty());
+    for p in reports {
+        assert_ne!(p.status.as_ref().map(|s| s.status_code), Some(doris_thrift::gen::status::TStatusCode::OK), "{p:?}");
+        assert_eq!(p.commit_infos, None);
+        assert_eq!(p.query_type, Some(doris_thrift::gen::palo_internal_service::TQueryType::LOAD));
+    }
+}
+
+/// A panic while a write reports (here in the FE client) still ends the query: the service is
+/// idle again and forgets it.
+#[test]
+fn a_panic_while_reporting_ends_the_write() {
+    let (be, req, _) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    be.fe.panic_on_exec_status(true);
+    assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+    assert!(be.query.wait_idle(Duration::from_secs(10)), "the running count was lost");
+    assert_eq!(be.query.live_state().0, 0);
+}

@@ -121,19 +121,24 @@ pub struct TableSink {
     router: Router,
     instance_ids: Vec<TUniqueId>,
     instances: Mutex<Vec<InstanceRows>>,
+    /// Set when an instance cancelled the load: the others take no more rows.
+    cancelled: Mutex<Option<String>>,
 }
 
 impl TableSink {
     pub fn new(f: &WriteFragment, instance_ids: Vec<TUniqueId>) -> Result<TableSink, crate::ExecError> {
         let router = Router::new(f)?;
         let instances = Mutex::new(instance_ids.iter().map(|_| InstanceRows::default()).collect());
-        Ok(TableSink { f: f.clone(), router, instance_ids, instances })
+        Ok(TableSink { f: f.clone(), router, instance_ids, instances, cancelled: Mutex::new(None) })
     }
 
     /// An instance's rows (destination column order; a row error is filtered), with whether
     /// each column of the block that carried them has a null map. Cancelled with
     /// DATA_QUALITY_ERROR when a zero-tolerance load has more error rows than it logs.
     pub fn push(&self, instance: usize, rows: Vec<Result<Vec<Value>, RowError>>, nullable: &[bool]) -> Result<(), crate::ExecError> {
+        if let Some(why) = self.cancelled.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return Err(crate::ExecError::Cancelled(why));
+        }
         let mut all = self.instances.lock().unwrap_or_else(|e| e.into_inner());
         let me = all.get_mut(instance).ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
         // the whole block reaches the sink before its rows are checked
@@ -147,11 +152,14 @@ impl TableSink {
                 Err(e) => {
                     if me.errors.len() >= MAX_LOGGED_ERRORS {
                         if self.f.zero_tolerance {
-                            let q = &self.f.query_id;
-                            return Err(crate::ExecError::Cancelled(format!(
+                            // LoadStreamStub::check_cancel: print_id(_load_id)
+                            let l = &self.f.sink.load_id;
+                            let why = format!(
                                 "load_id={:x}-{:x}, reason: [DATA_QUALITY_ERROR]Encountered unqualified data, stop processing. Please check if the source data matches the schema, and consider disabling strict mode or increasing max_filter_ratio.",
-                                q.hi as u64, q.lo as u64
-                            )));
+                                l.hi as u64, l.lo as u64
+                            );
+                            *self.cancelled.lock().unwrap_or_else(|e| e.into_inner()) = Some(why.clone());
+                            return Err(crate::ExecError::Cancelled(why));
                         }
                     } else {
                         me.errors.push(e);
@@ -208,8 +216,14 @@ impl TableSink {
         let mut touched: BTreeSet<i64> = BTreeSet::new();
         for r in instances.into_iter().flat_map(|i| i.routed) {
             touched.insert(r.partition_id);
-            for (_, tablet) in &r.tablets {
-                groups.entry(*tablet).or_default().push(r.row.clone());
+            // a row goes to one tablet per index: moved, not copied, when there is one index
+            match r.tablets.as_slice() {
+                [(_, tablet)] => groups.entry(*tablet).or_default().push(r.row),
+                many => {
+                    for (_, tablet) in many {
+                        groups.entry(*tablet).or_default().push(r.row.clone());
+                    }
+                }
             }
         }
         commit(f, &mut out, groups, &touched, tablets);

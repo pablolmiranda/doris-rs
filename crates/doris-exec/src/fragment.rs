@@ -207,6 +207,9 @@ pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<W
         sink,
         dest,
     };
+    // what the sink cannot route (a column it does not write, a bad partition key) is refused
+    // here, before the write runs
+    crate::route::Router::new(&wf)?;
     Ok(wf)
 }
 

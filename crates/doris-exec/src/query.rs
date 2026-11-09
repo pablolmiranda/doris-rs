@@ -148,6 +148,10 @@ impl QueryPlan {
 }
 
 pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecError> {
+    // the load service's (exec_plan_fragment); its constants are not the query evaluator's
+    if crate::fragment::is_load_plan(list) {
+        return Err(unsupported("an INSERT … VALUES or a file scan sent as a query"));
+    }
     let params = list.params_list.as_deref().unwrap_or_default();
     let full = params
         .iter()

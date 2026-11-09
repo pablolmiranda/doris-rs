@@ -176,12 +176,14 @@ pub fn decimal_text(unscaled: i128, scale: i32) -> String {
     format!("{sign}{}.{:0w$}", a / p, a % p, w = scale as usize)
 }
 
-/// A datetime column's scale: v1 DATETIME holds whole seconds.
-fn datetime_scale(col: &ColType) -> i32 {
+/// A datetime as its column holds it, v2-packed. DATETIMEV2 rounds its fraction to its scale;
+/// v1 DATETIME (`cast_to_date_or_datetime_impl.hpp`) reads microseconds, the 7th digit rounding
+/// them, then drops them: its fraction is cut, carrying only when the microseconds round up.
+fn parse_datetime(s: &str, col: &ColType) -> Option<u64> {
     if col.ptype == TPrimitiveType::DATETIME {
-        0
+        parse_datetimev2(s, 6).map(|v| v & !0xF_FFFF)
     } else {
-        col.scale
+        parse_datetimev2(s, col.scale)
     }
 }
 
@@ -262,7 +264,7 @@ pub fn to_datum(v: &Value, col: &ColType, strict: bool) -> Result<Datum, RowErro
             _ => return Err(bad()),
         },
         T::DATETIMEV2 | T::DATETIME => match v {
-            Value::Date(s) => Datum::Int(parse_datetimev2(s, datetime_scale(col)).ok_or_else(bad)?.into()),
+            Value::Date(s) => Datum::Int(parse_datetime(s, col).ok_or_else(bad)?.into()),
             _ => return Err(bad()),
         },
         _ => return Err(row_err(col, format!("type {} is not supported", col.type_name()))),
@@ -362,7 +364,8 @@ pub fn parse_datetimev2(s: &str, scale: i32) -> Option<u64> {
 /// (the load then treats it as NULL, or as an error in strict mode).
 pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
     use TPrimitiveType as T;
-    let t = text.trim();
+    // StringParser skips ASCII whitespace (and \v) only
+    let t = text.trim_matches(|c: char| c.is_ascii_whitespace() || c == '\x0b');
     Some(match col.ptype {
         T::CHAR | T::VARCHAR | T::STRING => Value::Str(text.as_bytes().to_vec()),
         T::BOOLEAN => match t.to_ascii_lowercase().as_str() {
@@ -399,7 +402,7 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             Value::Date(t.to_string())
         }
         T::DATETIMEV2 | T::DATETIME => {
-            parse_datetimev2(t, datetime_scale(col))?;
+            parse_datetime(t, col)?;
             Value::Date(t.to_string())
         }
         _ => return None,

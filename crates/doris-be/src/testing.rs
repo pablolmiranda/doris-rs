@@ -49,6 +49,8 @@ pub struct FakeFe {
     finishes: Mutex<Vec<TFinishTaskRequest>>,
     reports: Mutex<Vec<TReportRequest>>,
     attempts: AtomicUsize,
+    /// Panic in `report_exec_status` (a fault in the reporting path).
+    panic_on_exec_status: std::sync::atomic::AtomicBool,
     failures: AtomicUsize,
     blocked: Mutex<bool>,
     unblocked: Condvar,
@@ -81,6 +83,11 @@ impl FakeFe {
         let mut i = TBinaryInputProtocol::new(&mut b, true);
         i.read_message_begin().map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })?;
         read(&mut i).map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })
+    }
+
+    /// Makes every later `report_exec_status` panic.
+    pub fn panic_on_exec_status(&self, on: bool) {
+        self.panic_on_exec_status.store(on, Ordering::SeqCst);
     }
 
     pub fn load_calls(&self) -> Vec<LoadCall> {
@@ -144,6 +151,7 @@ impl FeClient for FakeFe {
     }
 
     fn report_exec_status(&self, coord: &TNetworkAddress, req: TReportExecStatusParams) -> Result<TReportExecStatusResult, FeError> {
+        assert!(!self.panic_on_exec_status.load(Ordering::SeqCst), "report_exec_status panics (as asked)");
         self.load(LoadCall::ExecStatus(coord.clone(), req));
         Ok(TReportExecStatusResult::new(status::ok()))
     }

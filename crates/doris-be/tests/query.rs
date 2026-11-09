@@ -868,3 +868,31 @@ fn the_statistics_delete_is_refused_naming_partial_update() {
     assert_eq!(st.status_code, 3, "{st:?}");
     assert!(st.error_msgs.iter().any(|e| e.contains("partial update")), "{st:?}");
 }
+
+/// What the table sink cannot route (a distribution column the sink does not write) is refused at
+/// prepare, not found once the write runs.
+#[test]
+fn a_table_sink_it_cannot_route_is_refused_at_prepare() {
+    let (_, req, list) = insert_select("query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword");
+    let mut l = list.clone();
+    for p in l.params_list.iter_mut().flatten() {
+        if let Some(s) = p.fragment.as_mut().and_then(|f| f.output_sink.as_mut()).and_then(|s| s.olap_table_sink.as_mut()) {
+            s.partition.distributed_columns = Some(vec!["no_such_column".into()]);
+        }
+    }
+    let mut r = req.clone();
+    r.request = exec_request(l.params_list.clone().unwrap()).request;
+    let st = env().query.prepare(&r).status;
+    assert_ne!(st.status_code, 0, "{st:?}");
+    assert!(st.error_msgs.iter().any(|e| e.contains("no_such_column")), "{st:?}");
+}
+
+/// INSERT … VALUES is the load service's (`exec_plan_fragment`); sent to prepare, the query service
+/// refuses it rather than evaluate its constants another way.
+#[test]
+fn a_values_insert_sent_to_prepare_is_refused() {
+    let v = &doris_fixtures::values::values_vectors()[0];
+    let st = env().query.prepare(&v.request).status;
+    assert_eq!(st.status_code, 3, "{st:?}");
+    assert!(st.error_msgs.iter().any(|e| e.contains("INSERT … VALUES")), "{st:?}");
+}

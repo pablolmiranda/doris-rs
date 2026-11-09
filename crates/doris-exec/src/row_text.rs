@@ -50,6 +50,11 @@ fn special(nan: bool, inf: bool, neg: bool) -> Option<String> {
     }
 }
 
+/// A double as the C++ BE prints it (`fmt` "{}"; NaN and the infinities by name).
+pub fn double_text(v: f64) -> String {
+    special(v.is_nan(), v.is_infinite(), v < 0.0).unwrap_or_else(|| float_text(format!("{v:e}")))
+}
+
 /// An unscaled decimal with exactly `scale` fraction digits.
 pub fn decimal_text(v: i128, scale: i32) -> String {
     let digits = v.unsigned_abs().to_string();

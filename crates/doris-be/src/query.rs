@@ -268,10 +268,24 @@ impl QueryService {
         let (inner, ran) = (self.inner.clone(), q.clone());
         *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
         let spawned = std::thread::Builder::new().name("query".into()).spawn(move || {
+            /// Counts the query out however `execute` ends, a panic included.
+            struct Ended<'a>(&'a Inner, &'a Arc<Query>);
+            impl Drop for Ended<'_> {
+                fn drop(&mut self) {
+                    let (inner, q) = (self.0, self.1);
+                    q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+                    if std::thread::panicking() {
+                        // its outcome will not reach the FE: drop it rather than hold it
+                        inner.queries.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, x| !Arc::ptr_eq(x, q));
+                        inner.exchanges.forget((q.plan.query_id.hi, q.plan.query_id.lo));
+                    }
+                    let mut n = inner.running.lock().unwrap_or_else(|e| e.into_inner());
+                    *n -= 1;
+                    inner.idle.notify_all();
+                }
+            }
+            let _ended = Ended(&inner, &ran);
             inner.execute(&ran);
-            let mut n = inner.running.lock().unwrap_or_else(|e| e.into_inner());
-            *n -= 1;
-            inner.idle.notify_all();
         });
         if let Err(e) = spawned {
             let mut n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
@@ -457,7 +471,12 @@ impl Inner {
                 None => None,
             });
         }
+        let cancelled = || q.buffer().failed.as_ref().map(|st| ExecError::Cancelled(st.error_msgs.first().cloned().unwrap_or_else(|| "cancelled".into())));
         let table = |fragment: usize, instance: usize, block: Block| -> Result<(), ExecError> {
+            // a write the FE cancelled takes no more rows
+            if let Some(e) = cancelled() {
+                return Err(e);
+            }
             let sink = sinks
                 .get(fragment)
                 .and_then(Option::as_ref)
@@ -498,7 +517,8 @@ impl Inner {
                 }
             }
         });
-        let failed = first_error.into_inner().unwrap_or_else(|e| e.into_inner());
+        // a write the FE cancelled while it ran fails, though its instances did not
+        let failed = first_error.into_inner().unwrap_or_else(|e| e.into_inner()).or_else(|| cancelled().filter(|_| plan.fragments.iter().any(|f| f.write.is_some())));
         // ended before the FE can see the outcome, so its cancel finds nothing to stop
         q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
         self.exchanges.forget(id);

@@ -128,3 +128,40 @@ fn concat_joins_its_arguments_and_null_wins() {
     assert_eq!(concat(&[s("a"), Value::Null]), Value::Null);
     assert_eq!(concat(&[]), s(""));
 }
+
+/// `cast_to_date_or_datetime_impl.hpp`: a v1 DATETIME keeps whole seconds; its fraction is
+/// dropped, not rounded, but for a 7th digit that carries the microseconds to a second.
+#[test]
+fn a_v1_datetime_drops_its_fraction() {
+    use doris_segment::writer::Datum;
+    let c = typed(TPrimitiveType::DATETIME, 0, 0);
+    let at = |y: i128, mo: i128, d: i128, h: i128, mi: i128, s: i128| Datum::Int((y << 9 | mo << 5 | d) << 37 | h << 32 | mi << 26 | s << 20);
+    let dt = |t: &str| to_datum(&doris_exec::value::parse_text(t, &c).unwrap(), &c, true).unwrap();
+    assert_eq!(dt("2023-01-01 12:00:00.4"), at(2023, 1, 1, 12, 0, 0));
+    assert_eq!(dt("2023-01-01 12:00:00.5"), at(2023, 1, 1, 12, 0, 0));
+    assert_eq!(dt("2023-01-01 12:00:00.999999"), at(2023, 1, 1, 12, 0, 0));
+    assert_eq!(dt("2023-01-01 12:00:00.9999995"), at(2023, 1, 1, 12, 0, 1));
+    assert_eq!(dt("2023-01-01 23:59:59.9999995"), at(2023, 1, 2, 0, 0, 0));
+    assert_eq!(to_datum(&Value::Date("2023-01-01 12:00:00.7".into()), &c, true).unwrap(), at(2023, 1, 1, 12, 0, 0));
+}
+
+/// `StringParser` skips ASCII whitespace only: a Unicode space does not cast.
+#[test]
+fn only_ascii_whitespace_is_trimmed() {
+    use doris_exec::value::parse_text;
+    let int = typed(TPrimitiveType::INT, 0, 0);
+    assert_eq!(parse_text(" \t12\n", &int), Some(Value::Int(12)));
+    assert_eq!(parse_text("\u{3000}12", &int), None);
+    assert_eq!(parse_text("12\u{a0}", &int), None);
+}
+
+/// A float cast to a string prints as the C++ BE's fmt does (`1e-07`, not `0.0000001`).
+#[test]
+fn a_float_cast_to_a_string_is_cpp_text() {
+    use doris_exec::expr::cast;
+    let s = typed(TPrimitiveType::VARCHAR, 0, 0);
+    assert_eq!(cast(Value::Float(1e-7), &s), Value::Str(b"1e-07".to_vec()));
+    assert_eq!(cast(Value::Float(1.5), &s), Value::Str(b"1.5".to_vec()));
+    assert_eq!(cast(Value::Float(1e16), &s), Value::Str(b"1e+16".to_vec()));
+    assert_eq!(cast(Value::Float(f64::INFINITY), &s), Value::Str(b"Infinity".to_vec()));
+}

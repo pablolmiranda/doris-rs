@@ -365,30 +365,26 @@ pub fn stream_rows(f: &WriteFragment, body: &[u8], max_bytes: u64) -> Result<Vec
             let mut dest = Slots::new();
             for slot in &dest_slots {
                 let v = match (exprs.get(&slot.id), direct.get(&slot.id)) {
-                    (Some(e), _) => {
-                        let v = eval(e, &src).map_err(|e| err(e.msg))?;
-                        // FileScanner::_convert_to_output_block: in strict mode, a column mapped
-                        // straight from a source column whose non-NULL value came out NULL
-                        if strict && v == Value::Null {
-                            if let Some(Value::Str(b)) = direct.get(&slot.id).and_then(|s| src.get(s)) {
-                                return Err(err(format!(
-                                    "column({}) value is incorrect while strict mode is true, src value is {}",
-                                    slot.col_name,
-                                    String::from_utf8_lossy(b)
-                                )));
-                            }
-                        }
-                        v
-                    }
+                    (Some(e), _) => eval(e, &src).map_err(|e| err(e.msg))?,
                     (None, Some(s)) => src.get(s).cloned().unwrap_or(Value::Null),
                     (None, None) => Value::Null,
                 };
+                // FileScanner::_convert_to_output_block, column by column in tuple order: in
+                // strict mode, a column mapped straight from a source column whose non-NULL value
+                // came out NULL; else a NULL for a column that is not nullable
+                if v == Value::Null {
+                    if let Some(Value::Str(b)) = direct.get(&slot.id).and_then(|s| src.get(s)).filter(|_| strict) {
+                        return Err(err(format!(
+                            "column({}) value is incorrect while strict mode is true, src value is {}",
+                            slot.col_name,
+                            String::from_utf8_lossy(b)
+                        )));
+                    }
+                    if slot.null_indicator_bit < 0 {
+                        return Err(err(format!("column({}) values is null while columns is not nullable", slot.col_name)));
+                    }
+                }
                 dest.insert(slot.id, v);
-            }
-            // FileScanner::_convert_to_output_block: a NULL for a slot that is not nullable
-            // (its line, the source row's, as Block::dump_one_line prints it)
-            if let Some(slot) = dest_slots.iter().find(|s| s.null_indicator_bit < 0 && dest.get(&s.id) == Some(&Value::Null)) {
-                return Err(err(format!("column({}) values is null while columns is not nullable", slot.col_name)));
             }
             if output.is_empty() {
                 return Ok(dest_slots.iter().map(|s| dest.get(&s.id).cloned().unwrap_or(Value::Null)).collect());

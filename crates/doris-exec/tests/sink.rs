@@ -177,6 +177,8 @@ fn v1_dates_hash_their_text() {
     f.sink.partition.distributed_columns = Some(vec!["dt".into()]);
     let part = f.sink.partition.partitions[0].clone();
     let buckets = part.num_buckets as u32;
+    // test_cls has 2 buckets: a bucket of 1 would check nothing
+    assert!(buckets > 1, "{buckets}");
     let router = doris_exec::route::Router::new(&f).unwrap();
     for row in f.values_rows().unwrap() {
         let row = row.unwrap();
@@ -264,6 +266,8 @@ fn the_fifty_second_error_row_cancels_a_zero_tolerance_load() {
     use doris_exec::{ExecError, RowError};
     let (v, mut f, rows) = loading(1);
     f.zero_tolerance = true;
+    // the message names the sink's load id (LoadStreamStub::check_cancel), not the query's
+    f.sink.load_id = doris_thrift::gen::types::TUniqueId { hi: 0x1a, lo: 0x2b };
     let tmp = tempfile::tempdir().unwrap();
     let mgr = manager(&v, tmp.path()).unwrap();
     let input: Vec<Result<Vec<Value>, RowError>> =
@@ -271,14 +275,9 @@ fn the_fifty_second_error_row_cancels_a_zero_tolerance_load() {
     let sink = TableSink::new(&f, vec![instance(1)]).unwrap();
     let err = sink.push(0, input, &f.input_nullable()).unwrap_err();
     let ExecError::Cancelled(msg) = &err else { panic!("{err:?}") };
-    let q = &f.query_id;
     assert_eq!(
         msg.as_str(),
-        format!(
-            "load_id={:x}-{:x}, reason: [DATA_QUALITY_ERROR]Encountered unqualified data, stop processing. Please check if the source data matches the schema, and consider disabling strict mode or increasing max_filter_ratio.",
-            q.hi as u64, q.lo as u64
-        )
-        .as_str()
+        "load_id=1a-2b, reason: [DATA_QUALITY_ERROR]Encountered unqualified data, stop processing. Please check if the source data matches the schema, and consider disabling strict mode or increasing max_filter_ratio."
     );
     let failure = doris_thrift::gen::status::TStatus { status_code: TStatusCode::CANCELLED, error_msgs: Some(vec![msg.clone()]) };
     let outcome = sink.finish(&mgr, &tmp.path().join("error_log"), Some(failure.clone()));
@@ -326,4 +325,26 @@ fn the_error_log_is_named_as_cpp() {
     let file = name.split('/').nth(1).unwrap();
     assert!(name.starts_with("__shard_"), "{name}");
     assert_eq!(file, format!("error_log_insert_stmt_{hi:x}-{lo:x}_{hi:x}_{lo:x}"));
+}
+
+/// Once one instance cancels a zero-tolerance load, the others take no more rows: their pushes
+/// fail with the same cancel, and only what reached the sink before it is reported.
+#[test]
+fn a_cancelled_load_takes_no_more_rows() {
+    use doris_exec::sink::TableSink;
+    use doris_exec::{ExecError, RowError};
+    let (v, mut f, rows) = loading(1);
+    f.zero_tolerance = true;
+    let tmp = tempfile::tempdir().unwrap();
+    let mgr = manager(&v, tmp.path()).unwrap();
+    let bad: Vec<Result<Vec<Value>, RowError>> = (0..60).map(|i| Err(RowError::new(format!("bad row {i}")))).collect();
+    let sink = TableSink::new(&f, vec![instance(1), instance(2)]).unwrap();
+    let first = sink.push(0, bad, &f.input_nullable()).unwrap_err();
+    let later = sink.push(1, vec![Ok(rows[0].clone())], &f.input_nullable()).unwrap_err();
+    assert!(matches!(&later, ExecError::Cancelled(m) if matches!(&first, ExecError::Cancelled(f) if f == m)), "{later:?}");
+    let failure = doris_thrift::gen::status::TStatus { status_code: TStatusCode::CANCELLED, error_msgs: Some(vec![first.to_string()]) };
+    let report = exec_status(&f, &sink.finish(&mgr, &tmp.path().join("error_log"), Some(failure)), None);
+    let reports = report.fragment_instance_reports.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].loaded_rows, Some(60));
 }

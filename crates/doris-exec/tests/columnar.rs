@@ -103,3 +103,59 @@ fn a_body_that_is_not_parquet_or_orc_is_an_error() {
     assert!(parquet_rows(b"not a parquet file", &names()).is_err());
     assert!(orc_rows(b"not an orc file", &names()).is_err());
 }
+
+/// A Parquet file of one column and no rows, with the schema given in the message syntax.
+fn parquet_schema(message: &str) -> Vec<u8> {
+    use parquet::file::properties::WriterProperties;
+    use parquet::file::writer::SerializedFileWriter;
+    let schema = parquet::schema::parser::parse_message_type(message).unwrap();
+    let mut buf = Vec::new();
+    let w = SerializedFileWriter::new(&mut buf, std::sync::Arc::new(schema), std::sync::Arc::new(WriterProperties::builder().build())).unwrap();
+    w.close().unwrap();
+    buf
+}
+
+fn refused(rows: Result<doris_exec::columnar::TextRows, ExecError>, column: &str) {
+    match rows {
+        Err(ExecError::Unsupported { what }) => assert!(what.contains(column), "{what}"),
+        other => panic!("{column}: {other:?}"),
+    }
+}
+
+/// A column annotated only with a logical type (no converted type: TIMESTAMP(NANOS), as pandas
+/// writes datetimes) would read as its raw integer; it is refused instead.
+#[test]
+fn parquet_logical_types_the_reader_does_not_render_are_refused() {
+    let want = vec!["ts".to_string()];
+    refused(parquet_rows(&parquet_schema("message m { optional int64 ts (TIMESTAMP(NANOS,true)); }"), &want), "ts");
+    refused(parquet_rows(&parquet_schema("message m { optional int64 ts (TIMESTAMP(MICROS,false)); }"), &want), "ts");
+    refused(parquet_rows(&parquet_schema("message m { optional int32 ts (DATE); }"), &want), "ts");
+    refused(parquet_rows(&parquet_schema("message m { optional int32 ts (INTEGER(32,false)); }"), &want), "ts");
+    // signed integers and decimals read
+    assert!(parquet_rows(&parquet_schema("message m { optional int32 ts (INTEGER(16,true)); }"), &want).is_ok());
+    assert!(parquet_rows(&parquet_schema("message m { optional int32 ts (DECIMAL(9,2)); }"), &want).is_ok());
+}
+
+/// Two file columns whose names differ only in case: which one a load wants is ambiguous.
+#[test]
+fn columns_equal_but_for_case_are_refused() {
+    let file = parquet_schema("message m { optional int32 Id; optional int32 id; }");
+    refused(parquet_rows(&file, &["id".to_string()]), "id");
+}
+
+/// `OrcReader::_decode_string_*`: an ORC CHAR value loses its padding, as C++ reads it.
+#[test]
+fn an_orc_char_column_reads_without_its_padding() {
+    let want = vec!["col3".to_string(), "col1".to_string(), "col9".to_string()];
+    let rows = orc_rows(&fixture("char_column.orc"), &want).unwrap();
+    assert_eq!(rows.len(), 10);
+    assert_eq!(rows[0], vec![Some("doris".to_string()), Some("0".to_string()), Some("doris".to_string())]);
+}
+
+/// Only the wanted columns are read: a column of a type the reader refuses does not stop a load
+/// that does not want it (col2 is BOOLEAN, col4 DATE).
+#[test]
+fn unwanted_columns_are_not_read() {
+    let rows = orc_rows(&fixture("char_column.orc"), &["col7".to_string()]).unwrap();
+    assert_eq!(rows[9], vec![Some("12345".to_string())]);
+}

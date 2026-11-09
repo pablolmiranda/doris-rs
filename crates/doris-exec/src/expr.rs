@@ -100,7 +100,7 @@ pub fn cast(v: Value, to: &ColType) -> Value {
         Value::Null => return Value::Null,
         Value::Str(b) => String::from_utf8_lossy(b).into_owned(),
         Value::Int(i) => i.to_string(),
-        Value::Float(f) => f.to_string(),
+        Value::Float(f) => crate::row_text::double_text(*f),
         Value::Bool(b) => if *b { "1".into() } else { "0".into() },
         Value::Decimal(s) | Value::Date(s) => s.clone(),
     };
