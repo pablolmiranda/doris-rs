@@ -345,6 +345,12 @@ impl Instance<'_> {
         };
         let (part_types, part) = keys(&a.partition_exprs)?;
         let (order_types, order) = keys(&a.order_by_exprs)?;
+        let instances = self.fragment.instances.len();
+        if instances > 1 && crate::analytic::split_float_keys(&part, &part_types) {
+            return Err(ExecError::Unsupported {
+                what: format!("an ANALYTIC_EVAL_NODE over float partition keys equal in value but not in bits (-0.0 and 0.0) in {instances} instances"),
+            });
+        }
         let out_slots = self.plan.desc.tuple_slots(a.output_tuple_id)?.to_vec();
         if out_slots.len() != a.analytic_functions.len() {
             return Err(ExecError::BadRequest(format!(

@@ -7,7 +7,7 @@
 //!   order, so float sums agree bit for bit;
 //! - an empty frame gives NULL, but 0 for `count`.
 //!
-//! The FE forces each rank-family function's frame and never sends RANGE with offsets
+//! The FE forces the rank family's and lead/lag's frames and never sends RANGE with offsets
 //! (`WindowFunctionChecker`); `check_plan` refuses both, so this module need not guess.
 use std::cmp::Ordering;
 
@@ -135,17 +135,20 @@ impl WindowFn {
                 }
             }
             "first_value" | "last_value" => {
-                let ignore_nulls = match args.get(1) {
-                    None => false,
-                    Some(a) => bool_literal(a).ok_or_else(|| ExecError::Unsupported {
-                        what: format!("a {name} flag that is not a literal"),
-                    })?,
-                };
+                // C++ picks the ignore-nulls variant whenever there are 2 arguments, whatever the
+                // flag (aggregate_function_window.cpp); the FE rewrites (x, false) to (x)
+                let ignore_nulls = args.len() >= 2;
                 if name == "first_value" {
                     WindowKind::First { ignore_nulls }
                 } else {
                     WindowKind::Last { ignore_nulls }
                 }
+            }
+            // a set state; its window semantics are not C++'s known ones
+            "multi_distinct_count" => {
+                return Err(ExecError::Unsupported {
+                    what: "multi_distinct_count over a window".into(),
+                })
             }
             f if AGGREGATES.contains(&f) => {
                 let spec = AggSpec::from_expr(e)?;
@@ -185,6 +188,16 @@ pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
     let ok = match f.kind {
         WindowKind::RowNumber => *frame == Frame::Rows { start: None, end: Some(0) },
         WindowKind::Rank | WindowKind::DenseRank => *frame == Frame::RangeToCurrent,
+        // lead and lag read their offset's row, which is the end of the frame the FE forces
+        WindowKind::Lead(off) | WindowKind::Lag(off) => {
+            let end = if matches!(f.kind, WindowKind::Lead(_)) { off } else { -off };
+            if *frame != (Frame::Rows { start: None, end: Some(end) }) {
+                return Err(ExecError::Unsupported {
+                    what: format!("{} over a window other than ROWS to its offset", f.name()),
+                });
+            }
+            true
+        }
         _ => true,
     };
     if ok {
@@ -203,13 +216,6 @@ pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
 fn int_literal(e: &TExpr) -> Option<i64> {
     match e.nodes.as_slice() {
         [n] if n.node_type == N::INT_LITERAL => n.int_literal.as_ref().map(|l| l.value),
-        _ => None,
-    }
-}
-
-fn bool_literal(e: &TExpr) -> Option<bool> {
-    match e.nodes.as_slice() {
-        [n] if n.node_type == N::BOOL_LITERAL => n.bool_literal.as_ref().map(|l| l.value),
         _ => None,
     }
 }
@@ -346,4 +352,18 @@ fn bounds(frame: &Frame, cur: usize, ps: usize, pe: usize, peer_end: usize) -> (
             (s, (e.max(s as i64)) as usize)
         }
     }
+}
+
+/// Whether two neighbouring rows have partition keys equal in value but not in bits (-0.0 and
+/// 0.0, or two NaNs). C++ hashes partition keys by their bytes, so in several instances such
+/// rows can reach different instances and be different partitions; doris-rs's exchange sends
+/// them to one, so it can't answer as C++ does.
+pub fn split_float_keys(part: &[Vec<Datum>], types: &[ColType]) -> bool {
+    part.windows(2).any(|w| {
+        w[0].iter().zip(&w[1]).zip(types).any(|((a, b), t)| match (a, b) {
+            (Datum::Float(x), Datum::Float(y)) => x.to_bits() != y.to_bits() && same(a, b, t),
+            (Datum::Double(x), Datum::Double(y)) => x.to_bits() != y.to_bits() && same(a, b, t),
+            _ => false,
+        })
+    })
 }

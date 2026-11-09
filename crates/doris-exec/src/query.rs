@@ -500,12 +500,12 @@ fn check_windows(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(),
     for c in &t.children {
         check_windows(c, f, plan)?;
     }
-    // a global phase's output is exact and sorted per partition over all instances, which needs
-    // the rows of a partition in one; no eligible suite has one
+    // a global phase's output feeds the window with no sort between, so its partitions' order
+    // must be C++'s (each block's rows taken last to first), which doris-rs does not reproduce;
+    // no eligible suite has one
     if let Some(p) = t.node.partition_sort_node.as_ref().filter(|_| t.node.node_type == P::PARTITION_SORT_NODE) {
-        let n = f.instances.len();
-        if n > 1 && p.ptopn_phase == Some(doris_thrift::gen::plan_nodes::TPartTopNPhase::TWO_PHASE_GLOBAL) {
-            return Err(unsupported(format!("a global PARTITION_SORT_NODE in {n} instances")));
+        if p.ptopn_phase == Some(doris_thrift::gen::plan_nodes::TPartTopNPhase::TWO_PHASE_GLOBAL) {
+            return Err(unsupported("a global PARTITION_SORT_NODE".to_string()));
         }
     }
     let Some(a) = t.node.analytic_node.as_ref().filter(|_| t.node.node_type == P::ANALYTIC_EVAL_NODE) else {
@@ -521,11 +521,15 @@ fn check_windows(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(),
         )));
     }
     let n = f.instances.len();
-    if n <= 1 || a.is_colocate == Some(true) {
+    if n <= 1 {
         return Ok(());
     }
+    // with no partition keys the node is serial in C++, colocated or not
     if a.partition_exprs.is_empty() {
         return Err(unsupported(format!("an {name} without partition keys in {n} instances")));
+    }
+    if a.is_colocate == Some(true) {
+        return Ok(());
     }
     let keys = slot_ids(&a.partition_exprs).ok_or_else(|| unsupported(format!("an {name} with partition keys that are not slots in {n} instances")))?;
     let child = t.children.first().ok_or_else(|| ExecError::BadRequest(format!("an {name} without its child")))?;

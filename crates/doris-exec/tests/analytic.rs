@@ -1,8 +1,9 @@
 //! Window functions over sorted rows, as the C++ BE's ANALYTIC_EVAL_NODE computes them: frames
 //! clamped to the partition, peers by value (NULL = NULL, -0.0 = 0.0), values added in row order.
 use doris_exec::aggregate::AggSpec;
-use doris_exec::analytic::{window_columns, Frame, WindowFn, WindowKind};
+use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, WindowFn, WindowKind};
 use doris_exec::value::ColType;
+use doris_fixtures::build;
 use doris_segment::writer::Datum;
 use doris_thrift::gen::types::TPrimitiveType as T;
 
@@ -260,4 +261,114 @@ fn a_whole_partition_frame_without_order_keys() {
         run(&part, &[], Frame::RangeToCurrent, &agg("min", T::INT, T::INT), &[(T::INT, x)]),
         [i(1), i(1), i(7)]
     );
+}
+
+#[test]
+fn two_arguments_mean_ignore_nulls_whatever_the_flag() {
+    // C++ picks the ignore-nulls first_value/last_value whenever there are 2 arguments
+    // (aggregate_function_window.cpp); the FE rewrites (x, false) to (x)
+    for flag in [true, false] {
+        let e = build::aggregate(
+            "first_value",
+            build::ty(T::INT),
+            vec![build::ty(T::INT), build::ty(T::BOOLEAN)],
+            false,
+            vec![build::slot(1, build::ty(T::INT)), build::boolean(flag)],
+        );
+        assert_eq!(
+            WindowFn::from_expr(&e).unwrap().kind,
+            WindowKind::First { ignore_nulls: true },
+            "flag {flag}"
+        );
+    }
+    let e = build::aggregate(
+        "last_value",
+        build::ty(T::INT),
+        vec![build::ty(T::INT)],
+        false,
+        vec![build::slot(1, build::ty(T::INT))],
+    );
+    assert_eq!(WindowFn::from_expr(&e).unwrap().kind, WindowKind::Last { ignore_nulls: false });
+}
+
+#[test]
+fn multi_distinct_count_is_not_a_window_aggregate() {
+    let e = build::aggregate(
+        "multi_distinct_count",
+        build::ty(T::BIGINT),
+        vec![build::ty(T::INT)],
+        false,
+        vec![build::slot(1, build::ty(T::INT))],
+    );
+    let err = WindowFn::from_expr(&e).unwrap_err().to_string();
+    assert!(err.contains("multi_distinct_count over a window"), "{err}");
+}
+
+#[test]
+fn lead_and_lag_need_the_frame_the_fe_forces() {
+    let lead = win(WindowKind::Lead(1), T::INT);
+    let lag = win(WindowKind::Lag(1), T::INT);
+    assert!(check_frame(&lead, &Frame::Rows { start: None, end: Some(1) }).is_ok());
+    assert!(check_frame(&lag, &Frame::Rows { start: None, end: Some(-1) }).is_ok());
+    for (f, frame) in [
+        (&lead, Frame::Rows { start: None, end: Some(2) }),
+        (&lead, Frame::Partition),
+        (&lag, Frame::Rows { start: None, end: Some(0) }),
+        (
+            &lag,
+            Frame::Rows {
+                start: Some(-1),
+                end: Some(-1),
+            },
+        ),
+    ] {
+        let err = check_frame(f, &frame).unwrap_err().to_string();
+        assert!(err.contains(&format!("{} over a window other than", f.name())), "{frame:?}: {err}");
+    }
+}
+
+#[test]
+fn a_sum_over_an_empty_frame_with_a_non_nullable_type_is_zero() {
+    let mut f = agg("sum", T::INT, T::BIGINT);
+    if let WindowKind::Agg(spec) = &mut f.kind {
+        spec.ret.nullable = false;
+    }
+    let got = run(
+        &[s("a"), s("a")],
+        &[d(1.0), d(2.0)],
+        Frame::Rows {
+            start: Some(1),
+            end: Some(1),
+        },
+        &f,
+        &[(T::INT, vec![i(4), i(5)])],
+    );
+    assert_eq!(got, [i(5), i(0)]);
+}
+
+#[test]
+fn ignore_nulls_last_value_past_the_partition_keeps_the_last_non_null() {
+    let x = [(T::INT, vec![i(1), N, N, i(9)])];
+    let f = win(WindowKind::Last { ignore_nulls: true }, T::INT);
+    let part = [s("a"), s("a"), s("a"), s("b")];
+    let got = run(
+        &part,
+        &[d(1.0), d(2.0), d(3.0), d(4.0)],
+        Frame::Rows { start: None, end: Some(1) },
+        &f,
+        &x,
+    );
+    assert_eq!(got, [i(1), i(1), i(1), i(9)]);
+}
+
+#[test]
+fn float_keys_equal_in_value_but_not_in_bits_are_found() {
+    // C++ hashes partition keys by their bytes, so -0.0 and 0.0 (or two NaNs) can reach
+    // different instances, where doris-rs's exchange sends them to one
+    let t = [ty(T::DOUBLE)];
+    assert!(split_float_keys(&keys(&[d(-0.0), d(0.0)]), &t));
+    assert!(split_float_keys(&keys(&[d(f64::NAN), d(-f64::NAN)]), &t));
+    assert!(!split_float_keys(&keys(&[d(0.0), d(0.0), d(1.0)]), &t));
+    assert!(!split_float_keys(&keys(&[N, N]), &t));
+    assert!(split_float_keys(&keys(&[Datum::Float(-0.0), Datum::Float(0.0)]), &[ty(T::FLOAT)]));
 }
