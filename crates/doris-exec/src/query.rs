@@ -396,6 +396,31 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         // tuple, types and distribution are checked in check_plan (check_sets)
         P::INTERSECT_NODE | P::EXCEPT_NODE => check_exprs(set_node(n)?.2.iter().flatten(), false)?,
         P::HASH_JOIN_NODE => check_hash_join(n)?,
+        P::CROSS_JOIN_NODE => {
+            use crate::hash_join::{join_op, JoinOp};
+            let j = n.nested_loop_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("CROSS_JOIN_NODE without its parameters".into()))?;
+            let op = join_op(j.join_op);
+            let mark = j.is_mark == Some(true);
+            let runs = match op {
+                Some(JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti) => true,
+                Some(JoinOp::Inner | JoinOp::Cross | JoinOp::LeftOuter | JoinOp::RightOuter | JoinOp::FullOuter) => !mark,
+                _ => false,
+            };
+            if !runs {
+                return Err(unsupported(format!("a CROSS_JOIN_NODE with join op {}{}", join_op_name(j.join_op), if mark { " (mark)" } else { "" })));
+            }
+            if j.vintermediate_tuple_id_list.as_ref().is_none_or(Vec::is_empty) {
+                return Err(ExecError::BadRequest("a CROSS_JOIN_NODE without its intermediate tuples".into()));
+            }
+            check_exprs(j.join_conjuncts.iter().flatten().chain(j.vjoin_conjunct.iter()), false)?;
+        }
+        P::ASSERT_NUM_ROWS_NODE => {
+            use doris_thrift::gen::plan_nodes::TAssertion;
+            let a = n.assert_num_rows_node.as_ref().ok_or_else(|| ExecError::BadRequest("ASSERT_NUM_ROWS_NODE without its parameters".into()))?;
+            if a.assertion.is_some_and(|x| !(0..=5).contains(&x.0)) {
+                return Err(unsupported(format!("an ASSERT_NUM_ROWS_NODE assertion {:?}", a.assertion.unwrap_or(TAssertion::LE))));
+            }
+        }
         _ => return Err(unsupported(name)),
     }
     check_exprs(n.conjuncts.iter().flatten(), false)?;

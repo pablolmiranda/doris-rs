@@ -107,6 +107,8 @@ impl Instance<'_> {
             P::UNION_NODE => self.constants(t)?,
             P::INTERSECT_NODE | P::EXCEPT_NODE => self.set_op(t)?,
             P::HASH_JOIN_NODE => self.hash_join(t)?,
+            P::CROSS_JOIN_NODE => self.cross_join(t)?,
+            P::ASSERT_NUM_ROWS_NODE => self.assert_num_rows(t)?,
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
@@ -349,29 +351,7 @@ impl Instance<'_> {
         let null_safe = h.eq_join_conjuncts.iter().map(|e| e.opcode == Some(doris_thrift::gen::opcodes::TExprOpcode::EQ_FOR_NULL)).collect();
         let (pw, bw) = (probe.slots.len(), build.slots.len());
         let layout = Layout::new(slots.len(), pw, bw, mark)?;
-        let conjuncts = |exprs: &[TExpr], rows: &[Vec<Datum>]| -> Result<Vec<Option<bool>>, ExecError> {
-            // the candidate rows have no mark yet: its slot reads NULL
-            let rows = rows
-                .iter()
-                .map(|r| {
-                    let mut r = r.clone();
-                    if mark {
-                        r.push(Datum::Null);
-                    }
-                    layout.apply(&r)
-                })
-                .collect();
-            let chunk = self.chunk_of(rows, &slots)?;
-            let map = slot_map(&chunk.slots);
-            let mut out = vec![Some(true); chunk.block.len()];
-            for e in exprs {
-                let (_, v) = eval_column(e, &chunk.block, &map)?;
-                for (o, d) in out.iter_mut().zip(&v) {
-                    *o = and3(*o, truth(d));
-                }
-            }
-            Ok(out)
-        };
+        let conjuncts = |exprs: &[TExpr], rows: &[Vec<Datum>]| self.joined_conjuncts(exprs, rows, &layout, &slots, mark);
         let other_exprs = h.other_join_conjuncts.clone().unwrap_or_default();
         let mark_exprs = h.mark_join_conjuncts.clone().unwrap_or_default();
         let other = |rows: &[Vec<Datum>]| conjuncts(&other_exprs, rows);
@@ -388,6 +368,78 @@ impl Instance<'_> {
         let build_side = Side { keys: keys(&build, false)?, rows: build.block.rows, width: bw };
         let rows = hash_join(&j, probe_side, build_side)?;
         self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
+    }
+
+    /// A join's conjuncts over joined rows (probe columns, build columns), three-valued; the rows
+    /// are laid out as the intermediate tuple, whose mark slot (if any) reads NULL.
+    fn joined_conjuncts(&self, exprs: &[TExpr], rows: &[Vec<Datum>], layout: &Layout, slots: &[i32], mark: bool) -> Result<Vec<Option<bool>>, ExecError> {
+        let rows = rows
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if mark {
+                    r.push(Datum::Null);
+                }
+                layout.apply(&r)
+            })
+            .collect();
+        let chunk = self.chunk_of(rows, slots)?;
+        let map = slot_map(&chunk.slots);
+        let mut out = vec![Some(true); chunk.block.len()];
+        for e in exprs {
+            let (_, v) = eval_column(e, &chunk.block, &map)?;
+            for (o, d) in out.iter_mut().zip(&v) {
+                *o = and3(*o, truth(d));
+            }
+        }
+        Ok(out)
+    }
+
+    /// CROSS_JOIN_NODE: the build child (1), then the probe child, then the nested-loop join over
+    /// `join_conjuncts` (or the legacy `vjoin_conjunct`); `mark_join_conjuncts` and
+    /// `is_output_left_side_only` are ignored, as C++ ignores them.
+    fn cross_join(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::hash_join::{join_op, Side};
+        let n = &t.node;
+        let j = n.nested_loop_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("CROSS_JOIN_NODE without its parameters".into()))?;
+        let op = join_op(j.join_op).ok_or_else(|| ExecError::Unsupported { what: format!("a CROSS_JOIN_NODE {:?}", j.join_op) })?;
+        let mark = j.is_mark == Some(true);
+        let slots = self.intermediate(j.vintermediate_tuple_id_list.as_ref(), "CROSS_JOIN_NODE")?;
+        let build = self.child(t, 1)?;
+        let probe = self.child(t, 0)?;
+        let (pw, bw) = (probe.slots.len(), build.slots.len());
+        let layout = Layout::new(slots.len(), pw, bw, mark)?;
+        let exprs: Vec<TExpr> = match (&j.join_conjuncts, &j.vjoin_conjunct) {
+            (Some(c), _) if !c.is_empty() => c.clone(),
+            (_, Some(v)) => vec![v.clone()],
+            _ => Vec::new(),
+        };
+        let cond = |rows: &[Vec<Datum>]| self.joined_conjuncts(&exprs, rows, &layout, &slots, mark);
+        let rows = crate::nested_loop::nested_loop(
+            op,
+            mark,
+            (!exprs.is_empty()).then_some(&cond as &crate::hash_join::Cond),
+            Side { rows: probe.block.rows, keys: Vec::new(), width: pw },
+            Side { rows: build.block.rows, keys: Vec::new(), width: bw },
+        )?;
+        self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
+    }
+
+    /// ASSERT_NUM_ROWS_NODE: its child's rows, or one all-NULL row (EQ 1 over none); with
+    /// `should_convert_output_to_nullable` every column becomes nullable.
+    fn assert_num_rows(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let n = &t.node;
+        let a = n.assert_num_rows_node.as_ref().ok_or_else(|| ExecError::BadRequest("ASSERT_NUM_ROWS_NODE without its parameters".into()))?;
+        let mut out = self.child(t, 0)?;
+        if crate::nested_loop::assert_rows(n.node_id, a, out.block.len())? {
+            out.block.rows = vec![vec![Datum::Null; out.slots.len()]];
+        }
+        if a.should_convert_output_to_nullable == Some(true) {
+            for ty in &mut out.block.types {
+                ty.nullable = true;
+            }
+        }
+        Ok(out)
     }
 
     /// Rows typed as the given slots.
