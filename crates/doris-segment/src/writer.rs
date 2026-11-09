@@ -81,6 +81,8 @@ pub fn field_type_of(name: &str) -> Option<i32> {
         "DECIMAL32" => DECIMAL32,
         "DECIMAL64" => DECIMAL64,
         "DECIMAL128I" => DECIMAL128I,
+        "DATE" => DATE,
+        "DATETIME" => DATETIME,
         "DATEV2" => DATEV2,
         "DATETIMEV2" => DATETIMEV2,
         "CHAR" => CHAR,
@@ -185,6 +187,19 @@ fn rle_null_map(nulls: &[bool]) -> Vec<u8> {
 }
 
 /// A value's stored bytes (little-endian; CHAR padded).
+/// A v2-packed DATE as v1 stores it (`to_olap_date`): `year << 9 | month << 5 | day`.
+pub fn date_v1(packed_v2: i128) -> u32 {
+    let d = crate::values::unpack_datev2(packed_v2 as u32);
+    d.year << 9 | u32::from(d.month) << 5 | u32::from(d.day)
+}
+
+/// A v2-packed DATETIME as v1 stores it (`to_olap_datetime`): the integer `YYYYMMDDhhmmss`.
+pub fn datetime_v1(packed_v2: i128) -> i64 {
+    let t = crate::values::unpack_datetimev2(packed_v2 as u64);
+    let date = i64::from(t.date.year) * 10_000 + i64::from(t.date.month) * 100 + i64::from(t.date.day);
+    date * 1_000_000 + i64::from(t.hour) * 10_000 + i64::from(t.minute) * 100 + i64::from(t.second)
+}
+
 fn value_bytes(spec: &ColumnSpec, d: &Datum) -> Result<Vec<u8>, Error> {
     let bad = || Error::Corrupt(format!("column {}: value {d:?} does not fit type {}", spec.unique_id, spec.field_type));
     Ok(match (spec.field_type, d) {
@@ -198,6 +213,8 @@ fn value_bytes(spec: &ColumnSpec, d: &Datum) -> Result<Vec<u8>, Error> {
         (BOOL, Datum::Bool(v)) => vec![u8::from(*v)],
         (FLOAT, Datum::Float(v)) => v.to_le_bytes().to_vec(),
         (DOUBLE, Datum::Double(v)) => v.to_le_bytes().to_vec(),
+        (DATE, Datum::Int(v)) => date_v1(*v).to_le_bytes()[..3].to_vec(),
+        (DATETIME, Datum::Int(v)) => datetime_v1(*v).to_le_bytes().to_vec(),
         (ft, Datum::Int(v)) if element_size(ft).is_some() && !matches!(ft, FLOAT | DOUBLE | BOOL) => {
             v.to_le_bytes()[..element_size(ft).unwrap()].to_vec()
         }

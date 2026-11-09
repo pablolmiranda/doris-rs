@@ -358,5 +358,281 @@
     "end": "commit",
     "format": "csv",
     "suite": "load_p0.stream_load.test_stream_load_with_aes_encrypt.test_stream_load_with_aes_encrypt"
+  },
+  {
+    "dir": "60",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "61",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "62",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "63",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "64",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "65",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "66",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "67",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "68",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_stream_load_cast.test_stream_load_cast"
+  },
+  {
+    "dir": "69",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "70",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "71",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "72",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "73",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "74",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "75",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "76",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "77",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "78",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "79",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "80",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "81",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "82",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "83",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "84",
+    "end": "rollback",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "85",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "86",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_stream_load_strict_mode_and_filter_ratio.test_stream_load_strict_mode_and_filter_ratio"
+  },
+  {
+    "dir": "87",
+    "end": "commit",
+    "format": "parquet",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
+  },
+  {
+    "dir": "88",
+    "end": "commit",
+    "format": "orc",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
+  },
+  {
+    "dir": "89",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_load_with_decimal.test_load_with_decimal"
+  },
+  {
+    "dir": "90",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "91",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "92",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "93",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "94",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "95",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "96",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "97",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "98",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape"
+  },
+  {
+    "dir": "99",
+    "end": "commit",
+    "format": "csv_with_names",
+    "suite": "load_p0.stream_load.test_csv_with_skip_lines.test_csv_with_skip_lines"
+  },
+  {
+    "dir": "100",
+    "end": "commit",
+    "format": "csv_with_names_and_types",
+    "suite": "load_p0.stream_load.test_csv_with_skip_lines.test_csv_with_skip_lines"
+  },
+  {
+    "dir": "101",
+    "end": "commit",
+    "format": "csv",
+    "suite": "load_p0.stream_load.test_csv_with_skip_lines.test_csv_with_skip_lines"
+  },
+  {
+    "dir": "102",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_json_load_default_number_value.test_json_load_default_number_value"
+  },
+  {
+    "dir": "103",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_json_load_default_number_value.test_json_load_default_number_value"
+  },
+  {
+    "dir": "104",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_json_load_default_value.test_json_load_default_value"
+  },
+  {
+    "dir": "105",
+    "end": "commit",
+    "format": "json",
+    "suite": "load_p0.stream_load.test_json_load_default_value.test_json_load_default_value"
   }
 ]

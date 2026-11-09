@@ -36,6 +36,8 @@ pub struct SinkOutcome {
     pub first_error: Option<String>,
     /// The error log's name under the error log directory.
     pub error_log: Option<String>,
+    /// Each instance: its id, the rows that reached it (filtered ones included), their bytes.
+    pub instances: Vec<(TUniqueId, i64, i64)>,
 }
 
 impl SinkOutcome {
@@ -50,6 +52,7 @@ impl SinkOutcome {
             bytes: 0,
             first_error: None,
             error_log: None,
+            instances: Vec::new(),
         }
     }
 }
@@ -81,7 +84,8 @@ pub fn row_bytes(cols: &[ColType], nullable: &[bool], row: &[Value]) -> i64 {
                 T::BOOLEAN | T::TINYINT => 1,
                 T::SMALLINT => 2,
                 T::INT | T::FLOAT | T::DATEV2 | T::DECIMAL32 => 4,
-                T::BIGINT | T::DOUBLE | T::DATETIMEV2 | T::DECIMAL64 => 8,
+                // a v1 date in a block is a VecDateTimeValue, 8 bytes
+                T::BIGINT | T::DOUBLE | T::DATETIMEV2 | T::DECIMAL64 | T::DATE | T::DATETIME => 8,
                 _ => 16,
             };
             data + i64::from(nullable)
@@ -93,63 +97,161 @@ fn uid(id: &TUniqueId) -> PUniqueId {
     PUniqueId { hi: id.hi, lo: id.lo }
 }
 
+/// `MAX_ERROR_NUM`: error rows an instance logs; with `load_zero_tolerance` the next one stops
+/// the load (`RuntimeState::append_error_msg_to_file`).
+const MAX_LOGGED_ERRORS: usize = 51;
+
+/// One instance's share of a table sink: its routed rows in order, its error rows, and what
+/// reached it.
+#[derive(Default)]
+struct InstanceRows {
+    routed: Vec<crate::route::Routed>,
+    errors: Vec<RowError>,
+    filtered: i64,
+    /// Rows that reached the sink, filtered ones included (`num_rows_load_total`).
+    reached: i64,
+    bytes: i64,
+}
+
+/// The OLAP table sink of a fragment, fed by each of its instances (`VTabletWriterV2`): rows are
+/// routed as they arrive; `finish`, once every instance has ended, writes each touched
+/// partition's tablets and commits them, as the last sink to close does.
+pub struct TableSink {
+    f: WriteFragment,
+    router: Router,
+    instance_ids: Vec<TUniqueId>,
+    instances: Mutex<Vec<InstanceRows>>,
+    /// Set when an instance cancelled the load: the others take no more rows.
+    cancelled: Mutex<Option<String>>,
+}
+
+impl TableSink {
+    pub fn new(f: &WriteFragment, instance_ids: Vec<TUniqueId>) -> Result<TableSink, crate::ExecError> {
+        let router = Router::new(f)?;
+        let instances = Mutex::new(instance_ids.iter().map(|_| InstanceRows::default()).collect());
+        Ok(TableSink { f: f.clone(), router, instance_ids, instances, cancelled: Mutex::new(None) })
+    }
+
+    /// An instance's rows (destination column order; a row error is filtered), with whether
+    /// each column of the block that carried them has a null map. Cancelled with
+    /// DATA_QUALITY_ERROR when a zero-tolerance load has more error rows than it logs.
+    pub fn push(&self, instance: usize, rows: Vec<Result<Vec<Value>, RowError>>, nullable: &[bool]) -> Result<(), crate::ExecError> {
+        if let Some(why) = self.cancelled.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return Err(crate::ExecError::Cancelled(why));
+        }
+        let mut all = self.instances.lock().unwrap_or_else(|e| e.into_inner());
+        let me = all.get_mut(instance).ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
+        // the whole block reaches the sink before its rows are checked
+        me.reached += rows.len() as i64;
+        for values in rows.iter().flatten() {
+            me.bytes += row_bytes(self.f.dest_columns(), nullable, values);
+        }
+        for row in rows {
+            match row.and_then(|values| self.router.route(&values)) {
+                Ok(r) => me.routed.push(r),
+                Err(e) => {
+                    if me.errors.len() >= MAX_LOGGED_ERRORS {
+                        if self.f.zero_tolerance {
+                            // LoadStreamStub::check_cancel: print_id(_load_id)
+                            let l = &self.f.sink.load_id;
+                            let why = format!(
+                                "load_id={:x}-{:x}, reason: [DATA_QUALITY_ERROR]Encountered unqualified data, stop processing. Please check if the source data matches the schema, and consider disabling strict mode or increasing max_filter_ratio.",
+                                l.hi as u64, l.lo as u64
+                            );
+                            *self.cancelled.lock().unwrap_or_else(|e| e.into_inner()) = Some(why.clone());
+                            return Err(crate::ExecError::Cancelled(why));
+                        }
+                    } else {
+                        me.errors.push(e);
+                    }
+                    me.filtered += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends the sink once every instance has: commits what the instances routed, or, when the
+    /// query failed (`failure`), commits nothing and reports that status. Either way the counts,
+    /// the error log and the first error are those of what reached the sink.
+    pub fn finish(self, tablets: &Mutex<TabletManager>, error_dir: &Path, failure: Option<TStatus>) -> SinkOutcome {
+        let f = &self.f;
+        let instances = self.instances.into_inner().unwrap_or_else(|e| e.into_inner());
+        let mut out = SinkOutcome {
+            status: failure.clone().unwrap_or_else(|| status(TStatusCode::OK, None)),
+            commit_infos: Vec::new(),
+            loaded: instances.iter().map(|i| i.reached - i.filtered).sum(),
+            filtered: instances.iter().map(|i| i.filtered).sum(),
+            unselected: 0,
+            bytes: instances.iter().map(|i| i.bytes).sum(),
+            first_error: None,
+            error_log: None,
+            instances: self.instance_ids.iter().zip(&instances).map(|(id, i)| (id.clone(), i.reached, i.bytes)).collect(),
+        };
+        // the first instance (in plan order) that logged errors names the load's log
+        if let Some((n, rows)) = instances.iter().enumerate().find(|(_, i)| !i.errors.is_empty()) {
+            let e = &rows.errors[0];
+            out.first_error = Some(format!("{}. Src line: {}", e.msg, e.line));
+            let id = &self.instance_ids[n];
+            let (db, label) = if f.plan == crate::fragment::WritePlan::Stream {
+                ("insert".to_string(), format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64))
+            } else {
+                // RuntimeState::init: db insert_stmt, the label print_id(fragment_instance_id)
+                ("insert_stmt".to_string(), format!("{:x}-{:x}", id.hi as u64, id.lo as u64))
+            };
+            match write_error_log(error_dir, &db, &label, (id.hi, id.lo), &rows.errors) {
+                Ok(name) => out.error_log = Some(name),
+                Err(e) => eprintln!("doris-rs be: cannot write the load error log: {e}"),
+            }
+        }
+        if failure.is_some() {
+            // a cancelled load counts every row that reached it as loaded and none as filtered
+            if failure.as_ref().is_some_and(|s| s.status_code == TStatusCode::CANCELLED) {
+                out.loaded = instances.iter().map(|i| i.reached).sum();
+                out.filtered = 0;
+            }
+            return out;
+        }
+        let mut groups: BTreeMap<i64, Vec<Vec<Datum>>> = BTreeMap::new();
+        let mut touched: BTreeSet<i64> = BTreeSet::new();
+        for r in instances.into_iter().flat_map(|i| i.routed) {
+            touched.insert(r.partition_id);
+            // a row goes to one tablet per index: moved, not copied, when there is one index
+            match r.tablets.as_slice() {
+                [(_, tablet)] => groups.entry(*tablet).or_default().push(r.row),
+                many => {
+                    for (_, tablet) in many {
+                        groups.entry(*tablet).or_default().push(r.row.clone());
+                    }
+                }
+            }
+        }
+        commit(f, &mut out, groups, &touched, tablets);
+        out
+    }
+}
+
+/// Runs one instance's rows through a table sink to its end.
 pub fn run_sink(
     f: &WriteFragment,
     rows: impl IntoIterator<Item = Result<Vec<Value>, RowError>>,
     tablets: &Mutex<TabletManager>,
     error_dir: &Path,
 ) -> SinkOutcome {
-    let mut out = SinkOutcome {
-        status: status(TStatusCode::OK, None),
-        commit_infos: Vec::new(),
-        loaded: 0,
-        filtered: 0,
-        unselected: 0,
-        bytes: 0,
-        first_error: None,
-        error_log: None,
+    let sink = match TableSink::new(f, vec![f.instance_id.clone()]) {
+        Ok(s) => s,
+        Err(e) => return SinkOutcome::failed(e.to_string()),
     };
-    let router = match Router::new(f) {
-        Ok(r) => r,
-        Err(e) => {
-            out.status = status(TStatusCode::INTERNAL_ERROR, Some(e.to_string()));
-            return out;
-        }
-    };
-    let mut errors: Vec<RowError> = Vec::new();
-    let mut groups: BTreeMap<i64, Vec<Vec<Datum>>> = BTreeMap::new();
-    let mut touched: BTreeSet<i64> = BTreeSet::new();
-    let nullable = f.input_nullable();
-    for row in rows {
-        let routed = row.and_then(|values| {
-            out.bytes += row_bytes(f.dest_columns(), &nullable, &values);
-            router.route(&values)
-        });
-        match routed {
-            Ok(r) => {
-                out.loaded += 1;
-                touched.insert(r.partition_id);
-                for (_, tablet) in &r.tablets {
-                    groups.entry(*tablet).or_default().push(r.row.clone());
-                }
-            }
-            Err(e) => {
-                out.filtered += 1;
-                errors.push(e);
-            }
-        }
-    }
-    if let Some(e) = errors.first() {
-        out.first_error = Some(format!("{}. Src line: {}", e.msg, e.line));
-        // print_id(query_id): the halves as unsigned hex, joined by a dash
-        let label = format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64);
-        match write_error_log(error_dir, "insert", &label, (f.instance_id.hi, f.instance_id.lo), &errors) {
-            Ok(name) => out.error_log = Some(name),
-            Err(e) => eprintln!("doris-rs be: cannot write the load error log: {e}"),
-        }
-    }
+    let failure = sink
+        .push(0, rows.into_iter().collect(), &f.input_nullable())
+        .err()
+        .map(|e| status(TStatusCode::CANCELLED, Some(e.to_string())));
+    sink.finish(tablets, error_dir, failure)
+}
 
-    // every tablet of every index of each partition that got a row
+/// Writes every tablet of every index of each touched partition (an empty rowset where no row
+/// came) and commits them to the load's transaction.
+fn commit(f: &WriteFragment, out: &mut SinkOutcome, mut groups: BTreeMap<i64, Vec<Vec<Datum>>>, touched: &BTreeSet<i64>, tablets: &Mutex<TabletManager>) {
     let load_id = uid(&f.sink.load_id);
     let txn = f.sink.txn_id;
     let names: Vec<&str> = f.dest_columns().iter().map(|c| c.name.as_str()).collect();
@@ -193,10 +295,7 @@ pub fn run_sink(
                     })();
                     match res {
                         Ok(p) => planned.push(p),
-                        Err(msg) => {
-                            fail(&mut out, msg);
-                            return out;
-                        }
+                        Err(msg) => return fail(out, msg),
                     }
                 }
             }
@@ -206,25 +305,23 @@ pub fn run_sink(
     for p in planned {
         match write_rowset(&p.dir, &p.meta, &p.id, txn, &load_id, p.rows) {
             Ok(w) => written.push((p.partition, p.tablet, w.meta)),
-            Err(e) => {
-                fail(&mut out, e.to_string());
-                return out;
-            }
+            Err(e) => return fail(out, e.to_string()),
         }
     }
     let mut mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
     for (partition, tablet, rs) in written {
         if let Err(e) = mgr.commit_txn(partition, txn, tablet, load_id, rs) {
-            fail(&mut out, e.to_string());
-            return out;
+            return fail(out, e.to_string());
         }
         out.commit_infos.push(TTabletCommitInfo { tablet_id: tablet, backend_id: f.backend_id, invalid_dict_cols: None });
     }
-    out
 }
 
-/// The final `reportExecStatus` of a write fragment (`PipelineFragmentContext::send_report`).
+/// The final `reportExecStatus` of a write fragment (`PipelineFragmentContext::send_report`,
+/// `_coordinator_callback`): the counters and one report per instance that had rows only when
+/// some had; commit infos only when there are any; the tracking URL and first error when set.
 pub fn exec_status(f: &WriteFragment, o: &SinkOutcome, tracking_url: Option<String>) -> TReportExecStatusParams {
+    let had_rows = o.instances.iter().any(|(_, rows, _)| *rows > 0);
     let counters: BTreeMap<String, String> = [
         ("dpp.norm.ALL", o.loaded),
         ("dpp.abnorm.ALL", o.filtered),
@@ -233,14 +330,19 @@ pub fn exec_status(f: &WriteFragment, o: &SinkOutcome, tracking_url: Option<Stri
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
     .collect();
-    let report = TFragmentInstanceReport {
-        fragment_instance_id: Some(f.instance_id.clone()),
-        num_finished_range: Some(0),
-        loaded_rows: Some(o.loaded + o.filtered),
-        loaded_bytes: Some(o.bytes),
-    };
+    let reports: Vec<TFragmentInstanceReport> = o
+        .instances
+        .iter()
+        .filter(|(_, rows, _)| *rows > 0)
+        .map(|(id, rows, bytes)| TFragmentInstanceReport {
+            fragment_instance_id: Some(id.clone()),
+            num_finished_range: Some(0),
+            loaded_rows: Some(*rows),
+            loaded_bytes: Some(*bytes),
+        })
+        .collect();
     let ok = o.status.status_code == TStatusCode::OK;
-    TReportExecStatusParams::new(
+    let mut p = TReportExecStatusParams::new(
         FrontendServiceVersion::V1,
         f.query_id.clone(),
         -1,
@@ -251,9 +353,9 @@ pub fn exec_status(f: &WriteFragment, o: &SinkOutcome, tracking_url: Option<Stri
         None,
         None,
         counters,
-        if o.filtered > 0 { tracking_url } else { None },
+        if o.error_log.is_some() { tracking_url } else { None },
         None,
-        if ok { Some(o.commit_infos.clone()) } else { None },
+        (ok && !o.commit_infos.is_empty()).then(|| o.commit_infos.clone()),
         0,
         f.backend_id,
         0,
@@ -270,9 +372,14 @@ pub fn exec_status(f: &WriteFragment, o: &SinkOutcome, tracking_url: Option<Stri
         None,
         None,
         None,
-        vec![report],
+        reports,
         None,
         o.first_error.clone(),
         None,
-    )
+    );
+    if !had_rows {
+        p.load_counters = None;
+        p.fragment_instance_reports = None;
+    }
+    p
 }

@@ -1,0 +1,15 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_cast/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: c7747279-81f3-4231-8956-561ba6e085e2
+column_separator: ,
+columns: k0,k1,k2,k3,k4
+strict_mode: false
+format: json
+Expect: 100-Continue
+Content-Length: 60
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+{"k0": 3.12, "k1": 3.12, "k2": 3.12, "k3": 3.12, "k4": 3.12}

@@ -117,6 +117,8 @@ pub struct FragmentPlan {
     pub per_exch_num_senders: BTreeMap<i32, i32>,
     pub destinations: Vec<TPlanFragmentDestination>,
     pub instances: Vec<InstancePlan>,
+    /// The fragment's OLAP_TABLE_SINK (`INSERT … SELECT`), checked.
+    pub write: Option<crate::fragment::WriteFragment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,6 +148,10 @@ impl QueryPlan {
 }
 
 pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecError> {
+    // the load service's (exec_plan_fragment); its constants are not the query evaluator's
+    if crate::fragment::is_load_plan(list) {
+        return Err(unsupported("an INSERT … VALUES or a file scan sent as a query"));
+    }
     let params = list.params_list.as_deref().unwrap_or_default();
     let full = params
         .iter()
@@ -186,6 +192,18 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
                     .collect(),
             })
             .collect();
+        let write = if sink.type_ == TDataSinkType::OLAP_TABLE_SINK {
+            // a later fragment of a prepare is simplified (is_simplified_param): it takes the
+            // query's options and globals from the fragment that carries them
+            let mut p = p.clone();
+            p.query_options = p.query_options.or_else(|| full.query_options.clone());
+            p.query_globals = p.query_globals.or_else(|| full.query_globals.clone());
+            p.coord = p.coord.or_else(|| full.coord.clone());
+            p.backend_id = p.backend_id.or(full.backend_id);
+            Some(crate::fragment::table_sink(&p, crate::fragment::WritePlan::Select)?)
+        } else {
+            None
+        };
         fragments.push(FragmentPlan {
             fragment_id: p.fragment_id.unwrap_or(0),
             root,
@@ -194,6 +212,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
             per_exch_num_senders: p.per_exch_num_senders.clone(),
             destinations: p.destinations.clone().unwrap_or_default(),
             instances,
+            write,
         });
     }
     let o = options.as_ref();
@@ -719,6 +738,8 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
                     check_stream_sink(s, "a multicast consumer")?;
                 }
             }
+            // its sink checked when planned (`fragment::table_sink`)
+            TDataSinkType::OLAP_TABLE_SINK if f.write.is_some() => check_exprs(&f.output_exprs, false)?,
             other => return Err(unsupported(sink_type_name(other))),
         }
     }

@@ -802,3 +802,97 @@ fn a_window_over_an_exchange_without_senders_is_refused() {
     // check_senders refuses it before the window's walk would see an exchange fed by nothing
     refused_by(&prepare, &orphan, "senders, the plan has 0");
 }
+
+/// A suite's first INSERT … SELECT request (a plan with an OLAP_TABLE_SINK fed by a query).
+fn insert_select(suite: &str) -> (doris_fixtures::replays::Rpc, doris_proto::doris::PExecPlanFragmentRequest, doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList) {
+    use doris_fixtures::replays::{self, plan_list, Step};
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    replays::load(suite)
+        .steps
+        .iter()
+        .find_map(|s| match s {
+            Step::ExecPlanFragment { rpc, request } => plan_list(request)
+                .filter(|l| {
+                    let sinks = || l.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()?.output_sink.as_ref());
+                    sinks().any(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK)
+                        && l.params_list.iter().flatten().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes)).any(|n| n.node_type == TPlanNodeType::OLAP_SCAN_NODE)
+                })
+                .map(|l| (*rpc, request.clone(), l)),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{suite}: no INSERT … SELECT"))
+}
+
+/// An instance that fails (here the scan: its tablet is not on this BE) fails the write: nothing
+/// is committed, and every fragment reports the error, as a LOAD, with no commit infos.
+#[test]
+fn a_failed_instance_commits_nothing() {
+    let (_, req, list) = insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let env = env();
+    assert_eq!(env.query.exec_plan_fragment(&req).status.status_code, 0);
+    assert!(env.query.wait_idle(Duration::from_secs(30)));
+    let reports: Vec<_> = env
+        .fe
+        .load_calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            LoadCall::ExecStatus(_, p) => Some(p),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reports.len(), list.params_list.as_ref().unwrap().len());
+    for p in &reports {
+        assert_eq!(p.query_type, Some(TQueryType::LOAD));
+        assert_ne!(p.status.as_ref().unwrap().status_code, doris_thrift::gen::status::TStatusCode::OK, "{p:?}");
+        assert_eq!(p.commit_infos, None);
+        assert_eq!(p.done, Some(true));
+    }
+    // and the write is forgotten: nothing fetches it
+    assert_eq!(env.query.live_state(), (0, 0));
+}
+
+/// The FE's own statistics DELETE after a TRUNCATE (a partial update with the delete sign into
+/// the merge-on-write statistics table) is refused at prepare, naming the partial update.
+#[test]
+fn the_statistics_delete_is_refused_naming_partial_update() {
+    let (_, req, list) = insert_select("query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword");
+    let mut l = list.clone();
+    for p in l.params_list.iter_mut().flatten() {
+        if let Some(s) = p.fragment.as_mut().and_then(|f| f.output_sink.as_mut()).and_then(|s| s.olap_table_sink.as_mut()) {
+            s.schema.is_partial_update = Some(true);
+        }
+    }
+    let mut r = req.clone();
+    r.request = exec_request(l.params_list.clone().unwrap()).request;
+    let st = env().query.prepare(&r).status;
+    assert_eq!(st.status_code, 3, "{st:?}");
+    assert!(st.error_msgs.iter().any(|e| e.contains("partial update")), "{st:?}");
+}
+
+/// What the table sink cannot route (a distribution column the sink does not write) is refused at
+/// prepare, not found once the write runs.
+#[test]
+fn a_table_sink_it_cannot_route_is_refused_at_prepare() {
+    let (_, req, list) = insert_select("query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword");
+    let mut l = list.clone();
+    for p in l.params_list.iter_mut().flatten() {
+        if let Some(s) = p.fragment.as_mut().and_then(|f| f.output_sink.as_mut()).and_then(|s| s.olap_table_sink.as_mut()) {
+            s.partition.distributed_columns = Some(vec!["no_such_column".into()]);
+        }
+    }
+    let mut r = req.clone();
+    r.request = exec_request(l.params_list.clone().unwrap()).request;
+    let st = env().query.prepare(&r).status;
+    assert_ne!(st.status_code, 0, "{st:?}");
+    assert!(st.error_msgs.iter().any(|e| e.contains("no_such_column")), "{st:?}");
+}
+
+/// INSERT … VALUES is the load service's (`exec_plan_fragment`); sent to prepare, the query service
+/// refuses it rather than evaluate its constants another way.
+#[test]
+fn a_values_insert_sent_to_prepare_is_refused() {
+    let v = &doris_fixtures::values::values_vectors()[0];
+    let st = env().query.prepare(&v.request).status;
+    assert_eq!(st.status_code, 3, "{st:?}");
+    assert!(st.error_msgs.iter().any(|e| e.contains("INSERT … VALUES")), "{st:?}");
+}

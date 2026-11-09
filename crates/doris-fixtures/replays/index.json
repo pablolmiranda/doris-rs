@@ -70,5 +70,9 @@
   "nereids_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
   "query_p0.dual.dual.dual",
   "query_p0.select_no_from.sql.withGroupOrderHaving.withGroupOrderHaving",
-  "query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn"
+  "query_p0.sql_functions.window_functions.test_partition_topn.test_partition_topn",
+  "insert_p0.test_insert_docs_demo.test_insert_docs_demo",
+  "insert_p0.test_insert_partition_fail_url.test_insert_partition_fail_url",
+  "nereids_p0.ddl.clean.test_clean_label_nereids.test_clean_label_nereids",
+  "query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword"
 ]

@@ -1,0 +1,19 @@
+PUT /api/regression_test_load_p0_stream_load/test_load_with_decimal/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 45ecfe4e-75c2-4eb2-ad39-f9cad9a1f3b8
+format: json
+strip_outer_array: true
+Expect: 100-Continue
+Content-Length: 968
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+[
+    {"id": 1, "decimal_col1": 1.1234, "decimal_col2": 12.123456, "decimal_col3": 123.123456789876, "decimal_col4": 12, "decimal_col5": 1234.123456789, "decimal_col6": 123},
+    {"id": 2, "decimal_col1": 1234.1234, "decimal_col2": 123456789123.123456, "decimal_col3": 12345678912345678912345678.123456789876, "decimal_col4": 123456789, "decimal_col5": 123456789123456789.123456780, "decimal_col6": 987654321},
+    {"id": 3, "decimal_col1": 1234.0000, "decimal_col2": 123456789123.000000, "decimal_col3": 12345678912345678912345678.000000000000, "decimal_col4": 123456789, "decimal_col5": 123456789123456789.000000000, "decimal_col6": 987654321},
+    {"id": 4, "decimal_col1": null, "decimal_col2": null, "decimal_col3": 123.123456789876, "decimal_col4": 12, "decimal_col5": null, "decimal_col6": 123},
+    {"id": 5, "decimal_col1": 1.1234, "decimal_col2": 12.123456, "decimal_col3": null, "decimal_col4": null, "decimal_col5": 1234.123456789, "decimal_col6": null}
+]

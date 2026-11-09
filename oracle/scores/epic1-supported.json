@@ -106,6 +106,7 @@
   "type:SMALLINT",
   "type:STRING",
   "type:TINYINT",
-  "type:VARCHAR"
+  "type:VARCHAR",
+  "write:INSERT_SELECT"
  ]
 }

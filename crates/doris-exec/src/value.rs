@@ -75,6 +75,8 @@ impl ColType {
             TPrimitiveType::LARGEINT => "LARGEINT".into(),
             TPrimitiveType::FLOAT => "FLOAT".into(),
             TPrimitiveType::DOUBLE => "DOUBLE".into(),
+            TPrimitiveType::DATE => "Date".into(),
+            TPrimitiveType::DATETIME => "DateTime".into(),
             TPrimitiveType::DATEV2 => "DateV2".into(),
             TPrimitiveType::DATETIMEV2 => format!("DateTimeV2({})", self.scale),
             TPrimitiveType::DECIMAL32 | TPrimitiveType::DECIMAL64 | TPrimitiveType::DECIMAL128I => {
@@ -85,7 +87,14 @@ impl ColType {
         }
     }
 
-    /// Whether the M4 writer stores this type.
+    /// Whether the writer stores this type: every type queries read, and v1 DATE and DATETIME,
+    /// which doris-rs writes but does not read (the FE creates v1 columns while its
+    /// `enable_date_conversion` is false).
+    pub fn writable(&self) -> bool {
+        self.supported() || matches!(self.ptype, TPrimitiveType::DATE | TPrimitiveType::DATETIME)
+    }
+
+    /// Whether doris-rs reads (and writes) this type.
     pub fn supported(&self) -> bool {
         matches!(
             self.ptype,
@@ -106,6 +115,75 @@ impl ColType {
                 | TPrimitiveType::VARCHAR
                 | TPrimitiveType::STRING
         )
+    }
+}
+
+/// A block value (`crate::block::Block`) as the value `Router::route` takes: decimals as their
+/// text at the column's scale, dates as their text, the rest as they are.
+pub fn datum_value(d: &Datum, c: &ColType) -> Value {
+    use doris_segment::values::{unpack_datetimev2, unpack_datev2};
+    use TPrimitiveType as T;
+    match d {
+        Datum::Null => Value::Null,
+        Datum::Bool(b) => Value::Bool(*b),
+        Datum::Float(f) => Value::Float(f64::from(*f)),
+        Datum::Double(f) => Value::Float(*f),
+        Datum::Bytes(b) => Value::Str(b.clone()),
+        Datum::Int(i) => match c.ptype {
+            T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => Value::Decimal(decimal_text(*i, c.scale)),
+            T::DATEV2 | T::DATE => {
+                let v = unpack_datev2(*i as u32);
+                Value::Date(format!("{:04}-{:02}-{:02}", v.year, v.month, v.day))
+            }
+            T::DATETIMEV2 | T::DATETIME => {
+                let t = unpack_datetimev2(*i as u64);
+                let mut s = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.date.year, t.date.month, t.date.day, t.hour, t.minute, t.second);
+                if t.microsecond > 0 {
+                    s.push_str(&format!(".{:06}", t.microsecond));
+                }
+                Value::Date(s)
+            }
+            _ => Value::Int(*i),
+        },
+    }
+}
+
+/// A string as an integer (`StringParser::string_to_int_internal` without strict casting): an
+/// optional sign, at least one digit, then nothing or a `.digits` suffix, which is dropped
+/// (`is_float_suffix`: "3.12" is 3). None for anything else or past i128.
+fn parse_int(t: &str) -> Option<i128> {
+    let digits_start = usize::from(t.starts_with(['+', '-']));
+    let rest = &t[digits_start..];
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    let suffix = &rest[end..];
+    if !(suffix.is_empty() || suffix.starts_with('.') && suffix[1..].bytes().all(|b| b.is_ascii_digit())) {
+        return None;
+    }
+    t[..digits_start + end].parse().ok()
+}
+
+/// An unscaled decimal as its text at `scale` ("1234.5000", "-0.5000").
+pub fn decimal_text(unscaled: i128, scale: i32) -> String {
+    if scale <= 0 {
+        return unscaled.to_string();
+    }
+    let p = 10u128.pow(scale as u32);
+    let sign = if unscaled < 0 { "-" } else { "" };
+    let a = unscaled.unsigned_abs();
+    format!("{sign}{}.{:0w$}", a / p, a % p, w = scale as usize)
+}
+
+/// A datetime as its column holds it, v2-packed. DATETIMEV2 rounds its fraction to its scale;
+/// v1 DATETIME (`cast_to_date_or_datetime_impl.hpp`) reads microseconds, the 7th digit rounding
+/// them, then drops them: its fraction is cut, carrying only when the microseconds round up.
+fn parse_datetime(s: &str, col: &ColType) -> Option<u64> {
+    if col.ptype == TPrimitiveType::DATETIME {
+        parse_datetimev2(s, 6).map(|v| v & !0xF_FFFF)
+    } else {
+        parse_datetimev2(s, col.scale)
     }
 }
 
@@ -180,12 +258,13 @@ pub fn to_datum(v: &Value, col: &ColType, strict: bool) -> Result<Datum, RowErro
             Value::Int(i) => Datum::Int(10i128.checked_pow(col.scale.max(0) as u32).and_then(|p| i.checked_mul(p)).ok_or_else(bad)?),
             _ => return Err(bad()),
         },
-        T::DATEV2 => match v {
+        // v1 DATE and DATETIME are v2-packed in memory too; the segment writer stores them as v1
+        T::DATEV2 | T::DATE => match v {
             Value::Date(s) => Datum::Int(parse_datev2(s).ok_or_else(bad)?.into()),
             _ => return Err(bad()),
         },
-        T::DATETIMEV2 => match v {
-            Value::Date(s) => Datum::Int(parse_datetimev2(s, col.scale).ok_or_else(bad)?.into()),
+        T::DATETIMEV2 | T::DATETIME => match v {
+            Value::Date(s) => Datum::Int(parse_datetime(s, col).ok_or_else(bad)?.into()),
             _ => return Err(bad()),
         },
         _ => return Err(row_err(col, format!("type {} is not supported", col.type_name()))),
@@ -285,7 +364,8 @@ pub fn parse_datetimev2(s: &str, scale: i32) -> Option<u64> {
 /// (the load then treats it as NULL, or as an error in strict mode).
 pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
     use TPrimitiveType as T;
-    let t = text.trim();
+    // StringParser skips ASCII whitespace (and \v) only
+    let t = text.trim_matches(|c: char| c.is_ascii_whitespace() || c == '\x0b');
     Some(match col.ptype {
         T::CHAR | T::VARCHAR | T::STRING => Value::Str(text.as_bytes().to_vec()),
         T::BOOLEAN => match t.to_ascii_lowercase().as_str() {
@@ -294,7 +374,7 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             _ => return None,
         },
         T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT => {
-            let v: i128 = t.parse().ok()?;
+            let v = parse_int(t)?;
             let bits = match col.ptype {
                 T::TINYINT => 8,
                 T::SMALLINT => 16,
@@ -314,14 +394,15 @@ pub fn parse_text(text: &str, col: &ColType) -> Option<Value> {
             if col.precision > 0 && v.unsigned_abs() >= 10u128.pow(col.precision.clamp(1, 38) as u32) {
                 return None;
             }
-            Value::Decimal(t.to_string())
+            // the value at the column's scale, as a decimal prints
+            Value::Decimal(decimal_text(v, col.scale))
         }
-        T::DATEV2 => {
+        T::DATEV2 | T::DATE => {
             parse_datev2(t)?;
             Value::Date(t.to_string())
         }
-        T::DATETIMEV2 => {
-            parse_datetimev2(t, col.scale)?;
+        T::DATETIMEV2 | T::DATETIME => {
+            parse_datetime(t, col)?;
             Value::Date(t.to_string())
         }
         _ => return None,

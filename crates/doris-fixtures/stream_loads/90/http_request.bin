@@ -1,0 +1,14 @@
+PUT /api/regression_test_load_p0_stream_load/test_csv_with_enclose_and_escape/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 7066ece9-9288-4d42-ae59-5ef85bc18856
+column_separator: ,
+enclose: "
+escape: \
+Expect: 100-Continue
+Content-Length: 97
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+4,"abc\"de,fg\"h","2023-07-16","\"abc\"def\"","2023-07-21 06:00:00","test \"escape\" in enclose"

@@ -61,9 +61,14 @@ struct Inner {
     idle: Condvar,
     /// `streaming_load_max_mb`, in bytes
     max_body_bytes: AtomicU64,
+    /// `LoadPathMgr::_next_shard`: the next `__shard_` a saved body goes to
+    next_shard: AtomicU64,
 }
 
 const MEBIBYTE: u64 = 1 << 20;
+
+/// `LoadPathMgr`'s shards of saved bodies.
+const MAX_SHARD_NUM: u64 = 1024;
 
 fn random_u64() -> u64 {
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
@@ -79,14 +84,17 @@ fn pstatus(code: i32, msg: Option<String>) -> PStatus {
     PStatus { status_code: code, error_msgs: msg.into_iter().collect() }
 }
 
+/// Where load error logs go: `<first data dir>/error_log`.
+pub(crate) fn error_dir(tablets: &Mutex<TabletManager>) -> PathBuf {
+    let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
+    mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
+}
+
 impl LoadService {
     pub fn new(tablets: Arc<Mutex<TabletManager>>, fe: Arc<dyn FeClient>, master: MasterInfo, http_port: u16) -> LoadService {
-        let error_dir = {
-            let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
-            mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
-        };
+        let error_dir = error_dir(&tablets);
         LoadService {
-            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new(), max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE) }),
+            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new(), max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE), next_shard: AtomicU64::new(0) }),
         }
     }
 
@@ -337,7 +345,9 @@ impl<'a> StreamLoad<'a> {
 
     fn run(&mut self) {
         let fmt = self.header("format").unwrap_or_else(|| "csv".into()).to_ascii_lowercase();
-        let Some((format, compress)) = parse_format(&fmt, &self.header("compress_type").unwrap_or_default()) else {
+        // StreamLoadAction::_on_header: a header-carrying CSV is read as CSV
+        let read_as = if self.header_type().is_empty() { fmt.as_str() } else { "csv" };
+        let Some((format, compress)) = parse_format(read_as, &self.header("compress_type").unwrap_or_default()) else {
             self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support stream load format {fmt} yet"));
             return;
         };
@@ -502,6 +512,14 @@ impl<'a> StreamLoad<'a> {
     }
 
     /// `StreamLoadAction::_process_put`: the headers as the FE's put request.
+    /// The format header when it names a CSV with a header (`csv_with_names`,
+    /// `csv_with_names_and_types`, any case), as given; else empty.
+    fn header_type(&self) -> String {
+        self.header("format")
+            .filter(|f| f.eq_ignore_ascii_case("csv_with_names") || f.eq_ignore_ascii_case("csv_with_names_and_types"))
+            .unwrap_or_default()
+    }
+
     fn put_request(&self, format: TFileFormatType, compress: TFileCompressType, timeout: Option<i32>) -> Result<TStreamLoadPutRequest, String> {
         let h = |k: &str| self.header(k);
         let skip_lines = match h("skip_lines").filter(|v| !v.is_empty()) {
@@ -512,6 +530,19 @@ impl<'a> StreamLoad<'a> {
             },
         };
         let is_true = |k: &str| h(k).is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        // a Parquet or ORC body is saved to a file first (`StreamLoadAction::_process_put`): the
+        // FE plans a local file scan of it. doris-rs reads the body from memory, so only the
+        // path is formed, as `_data_saved_path` forms it.
+        let saved = matches!(format, TFileFormatType::FORMAT_PARQUET | TFileFormatType::FORMAT_ORC);
+        let path = saved.then(|| {
+            let root = {
+                let mgr = self.inner.tablets.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.data_dirs().first().map(|d| d.root().display().to_string()).unwrap_or_default()
+            };
+            let shard = self.inner.next_shard.fetch_add(1, Ordering::Relaxed) % MAX_SHARD_NUM;
+            let usec = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_micros());
+            format!("{root}/mini_download/{}/__shard_{shard}//{}.{}.{usec}", self.req.db, self.req.table, doris_storage::timestamp())
+        });
         let (mut read_json_by_line, mut strip_outer_array) = (is_true("read_json_by_line"), is_true("strip_outer_array"));
         if h("read_json_by_line").is_none() && h("strip_outer_array").is_none() {
             read_json_by_line = true;
@@ -526,9 +557,9 @@ impl<'a> StreamLoad<'a> {
             user_ip: self.user_ip.clone(),
             load_id: self.load_id.clone(),
             txn_id: self.txn_id,
-            file_type: TFileType::FILE_STREAM,
+            file_type: if saved { TFileType::FILE_LOCAL } else { TFileType::FILE_STREAM },
             format_type: format,
-            path: None,
+            path,
             columns: h("columns"),
             where_: h("where"),
             column_separator: h("column_separator"),
@@ -555,10 +586,10 @@ impl<'a> StreamLoad<'a> {
             send_batch_parallelism: h("send_batch_parallelism").and_then(|v| v.parse().ok()),
             max_filter_ratio: h("max_filter_ratio").map(|v| OrderedFloat(v.parse().unwrap_or(0.0))),
             load_to_single_tablet: h("load_to_single_tablet").map(|v| v.eq_ignore_ascii_case("true")),
-            header_type: Some(String::new()),
+            header_type: Some(self.header_type()),
             hidden_columns: h("hidden_columns"),
             compress_type: Some(compress),
-            file_size: None,
+            file_size: saved.then(|| self.req.body.as_ref().map_or(0, Vec::len) as i64),
             trim_double_quotes: h("trim_double_quotes").map(|v| v.eq_ignore_ascii_case("true")),
             skip_lines,
             enable_profile: h("enable_profile").map(|v| v.eq_ignore_ascii_case("true")),
@@ -718,6 +749,9 @@ fn parse_format(format: &str, compress: &str) -> Option<(TFileFormatType, TFileC
             _ => return None,
         },
         "json" => TFileFormatType::FORMAT_JSON,
+        // read whole, not streamed: compress_type does not apply
+        "parquet" => return Some((TFileFormatType::FORMAT_PARQUET, TFileCompressType::PLAIN)),
+        "orc" => return Some((TFileFormatType::FORMAT_ORC, TFileCompressType::PLAIN)),
         _ => return None,
     };
     Some((format_type, compress_type))

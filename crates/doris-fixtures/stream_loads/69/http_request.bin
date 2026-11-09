@@ -1,0 +1,23 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_strict_mode_and_filter_ratio/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: 7339c4a7-f46f-43d5-a139-226867120b1b
+column_separator: |
+strict_mode: false
+max_filter_ratio: 0
+Expect: 100-Continue
+Content-Length: 112
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+1234567890
+1234567891
+1234567892
+1234567893
+1234567894
+1234567895
+1234567896
+12345678971
+12345678902
+12345678903

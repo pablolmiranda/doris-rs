@@ -48,6 +48,8 @@ fn every_type_schema() -> SegmentSchema {
             col(14, "VARCHAR", 36, true, false),
             col(15, "STRING", 2147483643, true, false),
             col(16, "INT", 4, true, false), // all NULL
+            col(17, "DATE", 3, true, false),
+            col(18, "DATETIME", 8, true, false),
         ],
         num_short_key_columns: 2,
         num_rows_per_block: 1024,
@@ -76,6 +78,9 @@ fn every_type_row(i: i64) -> Vec<Datum> {
         null_or(18, Datum::Bytes(if i % 4 == 0 { vec![] } else { format!("v{i}").into_bytes() })),
         null_or(19, Datum::Bytes(format!("{i:05} {}", "s".repeat(100)).into_bytes())),
         Datum::Null,
+        null_or(17, Datum::Int(i128::from(date))),
+        // v1 DATETIME holds whole seconds
+        null_or(18, Datum::Int(i128::from(datetime & !0xF_FFFF))),
     ]
 }
 
@@ -137,7 +142,7 @@ fn latin1(v: &serde_json::Value) -> Vec<u8> {
     v.as_str().unwrap().chars().map(|c| c as u8).collect()
 }
 
-/// The table's columns as the writer sees them, M4 types only.
+/// The table's columns as the writer sees them: those of the types it writes.
 fn corpus_schema(meta: &serde_json::Value) -> SegmentSchema {
     let s = &meta["schema"];
     let columns = s["column"]
@@ -263,4 +268,25 @@ fn strings_are_dict_encoded_in_plain_mode() {
         let got = datums(&read_column(&file, spec.unique_id).unwrap());
         assert_eq!(got, rows.iter().map(|r| stored(spec, &r[c])).collect::<Vec<_>>(), "column {c}");
     }
+}
+
+/// v1 DATE and DATETIME keys (`KeyCoderTraits<DATE>`, the integral traits for DATETIME): the
+/// 3-byte `year << 9 | month << 5 | day` big-endian with no sign flip, and the integer
+/// `YYYYMMDDhhmmss` sign-flipped big-endian. Values are v2-packed in memory.
+#[test]
+fn v1_date_keys_encode_as_cpp() {
+    let schema = SegmentSchema {
+        columns: vec![col(0, "DATE", 3, false, true), col(1, "DATETIME", 8, false, true)],
+        num_short_key_columns: 2,
+        num_rows_per_block: 1024,
+    };
+    let date = 2023u32 << 9 | 6 << 5 | 1;
+    let datetime = u64::from(date) << 37 | 12 << 32;
+    let key = doris_segment::key_coder::encode_key(&schema, &[Datum::Int(date.into()), Datum::Int(datetime.into())], false);
+    let v1 = 2023u32 << 9 | 6 << 5 | 1;
+    let mut want = vec![0x02];
+    want.extend_from_slice(&v1.to_be_bytes()[1..]);
+    want.push(0x02);
+    want.extend_from_slice(&((20230601120000i64 as u64) ^ (1 << 63)).to_be_bytes());
+    assert_eq!(key, want);
 }

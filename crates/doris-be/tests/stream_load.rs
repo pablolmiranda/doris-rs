@@ -86,6 +86,13 @@ fn check(s: &StreamLoadSample, r: &Run) {
     assert_eq!(begin, s.begin.0, "{ctx}: loadTxnBegin");
     let LoadCall::Put(mut put) = calls[1].clone() else { panic!("{ctx}: {calls:?}") };
     put.load_id = s.put.0.load_id.clone();
+    // a Parquet or ORC body is saved first (`_data_saved_path`): its path holds the time
+    if let Some(path) = put.path.as_deref() {
+        let db = &s.put.0.db;
+        assert!(path.contains(&format!("/mini_download/{db}/__shard_")), "{ctx}: {path}");
+        assert!(path.contains(&format!("//{}.", s.put.0.tbl)), "{ctx}: {path}");
+        put.path = s.put.0.path.clone();
+    }
     assert_eq!(put, s.put.0, "{ctx}: streamLoadPut");
     match (&s.end, &calls[2]) {
         (LoadEnd::Commit(want, _), LoadCall::Commit(got)) => {
@@ -120,6 +127,10 @@ fn noise(s: &StreamLoadSample) -> bool {
     s.reply.contains("MEM_LIMIT") || s.reply.contains("MEM_ALLOC")
 }
 
+/// Suites whose loads need a function doris-rs does not run yet, by name: replayed, they must
+/// be refused naming it. Remove an entry when the function lands.
+const AWAITING: &[(&str, &str)] = &[("test_json_load_default_value", "now"), ("test_json_load_default_number_value", "now")];
+
 fn replay(format: &str, rolled_back: bool) -> usize {
     let mut n = 0;
     for s in stream_loads() {
@@ -128,6 +139,11 @@ fn replay(format: &str, rolled_back: bool) -> usize {
             continue;
         }
         let Some(r) = run(&s) else { continue };
+        if let Some((_, function)) = AWAITING.iter().find(|(suite, _)| s.suite.ends_with(suite)) {
+            // refused rather than loaded wrong: a JSON key these loads lack defaults to it
+            assert!(r.reply.contains("NOT_IMPLEMENTED") && r.reply.contains(function), "{}: {}", s.dir, r.reply);
+            continue;
+        }
         check(&s, &r);
         n += 1;
     }
@@ -144,6 +160,21 @@ fn csv_stream_loads_match_the_corpus() {
 fn json_stream_loads_match_the_corpus() {
     let n = replay("json", false);
     assert!(n >= 3, "{n}");
+}
+
+#[test]
+fn parquet_and_orc_stream_loads_match_the_corpus() {
+    // test_load_with_decimal: a Parquet and an ORC file of decimals, read as text and cast
+    assert!(replay("parquet", false) >= 1);
+    assert!(replay("orc", false) >= 1);
+}
+
+#[test]
+fn csv_with_names_stream_loads_match_the_corpus() {
+    // test_csv_with_skip_lines: format csv_with_names[_and_types] is CSV whose first one or two
+    // lines are a header (StreamLoadAction::_on_header sets header_type)
+    assert!(replay("csv_with_names", false) >= 1);
+    assert!(replay("csv_with_names_and_types", false) >= 1);
 }
 
 #[test]

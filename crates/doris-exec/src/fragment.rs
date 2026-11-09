@@ -2,7 +2,7 @@
 //! Thrift `TPipelineFragmentParamsList`), and the two plan shapes doris-rs runs:
 //! `UNION_NODE` (constant rows) → projections → `output_exprs` → `OLAP_TABLE_SINK` for
 //! `INSERT … VALUES`, and `FILE_SCAN_NODE` → `OLAP_TABLE_SINK` for stream load. Any other plan
-//! is refused, naming the first node, sink, type or expression outside these.
+//! with a table sink (`INSERT … SELECT`) runs in the query pipeline, its sink checked here.
 use std::collections::HashMap;
 
 use doris_proto::doris::PExecPlanFragmentRequest;
@@ -41,10 +41,12 @@ pub enum WritePlan {
     Values,
     /// Stream load: rows come from the request body through the file scan node.
     Stream,
+    /// `INSERT … SELECT`: rows come from the fragment's plan, run by the query pipeline.
+    Select,
 }
 
 /// A write fragment, ready to run.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WriteFragment {
     pub params: TPipelineFragmentParams,
     pub plan: WritePlan,
@@ -57,6 +59,8 @@ pub struct WriteFragment {
     /// `enable_insert_strict`: when false, over-long strings are cut instead of filtered. A
     /// stream load sets it from its strict mode.
     pub insert_strict: bool,
+    /// `load_zero_tolerance` (`TQueryGlobals`): too many error rows stop the load.
+    pub zero_tolerance: bool,
     dest: Vec<ColType>,
 }
 
@@ -121,6 +125,39 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
             });
         }
     };
+    let wf = table_sink(params, plan.clone())?;
+    if plan == WritePlan::Values {
+        let n = &nodes[0];
+        let union = n.union_node.as_ref().ok_or_else(|| ExecError::BadRequest("UNION_NODE without its params".into()))?;
+        if !union.result_expr_lists.is_empty() {
+            return Err(ExecError::Unsupported { what: "a union with children".into() });
+        }
+        for e in union.const_expr_lists.iter().flatten().chain(n.projections.iter().flatten()).chain(fragment.output_exprs.iter().flatten()) {
+            check(e)?;
+        }
+    }
+    if wf.plan == WritePlan::Stream {
+        crate::file_scan::check_stream(&wf)?;
+    }
+    Ok(wf)
+}
+
+/// Whether a request is a write the load service runs: one fragment of one node, constant rows
+/// (`INSERT … VALUES`) or a file scan, into an OLAP_TABLE_SINK. Every other plan with a table
+/// sink (`INSERT … SELECT`) is a query's.
+pub fn is_load_plan(list: &TPipelineFragmentParamsList) -> bool {
+    let params = list.params_list.as_deref().unwrap_or_default();
+    let [p] = params else { return false };
+    let Some(f) = p.fragment.as_ref() else { return false };
+    let nodes = f.plan.as_ref().map(|p| p.nodes.as_slice()).unwrap_or_default();
+    f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK)
+        && matches!(nodes, [n] if matches!(n.node_type, TPlanNodeType::UNION_NODE | TPlanNodeType::FILE_SCAN_NODE))
+}
+
+/// A fragment's OLAP_TABLE_SINK, checked: what doris-rs refuses (partial update, group commit,
+/// automatic partitions, a column of a type it does not write) is refused naming it.
+pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<WriteFragment, ExecError> {
+    let fragment = params.fragment.as_ref().ok_or_else(|| ExecError::BadRequest("no fragment".into()))?;
     let sink = fragment.output_sink.as_ref().ok_or_else(|| ExecError::BadRequest("no sink".into()))?;
     if sink.type_ != TDataSinkType::OLAP_TABLE_SINK {
         return Err(ExecError::Unsupported { what: format!("data sink type {}", sink.type_.0) });
@@ -147,18 +184,8 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         })
         .collect::<Result<Vec<_>, _>>()?;
     for c in base.values().map(ColType::from_column).chain(dest.iter().cloned()) {
-        if !c.supported() {
+        if !c.writable() {
             return Err(ExecError::Unsupported { what: format!("column {} of type {}", c.name, c.type_name()) });
-        }
-    }
-    if plan == WritePlan::Values {
-        let n = &nodes[0];
-        let union = n.union_node.as_ref().ok_or_else(|| ExecError::BadRequest("UNION_NODE without its params".into()))?;
-        if !union.result_expr_lists.is_empty() {
-            return Err(ExecError::Unsupported { what: "a union with children".into() });
-        }
-        for e in union.const_expr_lists.iter().flatten().chain(n.projections.iter().flatten()).chain(fragment.output_exprs.iter().flatten()) {
-            check(e)?;
         }
     }
     let instance_id = params
@@ -176,12 +203,13 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         coord: params.coord.clone(),
         backend_id: params.backend_id.unwrap_or(0),
         insert_strict: params.query_options.as_ref().and_then(|q| q.enable_insert_strict).unwrap_or(true),
+        zero_tolerance: params.query_globals.as_ref().and_then(|g| g.load_zero_tolerance).unwrap_or(false),
         sink,
         dest,
     };
-    if wf.plan == WritePlan::Stream {
-        crate::file_scan::check_stream(&wf)?;
-    }
+    // what the sink cannot route (a column it does not write, a bad partition key) is refused
+    // here, before the write runs
+    crate::route::Router::new(&wf)?;
     Ok(wf)
 }
 

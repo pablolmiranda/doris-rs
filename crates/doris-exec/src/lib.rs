@@ -5,6 +5,7 @@
 pub mod aggregate;
 pub mod analytic;
 pub mod block;
+pub mod columnar;
 pub mod error_log;
 pub mod eval;
 pub mod exchange;

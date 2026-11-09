@@ -16,7 +16,6 @@ use ::http::{HeaderMap, HeaderValue, Request, Response, StatusCode};
 use bytes::Bytes;
 use doris_exec::fragment::decode_fragments;
 use doris_proto::doris::{PCancelPlanFragmentRequest, PExecPlanFragmentRequest, PExecPlanFragmentStartRequest, PFetchDataRequest, PStatus};
-use doris_thrift::gen::data_sinks::TDataSinkType;
 use http_body_util::BodyExt;
 use prost::Message;
 
@@ -82,14 +81,10 @@ fn unframe(body: &[u8]) -> &[u8] {
     }
 }
 
-/// Whether an exec request's fragments write a table.
+/// Whether an exec request is a write the load service runs (`INSERT … VALUES`); every other
+/// request, `INSERT … SELECT` included, is the query service's.
 pub fn is_write(req: &PExecPlanFragmentRequest) -> bool {
-    decode_fragments(req).is_ok_and(|l| {
-        l.params_list
-            .iter()
-            .flatten()
-            .any(|p| p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK))
-    })
+    decode_fragments(req).is_ok_and(|l| doris_exec::fragment::is_load_plan(&l))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {

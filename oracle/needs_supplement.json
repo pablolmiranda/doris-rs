@@ -38,34 +38,37 @@
     "result:cpp_scan_order"
    ],
    "reason": "Exchange 37, SELECT * FROM table_no_partition with no ORDER BY, returns its two rows (one per tablet) in the C++ BE's scanner order, stable over the 5 reference runs; doris-rs returns the same rows in another order, which the strict gate compares (doris-rs run m5-full-1, 2026-11-07). Neither instance order nor tablet order reproduces it."
+  },
+  "correctness_p0.test_current_date.test_current_date": {
+   "needs": [
+    "function:current_date"
+   ],
+   "reason": "Its stream load maps dt columns to current_date() (and the table defaults use it); the FE plans it in the load's column expressions, which the needs index does not read. doris-rs refuses the load with [NOT_IMPLEMENTED_ERROR]doris-rs does not support function current_date yet (doris-rs run m6-s4-full-1, 2026-11-09)."
+  },
+  "load_p0.stream_load.test_get_stream_load_state.test_get_stream_load_state": {
+   "needs": [
+    "function:now"
+   ],
+   "reason": "Its table's v4 DATETIME DEFAULT CURRENT_TIMESTAMP is absent from the load's columns, so the FE plans now() for it in the load's column expressions, which the needs index does not read. doris-rs refuses the load with [NOT_IMPLEMENTED_ERROR]doris-rs does not support function now yet (doris-rs run m6-s4-full-1, 2026-11-09)."
+  },
+  "load_p0.stream_load.test_json_load_default_value.test_json_load_default_value": {
+   "needs": [
+    "function:now"
+   ],
+   "reason": "Its JSON lacks the date_time key, whose column DEFAULT CURRENT_TIMESTAMP the FE plans as now() in the scan's default_value_of_src_slot, which the needs index does not read. doris-rs fills a missing key from its default but refuses a now() default ((doris-rs run m6-s4-full-1, 2026-11-09): it stored NULL before the default fix)."
+  },
+  "load_p0.stream_load.test_json_load_default_number_value.test_json_load_default_number_value": {
+   "needs": [
+    "function:now"
+   ],
+   "reason": "Its JSON lacks the date_time key, whose column DEFAULT CURRENT_TIMESTAMP the FE plans as now() in the scan's default_value_of_src_slot, which the needs index does not read. doris-rs fills a missing key from its default but refuses a now() default ((doris-rs run m6-s4-full-1, 2026-11-09): it stored NULL before the default fix)."
+  },
+  "datatype_p0.datetimev2.test_timezone.test_timezone": {
+   "needs": [
+    "function:cast_datetime_named_time_zone"
+   ],
+   "reason": "testFoldConst at line 49 compares the FE's fold of cast('2010-01-05 08:15:30Europe/London' as datetime) with the BE's: the C++ BE gives 2010-01-05 10:15:30, doris-rs NULL, as it parses no named time zone (doris-rs run m6-s4-full-1, 2026-11-09). The index records only CAST_EXPR, not the string's time zone."
   }
  },
- "groups": [
-  {
-   "needs": [
-    "state:fe enable_date_conversion=true"
-   ],
-   "reason": "query_p0/sql_functions/conditional_functions/test_coalesce_new.groovy sets the FE config enable_date_conversion=false at line 21 and back to true at line 49; on doris-rs it fails at line 43 (an INSERT into a DATETIME v1 column), so the FE keeps creating v1 DATE/DATETIME columns, which doris-rs does not write, for every later suite. These are the eligible suites that failed on a v1 date type after it (doris-rs run m5-full-1, 2026-11-07); on the reference their tables are DATEV2/DATETIMEV2. Remove when test_coalesce_new passes line 49.",
-   "suites": [
-    "correctness_p0.test_cast_date_decimal.test_cast_date_decimal",
-    "correctness_p0.test_current_date.test_current_date",
-    "correctness_p0.test_order_by.test_order_by",
-    "correctness_p0.test_temp_partition.test_temp_partition",
-    "insert_p0.mow_insert_with_partition_drop.mow_insert_with_partition_drop",
-    "load_p0.mysql_load.test_mysql_load_unified.test_mysql_load_unified",
-    "load_p0.stream_load.test_chinese_col_load.test_chinese_col_load",
-    "load_p0.stream_load.test_csv_special_seperator.test_csv_special_seperator",
-    "load_p0.stream_load.test_csv_with_enclose_and_escape.test_csv_with_enclose_and_escape",
-    "load_p0.stream_load.test_csv_with_none_utf8_data.test_csv_with_none_utf8_data",
-    "load_p0.stream_load.test_get_stream_load_state.test_get_stream_load_state",
-    "load_p0.stream_load.test_json_load_default_number_value.test_json_load_default_number_value",
-    "load_p0.stream_load.test_json_load_default_value.test_json_load_default_value",
-    "load_p0.stream_load.test_load_block_to_single_tablet.test_load_block_to_single_tablet",
-    "load_p0.stream_load.test_load_to_single_tablet.test_load_to_single_tablet",
-    "load_p0.stream_load.test_stream_load_error_url.test_stream_load_error_url",
-    "load_p0.stream_load.test_stream_load_with_filtered_rows.test_stream_load_with_filtered_rows",
-    "schema_change_p0.test_unique_schema_key_change_drop.test_unique_schema_key_change_drop"
-   ]
-  }
- ]
+ "groups": []
 }

@@ -138,3 +138,34 @@ fn window_replays_have_analytic_and_partition_sort() {
         assert!(has(s, P::PARTITION_SORT_NODE), "{s}: no PARTITION_SORT_NODE");
     }
 }
+
+/// The suites that run their own INSERT … SELECT: a table sink fed by a scan.
+const INSERT_SELECTS: [&str; 4] = [
+    "insert_p0.test_insert_docs_demo.test_insert_docs_demo",
+    "query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword",
+    "insert_p0.test_insert_partition_fail_url.test_insert_partition_fail_url",
+    "nereids_p0.ddl.clean.test_clean_label_nereids.test_clean_label_nereids",
+];
+
+#[test]
+fn insert_select_replays_write_from_a_scan() {
+    use doris_fixtures::replays::{plan_list, Step};
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
+    for s in INSERT_SELECTS {
+        let writes = replays::load(s)
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::ExecPlanFragment { request, .. } => plan_list(request),
+                _ => None,
+            })
+            .filter(|l| {
+                let ps = || l.params_list.iter().flatten();
+                ps().any(|p| p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|k| k.type_ == TDataSinkType::OLAP_TABLE_SINK))
+                    && ps().flat_map(|p| p.fragment.iter().flat_map(|f| f.plan.iter()).flat_map(|x| &x.nodes)).any(|n| n.node_type == P::OLAP_SCAN_NODE)
+            })
+            .count();
+        assert!(writes >= 1, "{s}: no INSERT … SELECT");
+    }
+}

@@ -3,7 +3,9 @@
 //! sink's rows long-polled by the FE with `fetch_data`. The result buffer exists once prepare
 //! returns, since the FE's first fetch can arrive before its start. A successful query reports
 //! nothing; a failed one fails the parked fetch at once, with the error, and sends one
-//! `reportExecStatus` per fragment.
+//! `reportExecStatus` per fragment. A query that writes a table (`INSERT … SELECT`) feeds each
+//! sink fragment's `TableSink` from its instances; once every instance has ended the sink
+//! commits (or, on failure, does not), and every fragment reports, as a LOAD.
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -13,6 +15,8 @@ use doris_exec::exchange::Exchanges;
 use doris_exec::fragment::decode_fragments;
 use doris_exec::pipeline::{run_instance, ExecCtx};
 use doris_exec::query::{check_plan, plan_query, QueryPlan};
+use doris_exec::sink::{exec_status, TableSink};
+use doris_exec::value::datum_value;
 use doris_exec::row_text::result_batch;
 use doris_exec::ExecError;
 use doris_proto::doris::{
@@ -26,7 +30,7 @@ use doris_thrift::gen::frontend_service::{
     TListTableStatusResult, TReportExecStatusParams, TShowVariableRequest, TShowVariableResult,
 };
 use doris_thrift::gen::palo_internal_service::TQueryType;
-use doris_thrift::gen::status::TStatusCode;
+use doris_thrift::gen::status::{TStatus, TStatusCode};
 use doris_thrift::gen::types::{TNetworkAddress, TUniqueId};
 
 use crate::fe_client::FeClient;
@@ -106,10 +110,17 @@ struct Inner {
     exchanges: Exchanges,
     /// By query id, and by result instance id when results are fetched by instance.
     queries: Mutex<HashMap<Id, Arc<Query>>>,
+    /// Where a write's error logs go (the load service's), and the port that serves them.
+    error_dir: std::path::PathBuf,
+    http_port: std::sync::atomic::AtomicU16,
+    /// Queries running.
+    running: Mutex<usize>,
+    idle: Condvar,
 }
 
 impl QueryService {
     pub fn new(tablets: Arc<Mutex<TabletManager>>, fe: Arc<dyn FeClient>, master: MasterInfo) -> QueryService {
+        let error_dir = crate::load::error_dir(&tablets);
         QueryService {
             inner: Arc::new(Inner {
                 tablets,
@@ -117,8 +128,24 @@ impl QueryService {
                 master,
                 exchanges: Exchanges::default(),
                 queries: Mutex::new(HashMap::new()),
+                error_dir,
+                http_port: std::sync::atomic::AtomicU16::new(8040),
+                running: Mutex::new(0),
+                idle: Condvar::new(),
             }),
         }
+    }
+
+    /// The BE's webserver port, which serves a write's error log (`webserver_port`).
+    pub fn set_http_port(&self, port: u16) {
+        self.inner.http_port.store(port, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Waits until no query is running; false on timeout.
+    pub fn wait_idle(&self, timeout: Duration) -> bool {
+        let n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
+        let (_g, res) = self.inner.idle.wait_timeout_while(n, timeout, |n| *n > 0).unwrap_or_else(|e| e.into_inner());
+        !res.timed_out()
     }
 
     fn queries(&self) -> std::sync::MutexGuard<'_, HashMap<Id, Arc<Query>>> {
@@ -239,8 +266,32 @@ impl QueryService {
             *started = true;
         }
         let (inner, ran) = (self.inner.clone(), q.clone());
-        let spawned = std::thread::Builder::new().name("query".into()).spawn(move || inner.execute(&ran));
+        *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        let spawned = std::thread::Builder::new().name("query".into()).spawn(move || {
+            /// Counts the query out however `execute` ends, a panic included.
+            struct Ended<'a>(&'a Inner, &'a Arc<Query>);
+            impl Drop for Ended<'_> {
+                fn drop(&mut self) {
+                    let (inner, q) = (self.0, self.1);
+                    q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+                    if std::thread::panicking() {
+                        // its outcome will not reach the FE: drop it rather than hold it
+                        inner.queries.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, x| !Arc::ptr_eq(x, q));
+                        inner.exchanges.forget((q.plan.query_id.hi, q.plan.query_id.lo));
+                    }
+                    let mut n = inner.running.lock().unwrap_or_else(|e| e.into_inner());
+                    *n -= 1;
+                    inner.idle.notify_all();
+                }
+            }
+            let _ended = Ended(&inner, &ran);
+            inner.execute(&ran);
+        });
         if let Err(e) = spawned {
+            let mut n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
+            *n -= 1;
+            self.inner.idle.notify_all();
+            drop(n);
             // nothing will run: the FE's fetch gets the error instead of waiting out its timeout
             q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
             q.fail(pstatus(
@@ -405,9 +456,41 @@ impl Inner {
             doris_storage::reader::fetch_by_row_ids(&mgr, ids, cols)
         };
         let fe = SchemaCalls(self.fe.as_ref());
-        let ctx = ExecCtx { scan: &scan, exchanges: &self.exchanges, result: &result, fetch: &fetch, fe: &fe };
+        // each sink fragment's table sink, fed by its instances
         let first_error: Mutex<Option<ExecError>> = Mutex::new(None);
+        let mut sinks: Vec<Option<TableSink>> = Vec::with_capacity(plan.fragments.len());
+        for f in &plan.fragments {
+            sinks.push(match &f.write {
+                Some(w) => match TableSink::new(w, f.instances.iter().map(|i| i.id.clone()).collect()) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        first_error.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert(e);
+                        None
+                    }
+                },
+                None => None,
+            });
+        }
+        let cancelled = || q.buffer().failed.as_ref().map(|st| ExecError::Cancelled(st.error_msgs.first().cloned().unwrap_or_else(|| "cancelled".into())));
+        let table = |fragment: usize, instance: usize, block: Block| -> Result<(), ExecError> {
+            // a write the FE cancelled takes no more rows
+            if let Some(e) = cancelled() {
+                return Err(e);
+            }
+            let sink = sinks
+                .get(fragment)
+                .and_then(Option::as_ref)
+                .ok_or_else(|| ExecError::BadRequest(format!("fragment {fragment} has no table sink")))?;
+            let nullable: Vec<bool> = block.types.iter().map(|t| t.nullable).collect();
+            let rows = block.rows.iter().map(|r| Ok(r.iter().zip(&block.types).map(|(d, c)| datum_value(d, c)).collect())).collect();
+            sink.push(instance, rows, &nullable)
+        };
+        let ctx = ExecCtx { scan: &scan, exchanges: &self.exchanges, result: &result, fetch: &fetch, fe: &fe, table: &table };
+        let ready = first_error.lock().unwrap_or_else(|e| e.into_inner()).is_none();
         std::thread::scope(|s| {
+            if !ready {
+                return;
+            }
             for (fi, f) in plan.fragments.iter().enumerate() {
                 for ii in 0..f.instances.len() {
                     let (ctx, first_error) = (&ctx, &first_error);
@@ -434,10 +517,17 @@ impl Inner {
                 }
             }
         });
-        let failed = first_error.into_inner().unwrap_or_else(|e| e.into_inner());
+        // a write the FE cancelled while it ran fails, though its instances did not
+        let failed = first_error.into_inner().unwrap_or_else(|e| e.into_inner()).or_else(|| cancelled().filter(|_| plan.fragments.iter().any(|f| f.write.is_some())));
         // ended before the FE can see the outcome, so its cancel finds nothing to stop
         q.finished.store(true, std::sync::atomic::Ordering::SeqCst);
         self.exchanges.forget(id);
+        if plan.fragments.iter().any(|f| f.write.is_some()) {
+            self.report_write(plan, sinks, failed.as_ref());
+            // nothing fetches a write: the FE has its outcome now
+            self.queries.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, x| !Arc::ptr_eq(x, q));
+            return;
+        }
         match failed {
             None => {
                 let mut b = q.buffer();
@@ -452,18 +542,64 @@ impl Inner {
         }
     }
 
+    /// A write's status as its fragments report it: OK, or the error as `error_status` words it.
+    fn status_of(&self, e: Option<&ExecError>) -> TStatus {
+        match e {
+            None => TStatus { status_code: TStatusCode::OK, error_msgs: None },
+            Some(e) => {
+                let (_, msg) = error_status(&self.master.localhost(), e);
+                TStatus { status_code: status_code(e), error_msgs: Some(vec![msg]) }
+            }
+        }
+    }
+
+    /// A write's reports, one per fragment (`PipelineFragmentContext::send_report`), all LOAD: a
+    /// sink fragment's ends its sink first, committing what it took unless the query failed,
+    /// and carries the sink's counters, instance reports, commit infos and errors.
+    fn report_write(&self, plan: &QueryPlan, sinks: Vec<Option<TableSink>>, failed: Option<&ExecError>) {
+        let st = self.status_of(failed);
+        let failure = failed.map(|_| st.clone());
+        let coord = plan.coord.clone().or_else(|| self.master.fe_address());
+        for (f, sink) in plan.fragments.iter().zip(sinks) {
+            let params = match (&f.write, sink) {
+                (Some(w), Some(sink)) => {
+                    let outcome = sink.finish(&self.tablets, &self.error_dir, failure.clone());
+                    let port = self.http_port.load(std::sync::atomic::Ordering::Relaxed);
+                    let url = outcome.error_log.as_ref().map(|file| format!("http://{}:{port}/api/_load_error_log?file={file}", self.master.localhost()));
+                    let mut p = exec_status(w, &outcome, url);
+                    p.fragment_id = Some(f.fragment_id);
+                    p.backend_id = plan.backend_id.or_else(|| self.master.backend_id());
+                    p
+                }
+                _ => TReportExecStatusParams {
+                    protocol_version: FrontendServiceVersion::V1,
+                    query_id: Some(plan.query_id.clone()),
+                    backend_num: Some(-1),
+                    fragment_instance_id: Some(TUniqueId { hi: 0, lo: 0 }),
+                    status: Some(st.clone()),
+                    done: Some(true),
+                    backend_id: plan.backend_id.or_else(|| self.master.backend_id()),
+                    fragment_id: Some(f.fragment_id),
+                    query_type: Some(TQueryType::LOAD),
+                    loaded_rows: Some(0),
+                    loaded_bytes: Some(0),
+                    ..blank_report()
+                },
+            };
+            let Some(coord) = coord.clone() else { continue };
+            if self.fe.report_exec_status(&coord, params.clone()).is_err() {
+                let _ = self.fe.report_exec_status(&coord, params);
+            }
+        }
+    }
+
     /// One `reportExecStatus` per fragment (`PipelineFragmentContext::send_report`).
     fn report_failure(&self, plan: &QueryPlan, e: &ExecError, msg: &str) {
         let Some(coord) = plan.coord.clone().or_else(|| self.master.fe_address()) else {
             return;
         };
-        let code = match e {
-            ExecError::Unsupported { .. } => TStatusCode::NOT_IMPLEMENTED_ERROR,
-            ExecError::Cancelled(_) => TStatusCode::CANCELLED,
-            _ => TStatusCode::INTERNAL_ERROR,
-        };
         let st = doris_thrift::gen::status::TStatus {
-            status_code: code,
+            status_code: status_code(e),
             error_msgs: Some(vec![msg.to_string()]),
         };
         for f in &plan.fragments {
@@ -483,6 +619,14 @@ impl Inner {
                 let _ = self.fe.report_exec_status(&coord, params);
             }
         }
+    }
+}
+
+fn status_code(e: &ExecError) -> TStatusCode {
+    match e {
+        ExecError::Unsupported { .. } => TStatusCode::NOT_IMPLEMENTED_ERROR,
+        ExecError::Cancelled(_) => TStatusCode::CANCELLED,
+        _ => TStatusCode::INTERNAL_ERROR,
     }
 }
 

@@ -124,6 +124,37 @@ def derive_marks(runs):
     return {"status": "stable", "reason": None, "exchanges": exchanges}
 
 
+FIRST_ERROR = ". first_error_msg: "
+FE_CUT_MAX = 64
+# InsertUtils keeps the whole error message under 512 bytes: a message it cut is 511 long
+FE_CUT_LEN = 511
+
+
+def fe_cut(pat, message):
+    """Whether `message` matches `pat` but for the FE's cut of an insert error: InsertUtils keeps
+    the error under 512 bytes by cutting the part before ". first_error_msg: ", and where it cuts
+    moves with the lengths of deployment facts (the BE host, the error log's shard) in the same
+    message. The part after must match; the part before may stop up to FE_CUT_MAX characters
+    sooner than the reference's, inside the reference's last literal text. relax applies it only
+    to a message FE_CUT_LEN long before substitution, the length of a message the FE cut."""
+    head_pat, sep, tail_pat = pat.partition(re.escape(FIRST_ERROR))
+    head, sep2, tail = message.partition(FIRST_ERROR)
+    if not sep or not sep2 or not re.fullmatch(tail_pat, tail, re.S):
+        return False
+    # a head whose cut varied on the reference ends in a wildcard: the cut may fall before it
+    trailing = head_pat.endswith(".*?") or head_pat.endswith(".*")
+    if trailing:
+        head_pat = head_pat[: -3 if head_pat.endswith(".*?") else -2]
+    wild = max(head_pat.rfind(".*?"), head_pat.rfind(".*"))
+    start = 0 if wild < 0 else wild + (3 if head_pat.startswith(".*?", wild) else 2)
+    literal = re.sub(r"\\(.)", r"\1", head_pat[start:], flags=re.S)
+    longest = len(literal) if trailing else len(literal) - 1
+    for n in range(longest, max(len(literal) - FE_CUT_MAX, 0) - 1, -1):
+        if re.fullmatch(head_pat[:start] + re.escape(literal[:n]), head, re.S):
+            return True
+    return False
+
+
 def relax(mark, want, got):
     """(want, got) with the mark applied, ready for an exact comparison. Pattern fields that
     match are made equal; ones that do not are left to differ."""
@@ -135,8 +166,10 @@ def relax(mark, want, got):
         for f in mark.get("masked_fields", []):
             w.pop(f, None)
             g.pop(f, None)
-        if "message_pattern" in mark and re.fullmatch(mark["message_pattern"], g.get("message") or "", re.S):
-            g["message"] = w.get("message")
+        if isinstance(w.get("message"), str) and isinstance(g.get("message"), str) and w["message"] != g["message"]:
+            pat = mark.get("message_pattern") or re.escape(w["message"])
+            if re.fullmatch(pat, g["message"], re.S) or (got.get("message_len") == FE_CUT_LEN and fe_cut(pat, g["message"])):
+                g["message"] = w["message"]
         for j, f in mark.get("masked_column_meta", []):
             for r in (w, g):
                 if j < len(r.get("columns", [])):

@@ -1,9 +1,11 @@
-//! The expressions write fragments carry: typed literals, slot references, casts, and the
-//! `substring(str, 1, len)` the FE adds to cut CHAR/VARCHAR values when inserts are not strict.
+//! The expressions write fragments carry: typed literals, slot references, casts, the
+//! `substring(str, 1, len)` the FE adds to cut CHAR/VARCHAR values when inserts are not strict,
+//! and `concat` in stream-load column mappings.
 //! A `TExpr` is its nodes in pre-order, each with `num_children`.
 use std::collections::HashMap;
 
 use doris_thrift::gen::exprs::{TExpr, TExprNode, TExprNodeType};
+use doris_thrift::gen::types::TPrimitiveType;
 
 use crate::value::{parse_text, ColType, Value};
 use crate::{ExecError, RowError};
@@ -24,15 +26,15 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
             | TExprNodeType::DATE_LITERAL
             | TExprNodeType::NULL_LITERAL
             | TExprNodeType::SLOT_REF => true,
-            TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.supported()),
-            TExprNodeType::FUNCTION_CALL => function_name(n).as_deref() == Some("substring"),
+            TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.writable()),
+            TExprNodeType::FUNCTION_CALL => matches!(function_name(n).as_deref(), Some("substring" | "concat")),
             _ => false,
         };
         if !ok {
             return Err(ExecError::Unsupported { what: describe(n) });
         }
         if let Some(c) = ColType::from_type_desc("", &n.type_, true) {
-            if !c.supported() && n.node_type != TExprNodeType::NULL_LITERAL {
+            if !c.writable() && n.node_type != TExprNodeType::NULL_LITERAL {
                 return Err(ExecError::Unsupported { what: format!("type {}", c.type_name()) });
             }
         } else {
@@ -87,6 +89,7 @@ fn eval_at(nodes: &[TExprNode], pos: &mut usize, slots: &Slots) -> Result<Value,
             cast(children.into_iter().next().unwrap_or(Value::Null), &to)
         }
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("substring") => substring(&children),
+        TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("concat") => concat(&children),
         _ => return Err(RowError::new(format!("unsupported {}", describe(n)))),
     })
 }
@@ -97,11 +100,27 @@ pub fn cast(v: Value, to: &ColType) -> Value {
         Value::Null => return Value::Null,
         Value::Str(b) => String::from_utf8_lossy(b).into_owned(),
         Value::Int(i) => i.to_string(),
-        Value::Float(f) => f.to_string(),
+        Value::Float(f) => crate::row_text::double_text(*f),
         Value::Bool(b) => if *b { "1".into() } else { "0".into() },
         Value::Decimal(s) | Value::Date(s) => s.clone(),
     };
     parse_text(&text, to).unwrap_or(Value::Null)
+}
+
+/// `concat(str...)`: the arguments joined; NULL when any argument is NULL.
+pub fn concat(args: &[Value]) -> Value {
+    let mut out = Vec::new();
+    for a in args {
+        match a {
+            Value::Null => return Value::Null,
+            Value::Str(b) => out.extend_from_slice(b),
+            other => match cast(other.clone(), &ColType { name: String::new(), ptype: TPrimitiveType::STRING, len: -1, precision: 0, scale: 0, nullable: true }) {
+                Value::Str(b) => out.extend_from_slice(&b),
+                _ => return Value::Null,
+            },
+        }
+    }
+    Value::Str(out)
 }
 
 /// `substring(str, pos, len)`, positions in UTF-8 characters, 1-based.

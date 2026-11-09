@@ -1,0 +1,14 @@
+PUT /api/regression_test_load_p0_stream_load/test_stream_load_cast/_stream_load HTTP/1.1
+Authorization: Basic cm9vdDo=
+label: a50e6dfc-5472-4125-8bdd-152bbc242e57
+column_separator: ,
+strict_mode: false
+format: json
+Expect: 100-Continue
+Content-Length: 240
+Host: 127.0.0.1:8040
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.13 (Java/17.0.20.1)
+Accept-Encoding: gzip,deflate
+
+{"k0": 2147483648, "k1": 128, "k2": 32768, "k3": 9223372036854775808, "k4": 2e+128,"k5": 3.40282e+39,"k6": 1.79769e+309,"k7": 100000000.11111111111,"k8": "2024-14-2","k9": "2024-4-222","k10": "2024-14-2 17:00:00","k11": "2024-4-2 27:00:00"}

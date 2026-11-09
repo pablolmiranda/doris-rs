@@ -263,11 +263,13 @@ fn candidate(
         }
         if method.starts_with("exec_plan_fragment") && method != "exec_plan_fragment_start" {
             let p = plan(r).ok_or("undecodable plan")?;
-            // outside M5: INSERT ... SELECT (a write fed by a query), binary-protocol rows
-            // (prepared statements), the v1 two-phase read, merge-on-read key reads
+            // outside M5: binary-protocol rows (prepared statements), the v1 two-phase read,
+            // merge-on-read key reads; and a write that is a partial update (the FE's own
+            // statistics DELETE), which doris-rs refuses
             let nodes = || p.params_list.iter().flatten().flat_map(|f| f.fragment.iter().flat_map(|x| x.plan.iter()).flat_map(|x| &x.nodes));
-            if !is_result_query(&p) && nodes().any(|n| n.node_type != doris_thrift::gen::plan_nodes::TPlanNodeType::UNION_NODE) {
-                return Err("insert select".into());
+            let partial = p.params_list.iter().flatten().filter_map(|f| f.fragment.as_ref()?.output_sink.as_ref()?.olap_table_sink.as_ref()).any(|s| s.schema.is_partial_update == Some(true));
+            if partial {
+                return Err("partial update".into());
             }
             const SCHEMA_TABLES: &[&str] = &["character_sets", "collations", "columns", "schemata", "tables", "session_variables", "global_variables"];
             if nodes().any(|n| n.schema_scan_node.as_ref().is_some_and(|s| !SCHEMA_TABLES.contains(&s.table_name.to_ascii_lowercase().as_str()))) {

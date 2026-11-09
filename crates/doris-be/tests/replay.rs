@@ -16,6 +16,7 @@ use doris_fixtures::replays::{self, plan_list, shape, shape_letter, Replay, Rpc,
 use doris_proto::doris::{PFetchDataRequest, PFetchDataResult};
 use doris_storage::{DataDir, TabletManager, TabletOptions};
 use doris_thrift::gen::data::TResultBatch;
+use doris_thrift::gen::frontend_service::TReportExecStatusParams;
 use doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList;
 use doris_thrift::gen::plan_nodes::TPlanNodeType;
 use doris_thrift::gen::types::TNetworkAddress;
@@ -162,6 +163,9 @@ fn query_id(plan: &TPipelineFragmentParamsList) -> (i64, i64) {
 struct Driver<'a> {
     r: &'a Replay,
     be: Be,
+    /// Queries that write a table (`INSERT … SELECT`): nothing fetches them, so the replay waits
+    /// for each to end before going on (the reference's publish follows its report).
+    writes: HashSet<(i64, i64)>,
     /// Every id a result query answers fetches to → (query number, plan).
     plans: HashMap<(i64, i64), (usize, TPipelineFragmentParamsList)>,
     /// The reference's replies, by fetched id.
@@ -194,6 +198,12 @@ impl Driver<'_> {
             Rpc::Exec => self.be.query.exec_plan_fragment(request),
             Rpc::Prepare => self.be.query.prepare(request),
         };
+        if writes_table(&plan) {
+            self.writes.insert(query_id(&plan));
+            if !plan.params_list.iter().flatten().any(|p| p.need_wait_execution_trigger == Some(true)) {
+                assert!(self.be.query.wait_idle(Duration::from_secs(60)), "{}: a write never finished", self.r.suite);
+            }
+        }
         if reply.status.status_code != 0 {
             let q = self.plans.get(&query_id(&plan)).map_or(usize::MAX, |(n, _)| *n);
             self.mismatch(q, format!("refused: {:?}", reply.status.error_msgs));
@@ -208,6 +218,9 @@ impl Driver<'_> {
         if let Some(Step::Start(req)) = r.steps.iter().find(|s| matches!(s, Step::Start(q) if q.query_id.as_ref().map(|q| (q.hi, q.lo)) == Some(qid))) {
             self.started.insert(qid);
             self.be.query.start(req);
+            if self.writes.contains(&qid) {
+                assert!(self.be.query.wait_idle(Duration::from_secs(60)), "{}: a write never finished", r.suite);
+            }
         }
     }
 
@@ -243,8 +256,72 @@ impl Driver<'_> {
     }
 }
 
+fn writes_table(plan: &TPipelineFragmentParamsList) -> bool {
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    plan.params_list.iter().flatten().any(|p| p.fragment.as_ref().and_then(|f| f.output_sink.as_ref()).is_some_and(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK))
+}
+
+/// What the FE reads of a done write report, comparable across runs: the error log's shard and
+/// the order of commit infos and instance reports set aside.
+fn report_view(p: &TReportExecStatusParams) -> String {
+    let mut commits: Vec<i64> = p.commit_infos.iter().flatten().map(|c| c.tablet_id).collect();
+    commits.sort();
+    let mut instances: Vec<String> = p
+        .fragment_instance_reports
+        .iter()
+        .flatten()
+        .map(|r| format!("{:?} rows={:?} bytes={:?} ranges={:?}", r.fragment_instance_id, r.loaded_rows, r.loaded_bytes, r.num_finished_range))
+        .collect();
+    instances.sort();
+    let shard = |u: &str| {
+        let mut out = String::new();
+        let mut rest = u;
+        while let Some(i) = rest.find("__shard_") {
+            out.push_str(&rest[..i + 8]);
+            rest = rest[i + 8..].trim_start_matches(|c: char| c.is_ascii_digit());
+        }
+        out + rest
+    };
+    format!(
+        "fragment {:?} instance {:?} backend_num {:?} status {:?} done {:?} type {:?} counters {:?} url {:?} commits {commits:?} instances {instances:?} first_error {:?} loaded {:?}/{:?}",
+        p.fragment_id,
+        p.fragment_instance_id,
+        p.backend_num,
+        p.status,
+        p.done,
+        p.query_type,
+        p.load_counters,
+        p.tracking_url.as_deref().map(shard),
+        p.first_error_msg,
+        p.loaded_rows,
+        p.loaded_bytes,
+    )
+}
+
+/// Each write's done reports, by (query, fragment), as `report_view` shows them.
+fn write_reports(calls: impl IntoIterator<Item = TReportExecStatusParams>, writes: &HashSet<(i64, i64)>) -> Vec<((i64, i64), i32, String)> {
+    let mut out: Vec<_> = calls
+        .into_iter()
+        .filter(|p| p.done == Some(true))
+        .filter_map(|p| {
+            let q = p.query_id.as_ref().map(|q| (q.hi, q.lo))?;
+            writes.contains(&q).then(|| (q, p.fragment_id.unwrap_or(-1), report_view(&p)))
+        })
+        .collect();
+    out.sort();
+    // the FE takes the first done report of each (query, fragment)
+    out.dedup_by(|a, b| (a.0, a.1) == (b.0, b.1));
+    out
+}
+
 /// Runs a replay; every query whose rows differ from the reference's is a mismatch.
 pub fn replay(r: &Replay) -> Vec<Mismatch> {
+    replay_writes(r).0
+}
+
+/// Runs a replay, and gives its writes' done reports beside the reference's.
+#[allow(clippy::type_complexity)]
+pub fn replay_writes(r: &Replay) -> (Vec<Mismatch>, Vec<((i64, i64), i32, String)>, Vec<((i64, i64), i32, String)>) {
     let be = be();
     let replies = Mutex::new(r.fe_replies());
     be.fe.answer_from(Box::new(move |method, call| replies.lock().unwrap().reply(method, call)));
@@ -268,7 +345,7 @@ pub fn replay(r: &Replay) -> Vec<Mismatch> {
             _ => {}
         }
     }
-    let mut d = Driver { r, be, plans, want, executed: HashSet::new(), started: HashSet::new(), drained: HashSet::new(), out: Vec::new() };
+    let mut d = Driver { r, be, writes: HashSet::new(), plans, want, executed: HashSet::new(), started: HashSet::new(), drained: HashSet::new(), out: Vec::new() };
     for s in &r.steps {
         match s {
             Step::SubmitTasks(tasks) => {
@@ -305,7 +382,20 @@ pub fn replay(r: &Replay) -> Vec<Mismatch> {
             }
         }
     }
-    d.out
+    let got = d.be.fe.load_calls().into_iter().filter_map(|c| match c {
+        doris_be::testing::LoadCall::ExecStatus(_, p) => Some(p),
+        _ => None,
+    });
+    let got = write_reports(got, &d.writes);
+    let want = r.fe_calls("reportExecStatus").into_iter().filter_map(|m| {
+        let mut b = m;
+        let mut i = TBinaryInputProtocol::new(&mut b, true);
+        use thrift::protocol::TInputProtocol;
+        i.read_message_begin().ok()?;
+        doris_thrift::gen::frontend_service::FrontendServiceReportExecStatusArgs::read_from_in_protocol(&mut i).ok().map(|a| a.params)
+    });
+    let want = write_reports(want, &d.writes);
+    (d.out, got, want)
 }
 
 /// The replays whose every result query has one of these shapes ([wire] §6).
@@ -370,6 +460,27 @@ fn every_replay_matches_the_reference() {
     }
     let lines: Vec<String> = all.iter().map(|m| format!("{} #{}: {}", m.suite, m.query, m.what)).collect();
     assert!(all.is_empty(), "{} mismatches over {} replays:\n{}", lines.len(), rs.len(), lines.join("\n"));
+}
+
+/// INSERT … SELECT: the rows later queries read back, and every write's done reports (the
+/// counters, instance reports, commit infos and errors the FE commits from), match the reference.
+#[test]
+fn insert_selects_match_the_reference() {
+    for s in [
+        "insert_p0.test_insert_docs_demo.test_insert_docs_demo",
+        "query_p0.keyword.test_role_mapping_keyword.test_role_mapping_keyword",
+        "insert_p0.test_insert_partition_fail_url.test_insert_partition_fail_url",
+        "nereids_p0.ddl.clean.test_clean_label_nereids.test_clean_label_nereids",
+    ] {
+        let r = replays::load(s);
+        let (m, got, want) = replay_writes(&r);
+        assert!(m.is_empty(), "{s}: {m:?}");
+        assert!(!want.is_empty(), "{s}: no write reports in the reference");
+        assert_eq!(got.len(), want.len(), "{s}: reports\n got {got:#?}\nwant {want:#?}");
+        for (g, w) in got.iter().zip(&want) {
+            assert_eq!(g, w, "{s}");
+        }
+    }
 }
 
 #[test]
@@ -441,4 +552,107 @@ fn window_functions_match_the_reference() {
         }
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// A suite replayed up to its first INSERT … SELECT: its tables created and loaded, and that
+/// request, not yet sent.
+fn before_insert_select(suite: &str) -> (Be, doris_proto::doris::PExecPlanFragmentRequest, TPipelineFragmentParamsList) {
+    let r = replays::load(suite);
+    let be = be();
+    let replies = Mutex::new(r.fe_replies());
+    be.fe.answer_from(Box::new(move |method, call| replies.lock().unwrap().reply(method, call)));
+    for s in &r.steps {
+        match s {
+            Step::SubmitTasks(tasks) => {
+                be.agent.submit_tasks(tasks.clone());
+                assert!(be.agent.wait_idle(Duration::from_secs(60)));
+            }
+            Step::ExecPlanFragment { request, .. } if is_write(request) => {
+                assert_eq!(be.load.exec_plan_fragment(request).status.status_code, 0);
+                assert!(be.load.wait_idle(Duration::from_secs(60)));
+            }
+            Step::ExecPlanFragment { request, .. } => {
+                if let Some(plan) = plan_list(request).filter(writes_table) {
+                    return (be, request.clone(), plan);
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("{suite}: no INSERT … SELECT");
+}
+
+fn exec_reports(be: &Be) -> Vec<TReportExecStatusParams> {
+    be.fe
+        .load_calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            doris_be::testing::LoadCall::ExecStatus(_, p) => Some(p),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The FE cancels a write while it runs (`insert_timeout`, KILL): nothing is committed, and
+/// every fragment reports CANCELLED, with no commit infos.
+#[test]
+fn a_write_the_fe_cancels_commits_nothing() {
+    let (be, req, plan) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let before = exec_reports(&be).len();
+    let qid = query_id(&plan);
+    {
+        // the instances wait on the tablets while the cancel arrives
+        let _held = be.tablets.lock().unwrap();
+        assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+        std::thread::sleep(Duration::from_millis(200));
+        be.query.cancel(&doris_proto::doris::PCancelPlanFragmentRequest {
+            finst_id: doris_proto::doris::PUniqueId { hi: qid.0, lo: qid.1 },
+            query_id: Some(doris_proto::doris::PUniqueId { hi: qid.0, lo: qid.1 }),
+            cancel_status: Some(doris_proto::doris::PStatus { status_code: 1, error_msgs: vec!["insert timeout".into()] }),
+            ..Default::default()
+        });
+    }
+    assert!(be.query.wait_idle(Duration::from_secs(30)));
+    let reports = &exec_reports(&be)[before..];
+    assert_eq!(reports.len(), plan.params_list.as_ref().unwrap().len(), "{reports:?}");
+    for p in reports {
+        assert_eq!(p.status.as_ref().map(|s| s.status_code), Some(doris_thrift::gen::status::TStatusCode::CANCELLED), "{p:?}");
+        assert_eq!(p.commit_infos, None);
+    }
+}
+
+/// One instance fails (its scan's tablet is gone) while the others run: nothing is committed,
+/// and the write reports the error, with no commit infos.
+#[test]
+fn one_failed_instance_fails_the_whole_write() {
+    let (be, req, plan) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    let before = exec_reports(&be).len();
+    let first = plan.params_list.as_ref().unwrap()[0].local_params.as_ref().unwrap()[0].clone();
+    let tablet = first.per_node_scan_ranges.values().flatten().find_map(|r| r.scan_range.palo_scan_range.as_ref()).unwrap().tablet_id;
+    let schema_hash = be.tablets.lock().unwrap().tablet(tablet).unwrap().schema_hash.unwrap_or(0);
+    be.tablets
+        .lock()
+        .unwrap()
+        .drop_tablet(&doris_thrift::gen::agent_service::TDropTabletReq::new(tablet, Some(schema_hash), None, None))
+        .unwrap();
+    assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+    assert!(be.query.wait_idle(Duration::from_secs(30)));
+    let reports = &exec_reports(&be)[before..];
+    assert!(!reports.is_empty());
+    for p in reports {
+        assert_ne!(p.status.as_ref().map(|s| s.status_code), Some(doris_thrift::gen::status::TStatusCode::OK), "{p:?}");
+        assert_eq!(p.commit_infos, None);
+        assert_eq!(p.query_type, Some(doris_thrift::gen::palo_internal_service::TQueryType::LOAD));
+    }
+}
+
+/// A panic while a write reports (here in the FE client) still ends the query: the service is
+/// idle again and forgets it.
+#[test]
+fn a_panic_while_reporting_ends_the_write() {
+    let (be, req, _) = before_insert_select("insert_p0.test_insert_docs_demo.test_insert_docs_demo");
+    be.fe.panic_on_exec_status(true);
+    assert_eq!(be.query.exec_plan_fragment(&req).status.status_code, 0);
+    assert!(be.query.wait_idle(Duration::from_secs(10)), "the running count was lost");
+    assert_eq!(be.query.live_state().0, 0);
 }
