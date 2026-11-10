@@ -223,7 +223,8 @@ impl Driver<'_> {
         self.out.push(Mismatch { suite: self.r.suite.clone(), query, what });
     }
 
-    fn exec(&mut self, rpc: Rpc, request: &doris_proto::doris::PExecPlanFragmentRequest) {
+    /// `reference`: the reference's own answer to this request, when recorded.
+    fn exec(&mut self, rpc: Rpc, request: &doris_proto::doris::PExecPlanFragmentRequest, reference: Option<&doris_proto::doris::PExecPlanFragmentResult>) {
         if is_write(request) {
             let reply = self.be.load.exec_plan_fragment(request);
             if reply.status.status_code != 0 {
@@ -246,12 +247,9 @@ impl Driver<'_> {
                 assert!(self.be.query.wait_idle(Duration::from_secs(60)), "{}: a write never finished", self.r.suite);
             }
         }
-        // the reference's own answer: C++ fails exec_plan_fragment when a constant does
+        // C++ fails exec_plan_fragment when a constant does
         let qid = query_id(&plan);
-        let reference = self.r.steps.iter().find_map(|s| match s {
-            Step::ExecPlanFragment { request, reply: Some(reply), .. } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some(reply.status.clone()),
-            _ => None,
-        });
+        let reference = reference.map(|r| r.status.clone());
         let q = self.plans.get(&qid).map_or(usize::MAX, |(n, _)| *n);
         let failed_alike = reference.as_ref().is_some_and(|st| st.status_code == reply.status.status_code && st.error_msgs == reply.status.error_msgs);
         if reply.status.status_code != 0 && !failed_alike {
@@ -287,11 +285,11 @@ impl Driver<'_> {
         let r = self.r;
         if !self.executed.contains(&qid) {
             let exec = r.steps.iter().find_map(|s| match s {
-                Step::ExecPlanFragment { rpc, request, .. } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone())),
+                Step::ExecPlanFragment { rpc, request, reply } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone(), reply.clone())),
                 _ => None,
             });
-            if let Some((rpc, req)) = exec {
-                self.exec(rpc, &req);
+            if let Some((rpc, req, reply)) = exec {
+                self.exec(rpc, &req, reply.as_ref());
             }
         }
         self.start(qid);
@@ -403,7 +401,7 @@ pub fn replay_writes(r: &Replay) -> (Vec<Mismatch>, Vec<((i64, i64), i32, String
                 d.be.agent.submit_tasks(tasks.clone());
                 assert!(d.be.agent.wait_idle(Duration::from_secs(60)), "{}: agent tasks never finished", r.suite);
             }
-            Step::ExecPlanFragment { rpc, request, .. } => d.exec(*rpc, request),
+            Step::ExecPlanFragment { rpc, request, reply } => d.exec(*rpc, request, reply.as_ref()),
             Step::Start(req) => d.start(req.query_id.as_ref().map(|q| (q.hi, q.lo)).unwrap_or_default()),
             Step::Fetch { request, .. } => d.fetch(request),
             Step::Cancel(req) => {

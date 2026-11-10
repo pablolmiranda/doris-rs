@@ -673,4 +673,8 @@ fn a_scalar_first_phase_keeps_a_state_per_tablet() {
         ex.receive(&out_key(), 1).unwrap().into_iter().flat_map(|c| c.block.rows).count()
     };
     assert_eq!(rows_of(first_phase(None)), 3);
+    // review M2: a scan limit counts across tablets, so the scan runs once
+    let mut limited = first_phase(None);
+    limited.children[0].node.limit = 1;
+    assert_eq!(rows_of(limited), 1);
 }

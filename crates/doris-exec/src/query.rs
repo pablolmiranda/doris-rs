@@ -371,10 +371,7 @@ fn unsupported(what: impl Into<String>) -> ExecError {
 }
 
 fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool) -> Result<(), ExecError> {
-    exprs.into_iter().try_for_each(|e| {
-        check_nodes(e, aggregates)?;
-        crate::eval::check_constants(e)
-    })
+    exprs.into_iter().try_for_each(|e| check_nodes(e, aggregates))
 }
 
 /// Keys of a sort, grouping, window, join, set operation or partition: no order or hash of an

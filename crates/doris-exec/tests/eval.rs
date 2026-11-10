@@ -376,10 +376,15 @@ fn round_needs_constant_digits() {
 
 #[test]
 fn round_digits_out_of_int16_errors() {
+    // all constant: evaluated at prepare, as C++ does at open
     let e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(40000, ty(T::INT))]);
+    assert_eq!(check_read(&e).unwrap_err().to_string(), "Scale argument for function round is out of bound: 40000");
+    // over a column: at the rows
+    let e = call("round", ty(T::DOUBLE), vec![slot(1, ty(T::DOUBLE)), int(40000, ty(T::INT))]);
     check_read(&e).expect("supported");
-    let block = Block { types: vec![], rows: vec![vec![]] };
-    let err = eval_column(&e, &block, &SlotMap::default()).unwrap_err();
+    let block = Block { types: vec![col("x", T::DOUBLE, 0, 0)], rows: vec![vec![Datum::Double(1.5)]] };
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    let err = eval_column(&e, &block, &slots).unwrap_err();
     assert_eq!(err.to_string(), "Scale argument for function round is out of bound: 40000");
 }
 

@@ -26,7 +26,8 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     match name {
         "bitand" | "bitor" | "bitxor" => args.len() == 2 && int(to) && args.iter().all(same),
         "bitnot" => args.len() == 1 && int(to) && same(&args[0]),
-        "bit_count" => args.len() == 1 && int(&args[0]) && to.ptype == T::TINYINT,
+        // SMALLINT for a LARGEINT's up to 128 bits (`function_bit_count.cpp:40`)
+        "bit_count" => args.len() == 1 && int(&args[0]) && to.ptype == if args[0].ptype == T::LARGEINT { T::SMALLINT } else { T::TINYINT },
         "bit_shift_left" | "bit_shift_right" => args.len() == 2 && args[0].ptype == T::BIGINT && args[1].ptype == T::TINYINT && to.ptype == T::BIGINT,
         "bit_test" | "bit_test_all" => args.len() >= 2 && int(&args[0]) && args.iter().all(|a| a.ptype == args[0].ptype) && to.ptype == T::TINYINT,
         "xor" => args.len() == 2 && args.iter().all(|a| a.ptype == T::BOOLEAN) && to.ptype == T::BOOLEAN,

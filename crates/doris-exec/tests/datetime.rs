@@ -203,3 +203,28 @@ fn a_constant_overflow_fails_at_prepare() {
     // a constant that evaluates is fine
     check_constants(&call("years_add", d(), vec![date("2024-01-01", d()), int(1, ty(T::INT))])).unwrap();
 }
+
+/// Review M1: C++ opens every expression, aggregate arguments included.
+#[test]
+fn a_constant_overflow_inside_an_aggregate_fails_at_prepare() {
+    use doris_exec::eval::check_nodes;
+    use doris_fixtures::build::aggregate;
+    let over = call("days_add", d(), vec![date("9999-12-31", d()), int(1, ty(T::INT))]);
+    let e = aggregate("max", d(), vec![d()], false, vec![over]);
+    let (code, _, _) = coded(check_nodes(&e, true).map(|_| Datum::Null));
+    assert_eq!(code, -218);
+}
+
+/// Review M4: `_sub` negates as Int64 then narrows to the INT interval
+/// (`SubtractIntervalImpl`), so INT_MIN stays INT_MIN.
+#[test]
+fn sub_of_int_min_prints_int_min() {
+    let e = add_days("days_sub", "2024-01-01", i64::from(i32::MIN));
+    assert_eq!(coded(e).2, "Operation day_add of 2024-01-01, -2147483648 out of range");
+}
+
+/// Review M6: a format's whitespace is `isspace`, `\v` included.
+#[test]
+fn str_to_date_skips_a_vertical_tab_in_the_format() {
+    assert_eq!(str_to_date("2024-02-03", "%Y\u{b}-%m-%d"), day("2024-02-03"));
+}

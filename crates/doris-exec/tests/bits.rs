@@ -107,3 +107,11 @@ fn xor_with_null_is_null() {
     assert_eq!(x(null(b.clone()), boolean(false)), Datum::Null);
     assert_eq!(x(boolean(false), null(b.clone())), Datum::Null);
 }
+
+/// Review M5: `bit_count` of a LARGEINT is SMALLINT (`function_bit_count.cpp:40`).
+#[test]
+fn bit_count_of_largeint_is_smallint() {
+    let l = ty(T::LARGEINT);
+    assert_eq!(one_row(call("bit_count", ty(T::SMALLINT), vec![int(-1, l.clone())])), i(128));
+    assert!(check_read(&call("bit_count", ty(T::TINYINT), vec![int(-1, l)])).is_err());
+}

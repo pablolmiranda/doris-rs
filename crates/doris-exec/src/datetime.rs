@@ -458,7 +458,7 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
                     val += 1;
                 }
             }
-        } else if !format[ptr].is_ascii_whitespace() {
+        } else if !is_space(format[ptr]) {
             if format[ptr] != value[val] {
                 return Ok(None);
             }
@@ -570,7 +570,13 @@ pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows
                 })?;
                 let datetime = types[0].ptype == T::DATETIMEV2;
                 let t = Dt::unpack(i128::from(int(row[0])), datetime);
-                let delta = if sub { int(row[1]).wrapping_neg() } else { int(row[1]) };
+                // `SubtractIntervalImpl` negates as Int64, then an INT interval narrows it back
+                // (so INT_MIN stays INT_MIN)
+                let delta = match (sub, types[1].ptype) {
+                    (true, T::INT) => i64::from(int(row[1]).wrapping_neg() as i32),
+                    (true, _) => int(row[1]).wrapping_neg(),
+                    (false, _) => int(row[1]),
+                };
                 match add(unit, t, delta, datetime) {
                     Some(t) => Datum::Int(t.pack(datetime)),
                     None => return Err(out_of_range(unit, t, datetime, delta)),

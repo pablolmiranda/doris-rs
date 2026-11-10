@@ -728,7 +728,8 @@ impl Instance<'_> {
     fn tablet_scans(&self, t: &PlanTree, agg: &crate::aggregate::Aggregation) -> Result<Option<Block>, ExecError> {
         let Some(scan) = t.children.first().filter(|c| c.node.node_type == P::OLAP_SCAN_NODE) else { return Ok(None) };
         let ranges = self.instance.scan_ranges.get(&scan.node.node_id).cloned().unwrap_or_default();
-        if agg.finalize || !agg.group_by.is_empty() || agg.functions.iter().any(|f| f.merge) || ranges.len() < 2 {
+        // a scan limit counts across the tablets: such a scan runs once
+        if agg.finalize || !agg.group_by.is_empty() || agg.functions.iter().any(|f| f.merge) || ranges.len() < 2 || scan.node.limit >= 0 {
             return Ok(None);
         }
         let mut out: Option<Block> = None;

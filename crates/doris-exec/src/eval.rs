@@ -272,7 +272,8 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             }
         }
     }
-    Ok(())
+    // C++ opens every expression: its all-constant subtrees are evaluated now
+    check_constants(e)
 }
 
 /// Evaluates every all-constant call subtree once, as C++ does at open
