@@ -377,6 +377,18 @@ fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool)
     })
 }
 
+/// Keys of a sort, grouping, window, join, set operation or partition: no order or hash of an
+/// ARRAY is ported, so one is refused.
+fn check_keys<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, what: &str) -> Result<(), ExecError> {
+    for e in exprs {
+        let t = e.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true));
+        if t.is_some_and(|t| t.ptype == doris_thrift::gen::types::TPrimitiveType::ARRAY) {
+            return Err(unsupported(format!("an ARRAY as {what}")));
+        }
+    }
+    Ok(())
+}
+
 fn check_partition(t: TPartitionType, what: &str) -> Result<(), ExecError> {
     use TPartitionType as T;
     if matches!(t, T::UNPARTITIONED | T::HASH_PARTITIONED | T::RANDOM | T::BUCKET_SHFFULE_HASH_PARTITIONED | T::OLAP_TABLE_SINK_HASH_PARTITIONED) {
@@ -417,6 +429,7 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
                 .ok_or_else(|| ExecError::BadRequest("EXCHANGE_NODE without its parameters".into()))?;
             if let Some(info) = &e.sort_info {
                 check_exprs(&info.ordering_exprs, false)?;
+                check_keys(&info.ordering_exprs, "a sort key")?;
             }
             check_partition(e.partition_type.unwrap_or(TPartitionType::UNPARTITIONED), "an EXCHANGE_NODE")?;
         }
@@ -426,6 +439,7 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
                 return Err(unsupported("a SORT_NODE with the two-phase read"));
             }
             check_exprs(&s.sort_info.ordering_exprs, false)?;
+            check_keys(&s.sort_info.ordering_exprs, "a sort key")?;
             check_exprs(s.sort_info.sort_tuple_slot_exprs.iter().flatten(), false)?;
         }
         P::SCHEMA_SCAN_NODE => {
@@ -435,11 +449,13 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         P::AGGREGATION_NODE => {
             let a = n.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
             crate::aggregate::Aggregation::from_thrift(a)?;
+            check_keys(a.grouping_exprs.iter().flatten(), "a grouping key")?;
         }
         P::ANALYTIC_EVAL_NODE => {
             let a = n.analytic_node.as_ref().ok_or_else(|| ExecError::BadRequest("ANALYTIC_EVAL_NODE without its parameters".into()))?;
             let frame = crate::analytic::frame(a.window.as_ref())?;
             check_exprs(a.partition_exprs.iter().chain(&a.order_by_exprs), false)?;
+            check_keys(a.partition_exprs.iter().chain(&a.order_by_exprs), "a window key")?;
             for f in &a.analytic_functions {
                 crate::analytic::check_frame(&crate::analytic::WindowFn::from_expr(f)?, &frame)?;
             }
@@ -447,6 +463,7 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         P::PARTITION_SORT_NODE => {
             let (p, info, _, _) = partition_sort_node(n)?;
             check_exprs(p.iter().chain(&info.ordering_exprs).chain(info.sort_tuple_slot_exprs.iter().flatten()), false)?;
+            check_keys(p.iter().chain(&info.ordering_exprs), "a sort key")?;
         }
         P::MATERIALIZATION_NODE => {
             let m = n.materialization_node.as_ref().ok_or_else(|| ExecError::BadRequest("MATERIALIZATION_NODE without its parameters".into()))?;
@@ -454,7 +471,10 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
         }
         // const_expr_lists and first_materialized_child_idx are ignored, as C++ ignores them; the
         // tuple, types and distribution are checked in check_plan (check_sets)
-        P::INTERSECT_NODE | P::EXCEPT_NODE => check_exprs(set_node(n)?.2.iter().flatten(), false)?,
+        P::INTERSECT_NODE | P::EXCEPT_NODE => {
+            check_exprs(set_node(n)?.2.iter().flatten(), false)?;
+            check_keys(set_node(n)?.2.iter().flatten(), "a set operation's column")?;
+        }
         P::HASH_JOIN_NODE => check_hash_join(n)?,
         P::CROSS_JOIN_NODE => {
             use crate::hash_join::{join_op, JoinOp};
@@ -526,6 +546,7 @@ fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
     }
     for e in &h.eq_join_conjuncts {
         use doris_thrift::gen::opcodes::TExprOpcode;
+        check_keys([&e.left, &e.right], "a join key")?;
         if !matches!(e.opcode, None | Some(TExprOpcode::EQ) | Some(TExprOpcode::EQ_FOR_NULL)) {
             return Err(unsupported(format!("a hash join key compared by {:?}", e.opcode)));
         }
@@ -1041,6 +1062,7 @@ fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
     projection_tuple(s)?;
     check_partition(s.output_partition.type_, what)?;
     check_exprs(s.output_partition.partition_exprs.iter().flatten(), false)?;
+    check_keys(s.output_partition.partition_exprs.iter().flatten(), "a partition key")?;
     check_exprs(s.output_exprs.iter().flatten(), false)?;
     check_exprs(s.conjuncts.iter().flatten(), false)
 }
@@ -1096,8 +1118,17 @@ fn check_plan_inner(plan: &QueryPlan) -> Result<(), ExecError> {
     }
     check_senders(plan)?;
     for s in plan.desc.slots.values() {
-        if !s.ty.supported() && s.ty.ptype != doris_thrift::gen::types::TPrimitiveType::NULL_TYPE {
+        // an ARRAY is carried (`ARRAY_LITERAL`, `split_by_string`), never read from storage
+        if !s.ty.supported() && !s.ty.supported_array() && s.ty.ptype != doris_thrift::gen::types::TPrimitiveType::NULL_TYPE {
             return Err(unsupported(format!("type {} (slot {})", s.ty.type_name(), s.name)));
+        }
+    }
+    for f in &plan.fragments {
+        for n in f.root.nodes() {
+            let Some(scan) = n.olap_scan_node.as_ref().filter(|_| n.node_type == P::OLAP_SCAN_NODE) else { continue };
+            if let Some(s) = plan.desc.slots.values().find(|s| s.tuple == scan.tuple_id && s.ty.ptype == doris_thrift::gen::types::TPrimitiveType::ARRAY) {
+                return Err(unsupported(format!("reading an ARRAY column ({})", s.name)));
+            }
         }
     }
     Ok(())

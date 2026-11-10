@@ -1081,6 +1081,12 @@ fn hash_values(values: &[Datum]) -> u64 {
                 eat(&(b.len() as u64).to_le_bytes());
                 eat(b);
             }
+            Datum::Array(a) => {
+                let k = crate::set_op::row_key(a);
+                eat(&[5]);
+                eat(&(k.len() as u64).to_le_bytes());
+                eat(&k);
+            }
         }
     }
     h
@@ -1205,6 +1211,7 @@ fn truth(d: &Datum) -> Option<bool> {
         Datum::Float(f) => Some(*f != 0.0),
         Datum::Double(f) => Some(*f != 0.0),
         Datum::Bytes(_) => Some(true),
+        Datum::Array(_) => None,
     }
 }
 

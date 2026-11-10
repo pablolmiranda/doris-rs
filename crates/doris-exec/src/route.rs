@@ -187,6 +187,7 @@ fn render(c: &ColType, d: &Datum) -> String {
         Datum::Float(f) => f.to_string(),
         Datum::Double(f) => f.to_string(),
         Datum::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
+        Datum::Array(a) => format!("[{}]", a.iter().map(|v| render(&ColType { ptype: TPrimitiveType::STRING, ..c.clone() }, v)).collect::<Vec<_>>().join(", ")),
     }
 }
 
@@ -221,5 +222,7 @@ fn hash_bytes(c: &ColType, d: &Datum) -> Vec<u8> {
         Datum::Float(f) => f.to_le_bytes().to_vec(),
         Datum::Double(f) => f.to_le_bytes().to_vec(),
         Datum::Bytes(b) => b.clone(),
+        // an ARRAY partition key is refused at prepare
+        Datum::Array(_) => render(c, d).into_bytes(),
     }
 }

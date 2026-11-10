@@ -92,6 +92,7 @@ fn string_call(n: &TExprNode) -> bool {
         "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
         "regexp" | "rlike" => args.len() == 2 && args.iter().all(text) && to.ptype == T::BOOLEAN,
         "concat_ws" => args.len() >= 2 && args.iter().all(text) && text(&to),
+        "split_by_string" => args.len() == 2 && args.iter().all(text) && to.element().is_some_and(|e| text(&e)),
         _ => false,
     }
 }
@@ -206,7 +207,8 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             | N::NULL_LITERAL
             | N::SLOT_REF
             | N::CAST_EXPR
-            | N::IN_PRED => true,
+            | N::IN_PRED
+            | N::ARRAY_LITERAL => true,
             N::BINARY_PRED => comparison(n).is_some() || n.opcode == Some(TExprOpcode::EQ_FOR_NULL),
             N::COMPOUND_PRED => matches!(
                 n.opcode,
@@ -227,7 +229,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("like" | "concat" | "length") => string_call(n),
                 Some("round") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
-                Some("concat_ws" | "regexp" | "rlike") => string_call(n),
+                Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
@@ -250,6 +252,14 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
         match ColType::from_type_desc("", &n.type_, true) {
             Some(c)
                 if c.supported() || n.node_type == N::NULL_LITERAL || c.ptype == T::NULL_TYPE => {}
+            // an ARRAY is only carried: the expression itself, or a table function's argument;
+            // no comparison, cast or other function takes one
+            Some(c) if c.supported_array() && array_carried(&e.nodes, i) => {}
+            Some(c) if c.ptype == T::ARRAY => {
+                return Err(ExecError::Unsupported {
+                    what: format!("an ARRAY value as an operand ({})", describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
+                })
+            }
             Some(c) => {
                 return Err(ExecError::Unsupported {
                     what: format!("type {}", c.type_name()),
@@ -305,14 +315,48 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
     Ok(())
 }
 
+/// The index of node `i`'s parent (pre-order, `num_children` each).
+fn parent(nodes: &[TExprNode], i: usize) -> Option<usize> {
+    // (node, children not yet seen) for each open node
+    let mut stack: Vec<(usize, i32)> = Vec::new();
+    for (j, n) in nodes.iter().enumerate() {
+        while stack.last().is_some_and(|(_, left)| *left == 0) {
+            stack.pop();
+        }
+        if j == i {
+            return stack.last().map(|(p, _)| *p);
+        }
+        if let Some((_, left)) = stack.last_mut() {
+            *left -= 1;
+        }
+        if n.num_children > 0 {
+            stack.push((j, n.num_children));
+        }
+    }
+    None
+}
+
+/// The table functions, whose arguments may be ARRAYs.
+pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
+
+/// Whether an ARRAY at node `i` is carried, not operated on: the whole expression, or an
+/// argument of a table function.
+fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
+    match parent(nodes, i) {
+        None => true,
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str())),
+    }
+}
+
 fn bad(msg: impl Into<String>) -> ExecError {
     ExecError::BadRequest(msg.into())
 }
 
-/// A stored value as the expression value M4's casts take.
+/// A stored value as the expression value M4's casts take (an ARRAY, which no cast takes, as
+/// NULL: `check_nodes` refuses an array operand).
 pub fn datum_value(d: &Datum, t: &ColType) -> Value {
     match d {
-        Datum::Null => Value::Null,
+        Datum::Null | Datum::Array(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),
@@ -360,7 +404,7 @@ fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
 
 fn truth(d: &Datum) -> Option<bool> {
     match d {
-        Datum::Null => None,
+        Datum::Null | Datum::Array(_) => None,
         Datum::Bool(b) => Some(*b),
         Datum::Int(v) => Some(*v != 0),
         Datum::Float(f) => Some(*f != 0.0),
@@ -397,6 +441,17 @@ fn eval_at(
         nullable: true,
     };
     Ok(match n.node_type {
+        // the elements, in the element type (`VArrayLiteral`)
+        N::ARRAY_LITERAL => {
+            let to = node_type(n)?;
+            let elem = to.element().ok_or_else(|| bad("an ARRAY_LITERAL that is not an ARRAY"))?;
+            let cols = kids
+                .iter()
+                .map(|(t, v)| v.iter().map(|d| coerce(d.clone(), t, &elem)).collect::<Result<Vec<_>, _>>())
+                .collect::<Result<Vec<_>, _>>()?;
+            let out = (0..rows).map(|r| Datum::Array(cols.iter().map(|c| c[r].clone()).collect())).collect();
+            (to, out)
+        }
         N::CASE_EXPR => {
             let c = n.case_expr.as_ref().ok_or_else(|| bad("CASE without its parameters"))?;
             let mut to = node_type(n)?;
@@ -718,6 +773,11 @@ fn eval_at(
                 }
                 (boolean(), vec![Datum::Bool(true); rows])
             }
+            Some("split_by_string") => {
+                let (_, v) = kids.first().ok_or_else(|| bad("split_by_string without its value"))?;
+                let (_, s) = kids.get(1).ok_or_else(|| bad("split_by_string without its separator"))?;
+                (node_type(n)?, crate::strings::split_column(v, s))
+            }
             Some("length") => {
                 let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
                 (node_type(n)?, crate::strings::length_column(v))
@@ -799,7 +859,8 @@ enum Key<'a> {
 
 fn key<'a>(d: &'a Datum, t: &ColType) -> Option<Key<'a>> {
     Some(match d {
-        Datum::Null => return None,
+        // an ARRAY never reaches a comparison: `check_nodes` refuses it
+        Datum::Null | Datum::Array(_) => return None,
         Datum::Bool(b) => Key::Fixed(i128::from(*b), 0),
         Datum::Float(f) => Key::Float(f64::from(*f)),
         Datum::Double(f) => Key::Float(*f),

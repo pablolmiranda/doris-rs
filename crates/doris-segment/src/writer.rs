@@ -35,6 +35,8 @@ pub enum Datum {
     Float(f32),
     Double(f64),
     Bytes(Vec<u8>),
+    /// An ARRAY value: its elements, each a scalar Datum.
+    Array(Vec<Datum>),
 }
 
 /// One column of the tablet schema, as the segment needs it.
