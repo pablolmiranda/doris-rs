@@ -230,6 +230,16 @@ impl WriteFragment {
         crate::clock::QueryClock::from_optional(self.params.query_globals.as_ref())
     }
 
+    /// The load's `regexp` options.
+    pub fn regex(&self) -> crate::regexp::RegexOptions {
+        crate::regexp::RegexOptions::from_query_options(self.params.query_options.as_ref())
+    }
+
+    /// Runs `f` with the load's clock and `regexp` options, as a query instance runs.
+    pub fn in_context<R>(&self, f: impl FnOnce() -> R) -> R {
+        crate::clock::with_clock(&self.clock(), || crate::regexp::with_regex_options(self.regex(), f))
+    }
+
     pub fn input_nullable(&self) -> Vec<bool> {
         let exprs = self.output_exprs();
         if exprs.is_empty() {

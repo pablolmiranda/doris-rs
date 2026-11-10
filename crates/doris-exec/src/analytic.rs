@@ -82,9 +82,6 @@ pub enum WindowKind {
     Agg(AggSpec),
 }
 
-/// The analytic input's block size (`batch_size`): C++ sizes an `ntile` partition from the rows
-/// it has received, so a partition past the first block is numbered from a partial size.
-const NTILE_BLOCK: usize = 4064;
 
 /// One function of the node.
 #[derive(Debug, Clone, PartialEq)]
@@ -244,16 +241,24 @@ fn same_row(a: &[Datum], b: &[Datum], types: &[ColType]) -> bool {
     a.iter().zip(b).zip(types).all(|((a, b), t)| same(a, b, t))
 }
 
+/// One function over a node's input: its frame, its argument columns, and the input's block size
+/// (`batch_size`, which `ntile` needs).
+#[derive(Clone, Copy)]
+pub struct Window<'a> {
+    pub frame: &'a Frame,
+    pub f: &'a WindowFn,
+    pub args: &'a [(ColType, Vec<Datum>)],
+    pub batch_size: usize,
+}
+
 /// One function's value for each row. `part` and `order` hold each row's partition and order
-/// key values (rows sorted by them), and `args` the function's argument columns.
+/// key values (rows sorted by them).
 pub fn window_columns(
     part: &[Vec<Datum>],
     part_types: &[ColType],
     order: &[Vec<Datum>],
     order_types: &[ColType],
-    frame: &Frame,
-    f: &WindowFn,
-    args: &[(ColType, Vec<Datum>)],
+    w: &Window,
 ) -> Result<Vec<Datum>, ExecError> {
     let n = part.len();
     let mut out = Vec::with_capacity(n);
@@ -275,7 +280,7 @@ pub fn window_columns(
             gs = ge;
             idx += 1;
         }
-        partition(&mut out, ps, pe, &groups, frame, f, args)?;
+        partition(&mut out, ps, pe, &groups, w)?;
         ps = pe;
     }
     Ok(out)
@@ -287,10 +292,9 @@ fn partition(
     ps: usize,
     pe: usize,
     groups: &[(usize, usize, usize)],
-    frame: &Frame,
-    f: &WindowFn,
-    args: &[(ColType, Vec<Datum>)],
+    w: &Window,
 ) -> Result<(), ExecError> {
+    let Window { frame, f, args, batch_size } = *w;
     let col = |i: usize| args.get(i).map(|(_, v)| v.as_slice());
     let x = || col(0).ok_or_else(|| ExecError::BadRequest(format!("{} without its argument", f.name())));
     let default = |cur: usize| col(2).map_or(Datum::Null, |d| d[cur].clone());
@@ -305,8 +309,10 @@ fn partition(
             WindowKind::DenseRank => Datum::Int((gi + 1) as i128),
             // WindowFunctionNTile::add_range_single_place
             WindowKind::Ntile(n) => {
-                if pe > NTILE_BLOCK {
-                    return Err(ExecError::Unsupported { what: format!("ntile over a partition past the first {NTILE_BLOCK} rows") });
+                // C++ sizes a partition from the rows received so far: past the first input block
+                // (batch_size rows) it numbers buckets from a partial size
+                if pe > batch_size {
+                    return Err(ExecError::Unsupported { what: format!("ntile over a partition past the first {batch_size} rows") });
                 }
                 let (row, size, n) = ((cur - ps) as i64, (pe - ps) as i64, *n);
                 let (small, big) = (size / n, size % n);

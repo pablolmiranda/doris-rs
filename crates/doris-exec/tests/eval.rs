@@ -567,3 +567,12 @@ fn regexp_evaluates_with_the_querys_options() {
     let rlike = call("rlike", ty(T::BOOLEAN), vec![slot(1, v), string("^foo")]);
     assert_eq!(column_of(rlike, &block), vec![Datum::Bool(true)]);
 }
+
+#[test]
+fn compact_zero_date_is_null() {
+    // try_convert_set_zero_date applies only under config::allow_zero_date, false by default
+    let to = scalar(T::DATETIMEV2, -1, 0, 6);
+    let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 1);
+    cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
+    assert_eq!(one_row(doris_fixtures::build::over(cast, vec![string("00000000")])), Datum::Null);
+}

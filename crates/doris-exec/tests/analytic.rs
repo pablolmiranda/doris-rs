@@ -1,7 +1,7 @@
 //! Window functions over sorted rows, as the C++ BE's ANALYTIC_EVAL_NODE computes them: frames
 //! clamped to the partition, peers by value (NULL = NULL, -0.0 = 0.0), values added in row order.
 use doris_exec::aggregate::AggSpec;
-use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, WindowFn, WindowKind};
+use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, Window, WindowFn, WindowKind};
 use doris_exec::value::ColType;
 use doris_fixtures::build;
 use doris_segment::writer::Datum;
@@ -59,7 +59,7 @@ fn run(part: &[Datum], order: &[Datum], frame: Frame, f: &WindowFn, args: &[(T, 
     let ot = if order.is_empty() { vec![] } else { vec![ty(T::DOUBLE)] };
     let p: Vec<Vec<Datum>> = if part.is_empty() { vec![vec![]; rows(&args, order)] } else { p };
     let o: Vec<Vec<Datum>> = if order.is_empty() { vec![vec![]; p.len()] } else { o };
-    window_columns(&p, &pt, &o, &ot, &frame, f, &args).unwrap()
+    window_columns(&p, &pt, &o, &ot, &Window { frame: &frame, f, args: &args, batch_size: 4064 }).unwrap()
 }
 
 fn rows(args: &[(ColType, Vec<Datum>)], order: &[Datum]) -> usize {
@@ -404,6 +404,15 @@ fn ntile_parses_its_literal() {
 fn ntile_refuses_a_partition_past_one_block() {
     let order: Vec<Datum> = (0..5000).map(|v| d(v as f64)).collect();
     let (p, o) = (vec![vec![]; order.len()], keys(&order));
-    let r = window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &TO_CURRENT, &win(WindowKind::Ntile(3), T::BIGINT), &[]);
+    let r = window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &win(WindowKind::Ntile(3), T::BIGINT), args: &[], batch_size: 4064 });
     assert!(r.is_err());
+}
+
+#[test]
+fn ntile_refuses_past_the_querys_batch_size() {
+    let order: Vec<Datum> = (0..2000).map(|v| d(v as f64)).collect();
+    let (p, o) = (vec![vec![]; order.len()], keys(&order));
+    let f = win(WindowKind::Ntile(3), T::BIGINT);
+    assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 1024 }).is_err());
+    assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 4064 }).is_ok());
 }

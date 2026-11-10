@@ -2,7 +2,7 @@
 //! `vnumbers_tvf.cpp` produce them.
 use std::collections::BTreeSet;
 
-use doris_exec::datagen::{numbers, Numbers};
+use doris_exec::datagen::{check_numbers_tuple, numbers, Numbers, MAX_NUMBERS};
 use doris_exec::repeat::{check_repeat, repeat_rows};
 use doris_segment::writer::Datum;
 use doris_thrift::gen::plan_nodes::TRepeatNode;
@@ -71,7 +71,8 @@ fn numbers_counts_from_zero() {
             total: 4,
             use_const: false,
             const_value: 0
-        }),
+        })
+        .unwrap(),
         vec![i(0), i(1), i(2), i(3)]
     );
     assert_eq!(
@@ -79,7 +80,8 @@ fn numbers_counts_from_zero() {
             total: 0,
             use_const: false,
             const_value: 0
-        }),
+        })
+        .unwrap(),
         vec![]
     );
 }
@@ -91,7 +93,31 @@ fn numbers_with_const_value_repeats_it() {
             total: 3,
             use_const: true,
             const_value: 9
-        }),
+        })
+        .unwrap(),
         vec![i(9), i(9), i(9)]
     );
+}
+
+#[test]
+fn repeat_refuses_fewer_kept_sets_than_repeats() {
+    let mut n = node(vec![vec![], vec![]], vec![vec![0, 1]], &[]);
+    n.slot_id_set_list.pop();
+    assert!(check_repeat(&n).is_err());
+}
+
+#[test]
+fn numbers_past_what_one_chunk_holds_is_refused() {
+    assert!(numbers(&Numbers { total: MAX_NUMBERS + 1, use_const: false, const_value: 0 }).is_err());
+}
+
+#[test]
+fn numbers_needs_one_non_null_bigint_slot() {
+    use doris_exec::value::ColType;
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    let col = |ptype, nullable| ColType { name: "number".into(), ptype, len: -1, precision: 0, scale: 0, nullable };
+    assert!(check_numbers_tuple(&[col(T::BIGINT, false)]).is_ok());
+    assert!(check_numbers_tuple(&[col(T::BIGINT, true)]).is_err());
+    assert!(check_numbers_tuple(&[col(T::INT, false)]).is_err());
+    assert!(check_numbers_tuple(&[col(T::BIGINT, false), col(T::BIGINT, false)]).is_err());
 }

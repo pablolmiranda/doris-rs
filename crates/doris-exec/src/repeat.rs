@@ -8,6 +8,9 @@ use crate::ExecError;
 /// `RepeatOperatorX::init`: every grouping list covers every repeat.
 pub fn check_repeat(r: &TRepeatNode) -> Result<(), ExecError> {
     let repeats = r.repeat_id_list.len();
+    if r.slot_id_set_list.len() < repeats {
+        return Err(ExecError::BadRequest(format!("a REPEAT_NODE with {} kept-slot sets for {repeats} repeats", r.slot_id_set_list.len())));
+    }
     for g in &r.grouping_list {
         if g.len() < repeats {
             return Err(ExecError::Internal(format!(

@@ -32,6 +32,16 @@ impl Default for RegexOptions {
     }
 }
 
+impl RegexOptions {
+    /// From a query's or load's options (`runtime_state.h`: extended only when set and true).
+    pub fn from_query_options(o: Option<&doris_thrift::gen::palo_internal_service::TQueryOptions>) -> RegexOptions {
+        RegexOptions {
+            extended: o.and_then(|o| o.enable_extended_regex) == Some(true),
+            hyperscan_fallback: o.and_then(|o| o.enable_hyperscan_fallback).unwrap_or(true),
+        }
+    }
+}
+
 thread_local! {
     static OPTIONS: Cell<RegexOptions> = Cell::new(RegexOptions::default());
 }
@@ -132,7 +142,10 @@ fn refuse(what: impl Into<String>) -> ExecError {
     ExecError::Unsupported { what: what.into() }
 }
 
-struct Walk {
+struct Walk<'p> {
+    pattern: &'p str,
+    /// the product of the counted repetitions enclosing the current node (RE2's RepetitionWalker)
+    nesting: u64,
     mode: Mode,
     edits: Vec<(usize, usize, String)>,
     dollar: bool,
@@ -147,7 +160,7 @@ const WORD: &str = "0-9A-Za-z_";
 // RE2's \s: no \v
 const SPACE: &str = r"\t\n\f\r ";
 
-impl Walk {
+impl Walk<'_> {
     fn refuse(&mut self, what: &str) {
         self.refused.get_or_insert_with(|| what.to_string());
     }
@@ -171,7 +184,9 @@ impl Walk {
             K::Verbatim | K::Meta => true,
             K::Superfluous => l.c.is_ascii_punctuation(),
             K::HexFixed(ast::HexLiteralKind::X) | K::HexBrace(ast::HexLiteralKind::X) => true,
-            K::Special(S::Tab | S::LineFeed | S::CarriageReturn | S::FormFeed | S::VerticalTab) => true,
+            K::Special(S::Tab | S::LineFeed | S::CarriageReturn | S::FormFeed) => true,
+            // Hyperscan's \v is PCRE's vertical-whitespace class; RE2's is VT alone
+            K::Special(S::VerticalTab) => self.mode == Mode::Re2,
             _ => false,
         };
         if !ok {
@@ -226,6 +241,17 @@ impl Walk {
                 ast::ClassSet::BinaryOp(_) => self.refuse("a regexp class operation"),
             },
             Ast::Repetition(r) => {
+                // regex-syntax reads `a**`, `a*+`, `x{2}{3}` as nested repetitions; RE2 rejects
+                // them, and Boost reads `*+` as possessive
+                if matches!(*r.ast, Ast::Repetition(_)) {
+                    self.refuse("a regexp quantifier on a quantifier");
+                }
+                let op = &self.pattern[r.op.span.start.offset..r.op.span.end.offset];
+                // regex-syntax allows `{ 2 }`; RE2 and Hyperscan read it as literal text
+                if op.chars().any(char::is_whitespace) {
+                    self.refuse("whitespace inside a regexp repetition count");
+                }
+                let outer = self.nesting;
                 if let ast::RepetitionKind::Range(range) = &r.op.kind {
                     let n = match *range {
                         ast::RepetitionRange::Exactly(n) | ast::RepetitionRange::AtLeast(n) => n,
@@ -236,8 +262,14 @@ impl Walk {
                         self.re2.get_or_insert((r.op.span.start.offset, String::new()));
                     }
                     self.max_count = self.max_count.max(n);
+                    // RE2 rejects nested counted repetitions whose product passes kMaxRepeat
+                    self.nesting = self.nesting.saturating_mul(u64::from(n.max(1)));
+                    if self.nesting > 1000 {
+                        self.refuse("nested regexp repetitions past 1000");
+                    }
                 }
                 self.walk(&r.ast);
+                self.nesting = outer;
             }
             Ast::Group(g) => {
                 match &g.kind {
@@ -279,6 +311,8 @@ fn gate(p: &str, mode: Mode) -> Gate {
         }
     };
     let mut w = Walk {
+        pattern: p,
+        nesting: 1,
         mode,
         edits: vec![],
         dollar: false,
@@ -386,6 +420,50 @@ fn nested_unbounded(p: &str) -> bool {
     false
 }
 
+/// A quantifier right after a quantifier (`*+`, `++`, `{2}*`: possessive or nested in Boost), or
+/// whitespace inside a `{…}` count; a lazy `?` after a quantifier is one operator.
+fn stacked_or_spaced(p: &str) -> bool {
+    let b = p.as_bytes();
+    let mut i = 0;
+    let mut after_quantifier = false;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => {
+                i += 2;
+                after_quantifier = false;
+                continue;
+            }
+            b'[' => {
+                i += 1;
+                while i < b.len() && b[i] != b']' {
+                    i += if b[i] == b'\\' { 2 } else { 1 };
+                }
+                after_quantifier = false;
+            }
+            b'*' | b'+' if after_quantifier => return true,
+            b'{' => {
+                let end = b[i..].iter().position(|&c| c == b'}').map(|e| i + e);
+                if let Some(e) = end.filter(|&e| b[i + 1..e].iter().all(|c| c.is_ascii_digit() || *c == b',' || c.is_ascii_whitespace())) {
+                    if after_quantifier || b[i + 1..e].iter().any(u8::is_ascii_whitespace) {
+                        return true;
+                    }
+                    i = e;
+                    after_quantifier = true;
+                    i += 1;
+                    continue;
+                }
+                after_quantifier = false;
+            }
+            b'*' | b'+' => after_quantifier = true,
+            // `x??` and `x*?` are lazy, one operator; a `?` after anything else is a quantifier
+            b'?' => after_quantifier = !after_quantifier,
+            _ => after_quantifier = false,
+        }
+        i += 1;
+    }
+    false
+}
+
 /// RE2 rejected `p` and extended regex is on: Boost.
 fn boost(p: &str) -> Result<Matcher, ExecError> {
     if !p.is_ascii() {
@@ -396,6 +474,9 @@ fn boost(p: &str) -> Result<Matcher, ExecError> {
             let error = format!("Unmatched marking parenthesis ( or \\(.  The error occurred while parsing the regular expression: '{p}>>>HERE>>>'.");
             return Err(invalid(p, &error, false));
         }
+    }
+    if stacked_or_spaced(p) {
+        return Err(refuse("a Boost regexp with a possessive quantifier or a spaced count"));
     }
     if nested_unbounded(p) {
         return Err(refuse("a Boost regexp with a nested unbounded repetition"));

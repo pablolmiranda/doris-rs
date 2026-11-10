@@ -665,11 +665,9 @@ impl Instance<'_> {
         let d = t.node.data_gen_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its parameters".into()))?;
         let tuple = d.tuple_id.ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its tuple".into()))?;
         let mut out = self.empty(tuple)?;
-        if out.slots.len() != 1 || out.block.types[0].ptype != doris_thrift::gen::types::TPrimitiveType::BIGINT {
-            return Err(ExecError::BadRequest("a numbers scan whose tuple is not one BIGINT slot".into()));
-        }
+        crate::datagen::check_numbers_tuple(&out.block.types)?;
         for n in self.instance.data_gen.get(&t.node.node_id).into_iter().flatten() {
-            out.block.rows.extend(crate::datagen::numbers(n).into_iter().map(|v| vec![v]));
+            out.block.rows.extend(crate::datagen::numbers(n)?.into_iter().map(|v| vec![v]));
         }
         Ok(out)
     }
@@ -729,7 +727,7 @@ impl Instance<'_> {
         for e in &a.analytic_functions {
             let f = WindowFn::from_expr(e)?;
             let args = f.args.iter().map(|x| eval_column(x, &child.block, &slots)).collect::<Result<Vec<_>, _>>()?;
-            let values = window_columns(&part, &part_types, &order, &order_types, &frame, &f, &args)?;
+            let values = window_columns(&part, &part_types, &order, &order_types, &crate::analytic::Window { frame: &frame, f: &f, args: &args, batch_size: self.plan.batch_size })?;
             results.types.push(f.ret.clone());
             for (row, v) in results.rows.iter_mut().zip(values) {
                 row.push(v);

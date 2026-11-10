@@ -137,3 +137,61 @@ fn constant_case_insensitive_flag_is_refused() {
     let r = one("ABC", "(?i)a.c", true, OFF);
     assert!(matches!(r, Err(ExecError::Unsupported { .. })), "{r:?}");
 }
+
+fn refused(r: Result<Datum, ExecError>) -> bool {
+    matches!(r, Err(ExecError::Unsupported { .. }))
+}
+
+#[test]
+fn whitespace_inside_braces_is_refused() {
+    // RE2 and Hyperscan read `a{ 2 }` as literal text; regex-syntax as a repetition
+    for constant in [true, false] {
+        assert!(refused(one("aa", "a{ 2 }", constant, OFF)), "constant {constant}");
+        assert!(refused(one("aa", "a{2 }", constant, OFF)));
+    }
+    assert_eq!(one("aa", "^a{2}$", false, OFF).unwrap(), Datum::Bool(true));
+}
+
+#[test]
+fn stacked_quantifiers_are_refused() {
+    for p in ["a**", "a*+a", "a++", "a?+", "x{2}{3}", "a{2}*"] {
+        for constant in [true, false] {
+            for o in [OFF, EXT] {
+                assert!(refused(one("aaa", p, constant, o)), "{p} constant {constant} {o:?}");
+            }
+        }
+    }
+    // a lazy quantifier is one operator
+    assert_eq!(one("aaa", "a+?", false, OFF).unwrap(), Datum::Bool(true));
+}
+
+#[test]
+fn vertical_tab_escape_is_refused_on_the_constant_path() {
+    // Hyperscan's \v is the vertical-whitespace class; RE2's is VT alone
+    assert!(refused(one("a\nb", r"a\vb", true, OFF)));
+    assert_eq!(one("a\u{b}b", r"a\vb", false, OFF).unwrap(), Datum::Bool(true));
+}
+
+#[test]
+fn nested_repetitions_past_re2s_cap_are_refused() {
+    // RE2's RepetitionWalker: the product of nested counts past 1000
+    assert!(refused(one("a", "(?:a{60}){20}", false, OFF)));
+    assert_eq!(one("aaaa", "^(?:a{2}){2}$", false, OFF).unwrap(), Datum::Bool(true));
+}
+
+#[test]
+fn boost_refuses_possessive_and_spaced_counts() {
+    // these reach Boost (the lookahead makes RE2 reject them); Boost's `*+` is possessive
+    for p in ["(?=a)a*+a", "(?=a)a{ 2 }", "(?=a)a++"] {
+        assert!(refused(one("aaa", p, false, EXT)), "{p}");
+    }
+    assert_eq!(one("aaa", "(?=a)a*?a", false, EXT).unwrap(), Datum::Bool(true));
+}
+
+#[test]
+fn options_come_from_the_query_options() {
+    use doris_thrift::gen::palo_internal_service::TQueryOptions;
+    assert_eq!(RegexOptions::from_query_options(None), RegexOptions { extended: false, hyperscan_fallback: true });
+    let o = TQueryOptions { enable_extended_regex: Some(true), enable_hyperscan_fallback: Some(false), ..Default::default() };
+    assert_eq!(RegexOptions::from_query_options(Some(&o)), RegexOptions { extended: true, hyperscan_fallback: false });
+}
