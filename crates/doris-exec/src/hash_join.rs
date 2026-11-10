@@ -745,6 +745,42 @@ mod tests {
     }
 
     #[test]
+    fn right_semi_mark_null_and_a_passing_other_conjunct_is_null() {
+        // NULL mark AND passing other stays NULL (PI:818-825)
+        fn true_cond(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(vec![Some(true); rows.len()])
+        }
+        let j = HashJoin {
+            mark_conj: Some(&null_cond),
+            other: Some(&true_cond),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1)]), [None]);
+    }
+
+    #[test]
+    fn right_semi_mark_flags_each_build_row_of_a_chain() {
+        // two build rows share key 1; the mark conjunct passes only for build row 1
+        fn second_build_row(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(rows.iter().map(|r| Some(r[3] == Datum::Int(1))).collect())
+        }
+        let j = HashJoin {
+            mark_conj: Some(&second_build_row),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1), Some(1)]), [Some(false), Some(true)]);
+    }
+
+    #[test]
+    fn right_semi_mark_null_safe_key_matches_null() {
+        let j = HashJoin {
+            null_safe: vec![true],
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[None], &[None, Some(1)]), [Some(true), Some(false)]);
+    }
+
+    #[test]
     fn right_anti_mark_is_refused() {
         assert!(hash_join(&marked(JoinOp::RightAnti), side(&[Some(1)]), side(&[Some(1)])).is_err());
     }
