@@ -306,9 +306,9 @@ fn arithmetic_and_abs_evaluate() {
 #[test]
 fn unlisted_arithmetic_is_refused() {
     let d = scalar(T::DECIMAL128I, -1, 38, 2);
-    let e = arith("add", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.00", d)]);
-    let err = check_read(&e).expect_err("decimal add is not supported").to_string();
-    assert!(err.contains("function add"), "{err}");
+    let e = arith("mod", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.00", d)]);
+    let err = check_read(&e).expect_err("decimal mod is not supported").to_string();
+    assert!(err.contains("function mod"), "{err}");
 }
 
 #[test]
@@ -419,4 +419,28 @@ fn a_round_with_missing_children_is_refused_not_a_panic() {
     let mut e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(1, ty(T::INT))]);
     e.nodes.truncate(2); // round(x, <missing>)
     assert!(check_read(&e).is_err());
+}
+
+/// `CASE WHEN i = 1 THEN s ELSE 'z' END`, through the evaluator and the plan check.
+#[test]
+fn case_evaluates_and_is_checked() {
+    use doris_fixtures::build::{blank, over};
+    use doris_thrift::gen::exprs::{TCaseExpr, TExprNodeType as N};
+    let mut n = blank(N::CASE_EXPR, ty(T::VARCHAR), 0);
+    n.case_expr = Some(TCaseExpr { has_case_expr: false, has_else_expr: true });
+    let e = over(n, vec![binary("eq", slot(1, ty(T::INT)), int(1, ty(T::INT))), slot(5, ty(T::VARCHAR)), string("z")]);
+    check_read(&e).expect("CASE is supported");
+    let (block, slots) = typed_block();
+    let (_, v) = eval_column(&e, &block, &slots).unwrap();
+    assert_eq!(v, [Datum::Bytes(b"a".to_vec()), Datum::Bytes(b"z".to_vec()), Datum::Bytes(b"z".to_vec())]);
+}
+
+#[test]
+fn nullable_passes_values() {
+    let e = call("nullable", ty(T::INT), vec![slot(1, ty(T::INT))]);
+    check_read(&e).expect("nullable is supported");
+    let (block, slots) = typed_block();
+    let (t, v) = eval_column(&e, &block, &slots).unwrap();
+    assert!(t.nullable);
+    assert_eq!(v, [Datum::Int(1), Datum::Int(2), Datum::Null]);
 }

@@ -50,6 +50,8 @@ struct Instance<'a> {
     fragment: &'a FragmentPlan,
     instance: &'a InstancePlan,
     ctx: &'a ExecCtx<'a>,
+    /// Exchange node → its chunks, received before the tree runs (shared broadcast builds).
+    prefetched: std::cell::RefCell<std::collections::HashMap<i32, Vec<Chunk>>>,
 }
 
 fn qid(plan: &QueryPlan) -> (i64, i64) {
@@ -98,11 +100,13 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         fragment: f,
         instance: me_plan,
         ctx,
+        prefetched: Default::default(),
     };
     crate::clock::with_clock(&plan.clock, || {
         if f.mode == crate::query::RunMode::Merged && instance > 0 {
             return me.idle();
         }
+        me.prefetch_shared_builds()?;
         let out = me.node(&f.root)?;
         me.sink(out)
     })
@@ -448,10 +452,24 @@ impl Instance<'_> {
     fn assert_num_rows(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let n = &t.node;
         let a = n.assert_num_rows_node.as_ref().ok_or_else(|| ExecError::BadRequest("ASSERT_NUM_ROWS_NODE without its parameters".into()))?;
-        let mut out = self.child(t, 0)?;
-        if crate::nested_loop::assert_rows(n.node_id, a, out.block.len())? {
-            out.block.rows = vec![vec![Datum::Null; out.slots.len()]];
+        let child = self.child(t, 0)?;
+        // the child's columns, by position, as the node's own tuple's slots
+        let mut slots = Vec::new();
+        for tuple in &n.row_tuples {
+            slots.extend_from_slice(self.plan.desc.tuple_slots(*tuple)?);
         }
+        if slots.len() != child.slots.len() {
+            return Err(ExecError::BadRequest(format!(
+                "an ASSERT_NUM_ROWS_NODE of {} slots over {} columns",
+                slots.len(),
+                child.slots.len()
+            )));
+        }
+        let mut rows = child.block.rows;
+        if crate::nested_loop::assert_rows(n.node_id, a, rows.len())? {
+            rows = vec![vec![Datum::Null; slots.len()]];
+        }
+        let mut out = self.chunk_of(rows, &slots)?;
         if a.should_convert_output_to_nullable == Some(true) {
             for ty in &mut out.block.types {
                 ty.nullable = true;
@@ -510,24 +528,45 @@ impl Instance<'_> {
     /// fragment that no sender names, which take it as their one sender.
     fn receive_exchange(&self, node: i32, key: &ExchangeKey, senders: usize) -> Result<Vec<Chunk>, ExecError> {
         use crate::query::{plan_senders, shared_build};
-        let shared = self.fragment.mode == crate::query::RunMode::Each && shared_build(self.plan, self.at.0, node);
-        if !shared {
-            return self.ctx.exchanges.receive(key, senders);
+        if let Some(chunks) = self.prefetched.borrow_mut().remove(&node) {
+            return Ok(chunks);
         }
-        if plan_senders(self.plan, node, &self.instance.id) == 0 {
+        let shared = self.fragment.mode == crate::query::RunMode::Each && shared_build(self.plan, self.at.0, node);
+        if shared && plan_senders(self.plan, node, &self.instance.id) == 0 {
             return self.ctx.exchanges.receive(key, 1);
         }
-        let chunks = self.ctx.exchanges.receive(key, senders)?;
-        if self.at.1 == 0 {
-            for other in self.fragment.instances.iter().filter(|i| plan_senders(self.plan, node, &i.id) == 0) {
-                let to = ExchangeKey { query: key.query, instance: (other.id.hi, other.id.lo), node };
-                for c in &chunks {
-                    self.ctx.exchanges.send(&to, c.clone());
-                }
-                self.ctx.exchanges.end(&to);
-            }
+        self.ctx.exchanges.receive(key, senders)
+    }
+
+    /// The shared broadcast builds this instance receives, taken before its tree runs and
+    /// forwarded to the instances of its fragment that no sender names: they must get them even
+    /// when this instance never reaches the join (an empty build side above it skips its probe
+    /// child).
+    fn prefetch_shared_builds(&self) -> Result<(), ExecError> {
+        use crate::query::{plan_senders, shared_build};
+        if self.fragment.mode != crate::query::RunMode::Each {
+            return Ok(());
         }
-        Ok(chunks)
+        for n in self.fragment.root.nodes().into_iter().filter(|n| n.node_type == P::EXCHANGE_NODE) {
+            let node = n.node_id;
+            if !shared_build(self.plan, self.at.0, node) || plan_senders(self.plan, node, &self.instance.id) == 0 {
+                continue;
+            }
+            let senders = self.fragment.per_exch_num_senders.get(&node).copied().unwrap_or(0).max(0) as usize;
+            let key = ExchangeKey { query: qid(self.plan), instance: (self.instance.id.hi, self.instance.id.lo), node };
+            let chunks = self.ctx.exchanges.receive(&key, senders)?;
+            if self.at.1 == 0 {
+                for other in self.fragment.instances.iter().filter(|i| plan_senders(self.plan, node, &i.id) == 0) {
+                    let to = ExchangeKey { query: key.query, instance: (other.id.hi, other.id.lo), node };
+                    for c in &chunks {
+                        self.ctx.exchanges.send(&to, c.clone());
+                    }
+                    self.ctx.exchanges.end(&to);
+                }
+            }
+            self.prefetched.borrow_mut().insert(node, chunks);
+        }
+        Ok(())
     }
 
     /// A merged fragment's other instances: no rows, but every stream they feed still gets their

@@ -182,8 +182,11 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 )
             ),
             N::ARITHMETIC_EXPR => arithmetic_call(n),
+            // the FE sends the searched form; `has_case_expr` is ignored, as C++ ignores it
+            N::CASE_EXPR => n.case_expr.is_some(),
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
+                Some("nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
@@ -313,6 +316,24 @@ fn eval_at(
         nullable: true,
     };
     Ok(match n.node_type {
+        N::CASE_EXPR => {
+            let c = n.case_expr.as_ref().ok_or_else(|| bad("CASE without its parameters"))?;
+            let mut to = node_type(n)?;
+            to.nullable = n.is_nullable != Some(false);
+            let pairs = kids.len() - usize::from(c.has_else_expr);
+            if pairs % 2 != 0 || (c.has_else_expr && kids.is_empty()) {
+                return Err(bad("CASE with a WHEN and no THEN"));
+            }
+            let as_result = |(t, v): &(ColType, Vec<Datum>)| v.iter().map(|d| coerce(d.clone(), t, &to)).collect::<Result<Vec<_>, _>>();
+            // the WHENs as they are, the THENs and ELSE in the result type
+            let whens: Vec<&[Datum]> = (0..pairs / 2).map(|i| kids[2 * i].1.as_slice()).collect();
+            let thens = (0..pairs / 2).map(|i| as_result(&kids[2 * i + 1])).collect::<Result<Vec<_>, _>>()?;
+            let else_ = if c.has_else_expr { Some(as_result(&kids[pairs])?) } else { None };
+            let float_sum = !to.nullable && matches!(to.ptype, T::FLOAT | T::DOUBLE);
+            let thens: Vec<&[Datum]> = thens.iter().map(Vec::as_slice).collect();
+            let out = crate::cond::case_(&whens, &thens, else_.as_deref(), float_sum);
+            (to, out)
+        }
         N::SLOT_REF => {
             let id = n
                 .slot_ref
@@ -553,6 +574,11 @@ fn eval_at(
             Some("length") => {
                 let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
                 (node_type(n)?, crate::strings::length_column(v))
+            }
+            // `nullable(x)` only marks the type nullable (`function_nullables.cpp:36-66`)
+            Some("nullable") => {
+                let (t, v) = kids.into_iter().next().ok_or_else(|| bad("nullable without its argument"))?;
+                (ColType { nullable: true, ..t }, v)
             }
             Some(f @ ("if" | "ifnull" | "coalesce")) => {
                 let to = node_type(n)?;

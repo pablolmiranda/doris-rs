@@ -333,16 +333,23 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
         let mut found = false;
         let mut null = false;
         for (_, from_null) in c {
-            let v = and3(other[at], mark_conj[at]);
-            at += 1;
-            if *from_null {
-                // a NULL comparison: NULL unless the other conjuncts are false
-                null |= v != Some(false);
-            } else if v == Some(true) {
-                found = true;
-            } else if v.is_none() {
-                null = true;
+            // the mark conjuncts AND three-valued into TRUE (PI:148-156, vexpr_context.cpp:324-370)
+            let (mut value, mut is_null) = match mark_conj[at] {
+                Some(true) => (true, false),
+                Some(false) => (false, false),
+                None => (false, true),
+            };
+            // a NULL-keyed build row, or a NULL probe key, compares as NULL (PI:783-786)
+            is_null |= *from_null;
+            // the other conjuncts are two-valued, NULL failing (PI:808-826)
+            if j.other.is_some() {
+                let o = other[at] == Some(true);
+                value = value && !is_null && o;
+                is_null = is_null && o;
             }
+            at += 1;
+            found |= value;
+            null |= is_null;
         }
         let mark = if build.rows.is_empty() {
             Some(false)
@@ -359,15 +366,6 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
         out.push(row);
     }
     Ok(out)
-}
-
-/// Three-valued AND.
-fn and3(a: Option<bool>, b: Option<bool>) -> Option<bool> {
-    match (a, b) {
-        (Some(false), _) | (_, Some(false)) => Some(false),
-        (Some(true), Some(true)) => Some(true),
-        _ => None,
-    }
 }
 
 /// An ASOF join (`exec/common/join_utils.h:255-320`): per probe row, of the build rows with its
@@ -713,5 +711,40 @@ mod tests {
         );
         let same = picked(&j, &[(1, Some(10), "p")], &[(1, Some(9), "a"), (1, Some(9), "a")]);
         assert_eq!(same, [Some("a".to_string())]);
+    }
+
+    /// `test_mark_join`'s mark_join1, row (1, 1, k3 = 1): `k1 NOT IN (SELECT k2 FROM t2 WHERE
+    /// t2.k3 < t1.k3)` over t2 (k2, k3) = (1, 1), (NULL, NULL), (NULL, 3). The other conjunct is
+    /// two-valued: NULL < 1 fails, so the NULL-keyed rows do not make the mark NULL: TRUE.
+    #[test]
+    fn mark_other_conjunct_is_two_valued() {
+        // rows [key, k3]; the conjunct compares build k3 (col 3) < probe k3 (col 1)
+        let rows = |v: &[(Option<i128>, Option<i128>)]| Side {
+            rows: v
+                .iter()
+                .map(|(k, k3)| vec![k.map_or(Datum::Null, Datum::Int), k3.map_or(Datum::Null, Datum::Int)])
+                .collect(),
+            keys: v.iter().map(|(k, _)| vec![k.map_or(Datum::Null, Datum::Int)]).collect(),
+            width: 2,
+        };
+        let lt = |r: &[Vec<Datum>]| -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(r.iter()
+                .map(|r| match (&r[3], &r[1]) {
+                    (Datum::Int(b), Datum::Int(p)) => Some(b < p),
+                    _ => None,
+                })
+                .collect())
+        };
+        let j = HashJoin {
+            other: Some(&lt),
+            ..marked(JoinOp::NullAwareLeftAnti)
+        };
+        let build = rows(&[(Some(1), Some(1)), (None, None), (None, Some(3))]);
+        let got = hash_join(&j, rows(&[(Some(1), Some(1)), (Some(4), Some(4))]), build).unwrap();
+        // (4, k3 = 4): 3 < 4 passes on a NULL-keyed row: NULL
+        assert_eq!(
+            got.iter().map(|r| r.last().cloned()).collect::<Vec<_>>(),
+            [Some(Datum::Bool(true)), Some(Datum::Null)]
+        );
     }
 }
