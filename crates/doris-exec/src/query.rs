@@ -508,7 +508,7 @@ fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
     match op {
         JoinOp::Cross => return Err(unsupported("a HASH_JOIN_NODE with join op CROSS_JOIN")),
         JoinOp::NullAwareLeftSemi if !mark => return Err(unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join")),
-        JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti | JoinOp::NullAwareLeftSemi => {}
+        JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti | JoinOp::NullAwareLeftSemi | JoinOp::RightSemi => {}
         _ if mark => return Err(unsupported(format!("a mark join with join op {}", join_op_name(h.join_op)))),
         _ => {}
     }

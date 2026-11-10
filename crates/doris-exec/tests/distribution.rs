@@ -323,3 +323,25 @@ fn bucket_shuffle_skips_constant_partition_exprs() {
     assert_eq!(rows(1), [vec![Datum::Int(i128::from(keys[0]))]]);
     assert_eq!(rows(2), [vec![Datum::Int(i128::from(keys[1]))]]);
 }
+
+/// A mark join's plan with its op set to `op`.
+fn mark_join_as(op: doris_thrift::gen::plan_nodes::TJoinOp) -> doris_exec::query::QueryPlan {
+    let is_mark = |n: &doris_thrift::gen::plan_nodes::TPlanNode| n.hash_join_node.as_ref().is_some_and(|h| h.is_mark == Some(true));
+    let mut p = find_plan("nereids_p0.join.test_mark_join.test_mark_join", |p| p.fragments.iter().any(|f| f.root.nodes().iter().any(|n| is_mark(n))));
+    fn set(t: &mut doris_exec::query::PlanTree, op: doris_thrift::gen::plan_nodes::TJoinOp) {
+        if let Some(h) = t.node.hash_join_node.as_mut().filter(|h| h.is_mark == Some(true)) {
+            h.join_op = op;
+        }
+        t.children.iter_mut().for_each(|c| set(c, op));
+    }
+    p.fragments.iter_mut().for_each(|f| set(&mut f.root, op));
+    p
+}
+
+#[test]
+fn a_right_semi_mark_join_is_run_and_a_right_anti_one_refused() {
+    use doris_thrift::gen::plan_nodes::TJoinOp;
+    check_plan(&mark_join_as(TJoinOp::RIGHT_SEMI_JOIN)).unwrap();
+    let err = check_plan(&mark_join_as(TJoinOp::RIGHT_ANTI_JOIN)).unwrap_err().to_string();
+    assert!(err.contains("a mark join with join op RIGHT_ANTI_JOIN"), "{err}");
+}
