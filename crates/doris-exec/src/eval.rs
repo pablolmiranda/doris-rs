@@ -43,6 +43,17 @@ fn arithmetic_call(n: &TExprNode) -> bool {
     crate::arith::arithmetic_supported(&name, &args, &to)
 }
 
+/// A call `bits::supported` accepts, by its name and signature.
+fn bit_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::bits::supported(&name, &args, &to)
+}
+
+/// The bit functions, as ARITHMETIC_EXPR (`bitand` …) or FUNCTION_CALL (`bit_count` …).
+const BIT_FUNCTIONS: &[&str] = &[
+    "bitand", "bitor", "bitxor", "bitnot", "bit_count", "bit_shift_left", "bit_shift_right", "bit_test", "bit_test_all", "xor",
+];
+
 /// `if`, `ifnull`, `coalesce` over supported scalar types, `if`'s condition BOOLEAN.
 fn conditional_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -190,7 +201,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                         | TExprOpcode::COMPOUND_NOT
                 )
             ),
-            N::ARITHMETIC_EXPR => arithmetic_call(n),
+            N::ARITHMETIC_EXPR => arithmetic_call(n) || bit_call(n),
             // the FE sends the searched form; `has_case_expr` is ignored, as C++ ignores it
             N::CASE_EXPR => n.case_expr.is_some(),
             N::FUNCTION_CALL => match function_name(n).as_deref() {
@@ -204,6 +215,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("concat_ws" | "regexp" | "rlike") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
+                Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -513,6 +525,13 @@ fn eval_at(
                 }
             });
             (boolean(), bools(out))
+        }
+        N::FUNCTION_CALL | N::ARITHMETIC_EXPR if function_name(n).is_some_and(|f| BIT_FUNCTIONS.contains(&f.as_str())) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
+            (to, out)
         }
         N::ARITHMETIC_EXPR => {
             let to = node_type(n)?;

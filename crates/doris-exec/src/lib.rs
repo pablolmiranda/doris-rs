@@ -5,6 +5,7 @@
 pub mod aggregate;
 pub mod analytic;
 pub mod arith;
+pub mod bits;
 pub mod block;
 pub mod clock;
 pub mod columnar;
