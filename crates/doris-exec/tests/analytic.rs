@@ -372,3 +372,12 @@ fn float_keys_equal_in_value_but_not_in_bits_are_found() {
     assert!(!split_float_keys(&keys(&[N, N]), &t));
     assert!(split_float_keys(&keys(&[Datum::Float(-0.0), Datum::Float(0.0)]), &[ty(T::FLOAT)]));
 }
+
+#[test]
+fn batch1_aggregates_are_not_window_aggregates() {
+    for (f, t) in [("sum0", T::BIGINT), ("stddev", T::DOUBLE), ("group_concat", T::VARCHAR)] {
+        let e = build::aggregate(f, build::ty(t), vec![build::ty(t)], false, vec![build::slot(1, build::ty(t))]);
+        let err = WindowFn::from_expr(&e).unwrap_err().to_string();
+        assert!(err.contains(&format!("{f} over a window")), "{err}");
+    }
+}

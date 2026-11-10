@@ -144,10 +144,11 @@ impl WindowFn {
                     WindowKind::Last { ignore_nulls }
                 }
             }
-            // a set state; its window semantics are not C++'s known ones
-            "multi_distinct_count" => {
+            // a set state; its window semantics are not C++'s known ones; the M6 s7 aggregates'
+            // window semantics were not researched
+            f @ ("multi_distinct_count" | "sum0" | "stddev" | "group_concat") => {
                 return Err(ExecError::Unsupported {
-                    what: "multi_distinct_count over a window".into(),
+                    what: format!("{f} over a window"),
                 })
             }
             f if AGGREGATES.contains(&f) => {

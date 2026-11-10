@@ -252,3 +252,94 @@ fn a_sum_to_a_lower_scale_is_refused() {
     .to_string();
     assert!(err.contains("lower scale"), "{err}");
 }
+
+fn not_null(mut e: TExpr) -> TExpr {
+    e.nodes[0].is_nullable = Some(false);
+    e
+}
+
+fn doubles(v: &[f64]) -> Vec<Datum> {
+    v.iter().map(|x| Datum::Double(*x)).collect()
+}
+
+/// Runs `name` in two phases: one first-phase instance per input, then a merge.
+fn two_phases(name: &str, ret: TTypeDesc, param: TTypeDesc, inputs: &[Vec<Datum>]) -> Datum {
+    let mut partials = Vec::new();
+    for values in inputs {
+        let phase1 = Aggregation {
+            group_by: vec![],
+            functions: vec![spec(name, ret.clone(), vec![param.clone()], false, vec![slot(1, param.clone())])],
+            finalize: false,
+        };
+        partials.extend(phase1.run(&input(&param, values)).unwrap().rows);
+    }
+    let state = scalar(T::VARCHAR, 65533, 0, 0);
+    let phase2 = Aggregation {
+        group_by: vec![],
+        functions: vec![spec(name, ret, vec![param], true, vec![slot(10, state.clone())])],
+        finalize: true,
+    };
+    let merge_in = Chunk { block: Block { types: vec![ct(&state)], rows: partials }, slots: vec![10] };
+    phase2.run(&merge_in).unwrap().rows.remove(0).remove(0)
+}
+
+#[test]
+fn sum0_of_no_rows_is_zero() {
+    let big = ty(T::BIGINT);
+    let f = AggSpec::from_expr(&not_null(aggregate("sum0", big.clone(), vec![big.clone()], false, vec![slot(1, big.clone())]))).unwrap();
+    assert_eq!(one_phase(vec![f.clone()], &input(&big, &[])), vec![vec![Datum::Int(0)]]);
+    assert_eq!(one_phase(vec![f.clone()], &input(&big, &ints(&[None]))), vec![vec![Datum::Int(0)]]);
+    assert_eq!(one_phase(vec![f], &input(&big, &ints(&[Some(2), None, Some(5)]))), vec![vec![Datum::Int(7)]]);
+}
+
+#[test]
+fn stddev_is_welford_pop() {
+    let d = ty(T::DOUBLE);
+    let f = || vec![spec("stddev", d.clone(), vec![d.clone()], false, vec![slot(1, d.clone())])];
+    assert_eq!(one_phase(f(), &input(&d, &doubles(&[1.0, 2.0, 3.0, 4.0]))), vec![vec![Datum::Double(1.25f64.sqrt())]]);
+    // one row: 0, even for an infinity
+    assert_eq!(one_phase(f(), &input(&d, &doubles(&[f64::INFINITY]))), vec![vec![Datum::Double(0.0)]]);
+    assert_eq!(one_phase(f(), &input(&d, &[])), vec![vec![Datum::Null]]);
+    // an infinite deviation is NaN
+    let Datum::Double(v) = one_phase(f(), &input(&d, &doubles(&[f64::INFINITY, 1.0])))[0][0] else { panic!() };
+    assert!(v.is_nan());
+}
+
+#[test]
+fn stddev_merges_through_the_formula_even_into_an_empty_state() {
+    let d = ty(T::DOUBLE);
+    assert_eq!(two_phases("stddev", d.clone(), d.clone(), &[doubles(&[1.0, 2.0]), doubles(&[3.0, 4.0])]), Datum::Double(1.25f64.sqrt()));
+    // one phase over two equal huge values: 0; two phases: the first merge's (delta²)·0 is NaN
+    let big = f64::MAX;
+    let d1 = one_phase(vec![spec("stddev", d.clone(), vec![d.clone()], false, vec![slot(1, d.clone())])], &input(&d, &doubles(&[big, big])));
+    assert_eq!(d1, vec![vec![Datum::Double(0.0)]]);
+    let Datum::Double(v) = two_phases("stddev", d.clone(), d.clone(), &[doubles(&[big]), doubles(&[big])]) else { panic!() };
+    assert!(v.is_nan(), "{v}");
+}
+
+#[test]
+fn group_concat_skips_nulls_and_keeps_input_order() {
+    let v = ty(T::VARCHAR);
+    let b = |s: &str| Datum::Bytes(s.as_bytes().to_vec());
+    let f = vec![spec("group_concat", v.clone(), vec![v.clone()], false, vec![slot(1, v.clone())])];
+    assert_eq!(one_phase(f, &input(&v, &[b("a"), Datum::Null, b("c"), b("b")])), vec![vec![b("a,c,b")]]);
+    let sep = vec![spec("group_concat", v.clone(), vec![v.clone(), v.clone()], false, vec![slot(1, v.clone()), doris_fixtures::build::string("-")])];
+    assert_eq!(one_phase(sep, &input(&v, &[b("a"), b("b")])), vec![vec![b("a-b")]]);
+}
+
+#[test]
+fn group_concat_of_no_rows_is_null() {
+    let v = ty(T::VARCHAR);
+    let f = || vec![spec("group_concat", v.clone(), vec![v.clone()], false, vec![slot(1, v.clone())])];
+    assert_eq!(one_phase(f(), &input(&v, &[Datum::Null, Datum::Null])), vec![vec![Datum::Null]]);
+    assert_eq!(one_phase(f(), &input(&v, &[])), vec![vec![Datum::Null]]);
+}
+
+#[test]
+fn sum0_of_a_double_is_refused() {
+    let d = ty(T::DOUBLE);
+    let e = not_null(aggregate("sum0", d.clone(), vec![d.clone()], false, vec![slot(1, d)]));
+    let spec = AggSpec::from_expr(&e).unwrap();
+    let r = Aggregation { group_by: vec![], functions: vec![spec], finalize: true }.run(&input(&ty(T::DOUBLE), &[]));
+    assert!(r.is_err());
+}
