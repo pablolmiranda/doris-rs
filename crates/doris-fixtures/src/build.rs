@@ -177,6 +177,7 @@ fn opcode(op: &str) -> TExprOpcode {
         "and" => TExprOpcode::COMPOUND_AND,
         "or" => TExprOpcode::COMPOUND_OR,
         "not" => TExprOpcode::COMPOUND_NOT,
+        "eq_for_null" => TExprOpcode::EQ_FOR_NULL,
         other => panic!("no opcode {other}"),
     }
 }

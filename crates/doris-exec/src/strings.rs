@@ -334,6 +334,18 @@ pub fn concat_column(args: &[(&ColType, &[Datum])]) -> Vec<Datum> {
 }
 
 /// `length(str)`: bytes (`function_string.cpp:191-210`).
+/// `concat_ws(sep, args...)`: NULL when `sep` is; NULL arguments are skipped.
+pub fn concat_ws_column(args: &[&[Datum]]) -> Vec<Datum> {
+    let Some((sep, rest)) = args.split_first() else { return vec![] };
+    (0..sep.len())
+        .map(|r| {
+            let Datum::Bytes(s) = &sep[r] else { return Datum::Null };
+            let parts: Vec<&[u8]> = rest.iter().filter_map(|a| if let Datum::Bytes(b) = &a[r] { Some(b.as_slice()) } else { None }).collect();
+            Datum::Bytes(parts.join(s.as_slice()))
+        })
+        .collect()
+}
+
 pub fn length_column(a: &[Datum]) -> Vec<Datum> {
     a.iter()
         .map(|d| match d {

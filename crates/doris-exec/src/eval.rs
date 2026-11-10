@@ -64,6 +64,7 @@ fn string_call(n: &TExprNode) -> bool {
         "like" => (args.len() == 2 || args.len() == 3) && args.iter().all(text) && to.ptype == T::BOOLEAN,
         "concat" => !args.is_empty() && args.iter().all(text) && text(&to),
         "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
+        "concat_ws" => args.len() >= 2 && args.iter().all(text) && text(&to),
         _ => false,
     }
 }
@@ -106,6 +107,13 @@ fn round_call(nodes: &[TExprNode], i: usize) -> bool {
         _ => false,
     };
     x_ok && d_ok
+}
+
+/// `assert_true(BOOLEAN, msg)`, `msg` a string literal (C++ refuses any other at open).
+fn assert_true_call(nodes: &[TExprNode], i: usize) -> bool {
+    let Some((args, to)) = signature(&nodes[i]) else { return false };
+    let msg = i + 1 + subtree_len(nodes, i + 1);
+    args.len() == 2 && args[0].ptype == T::BOOLEAN && to.ptype == T::BOOLEAN && nodes.get(msg).is_some_and(|m| m.node_type == N::STRING_LITERAL)
 }
 
 fn describe(n: &TExprNode) -> String {
@@ -172,7 +180,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             | N::SLOT_REF
             | N::CAST_EXPR
             | N::IN_PRED => true,
-            N::BINARY_PRED => comparison(n).is_some(),
+            N::BINARY_PRED => comparison(n).is_some() || n.opcode == Some(TExprOpcode::EQ_FOR_NULL),
             N::COMPOUND_PRED => matches!(
                 n.opcode,
                 Some(
@@ -191,6 +199,9 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
                 Some("round") => round_call(&e.nodes, i),
+                Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
+                Some("concat_ws") => string_call(n),
+                Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 _ => false,
             },
@@ -404,6 +415,21 @@ fn eval_at(
                 .collect::<Result<_, _>>()?;
             (to, out)
         }
+        // `a <=> b`: both NULL is true, one NULL false, never NULL (`eq_for_null`)
+        N::BINARY_PRED if n.opcode == Some(TExprOpcode::EQ_FOR_NULL) => {
+            let [(ta, a), (tb, b)] = <[_; 2]>::try_from(kids).map_err(|_| bad("<=> needs two arguments"))?;
+            refuse_mixed(&ta, &tb)?;
+            let out = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| match (x, y) {
+                    (Datum::Null, Datum::Null) => Datum::Bool(true),
+                    (Datum::Null, _) | (_, Datum::Null) => Datum::Bool(false),
+                    _ => Datum::Bool(compare(x, &ta, y, &tb) == Some(Ordering::Equal)),
+                })
+                .collect();
+            (ColType { nullable: false, ..boolean() }, out)
+        }
         N::BINARY_PRED => {
             let op = comparison(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
             let [(ta, a), (tb, b)] =
@@ -570,6 +596,33 @@ fn eval_at(
                 let t = node_type(n)?;
                 let args: Vec<(&ColType, &[Datum])> = kids.iter().map(|(t, v)| (t, v.as_slice())).collect();
                 (t, crate::strings::concat_column(&args))
+            }
+            // the date bits of a DATETIMEV2 (`v >> 37`)
+            Some("to_date") => {
+                let (_, v) = kids.first().ok_or_else(|| bad("to_date without its argument"))?;
+                let out = v.iter().map(|d| if let Datum::Int(x) = d { Datum::Int(x >> 37) } else { Datum::Null }).collect();
+                (node_type(n)?, out)
+            }
+            Some("concat_ws") => {
+                let t = node_type(n)?;
+                let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+                (t, crate::strings::concat_ws_column(&args))
+            }
+            // any NULL or false row fails the query (`function_assert_true.cpp`)
+            Some("assert_true") => {
+                let (_, c) = kids.first().ok_or_else(|| bad("assert_true without its condition"))?;
+                if c.iter().any(|d| truth(d) != Some(true)) {
+                    let msg = match kids.get(1).and_then(|(_, m)| m.first()) {
+                        Some(Datum::Bytes(m)) => String::from_utf8_lossy(m).into_owned(),
+                        _ => String::new(),
+                    };
+                    return Err(ExecError::Coded {
+                        code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
+                        name: "INVALID_ARGUMENT",
+                        msg: format!("[E33] {msg}"),
+                    });
+                }
+                (boolean(), vec![Datum::Bool(true); rows])
             }
             Some("length") => {
                 let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
