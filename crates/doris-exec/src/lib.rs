@@ -19,6 +19,7 @@ pub mod expr;
 pub mod file_scan;
 pub mod fragment;
 pub mod funnel;
+pub mod geo;
 pub mod hash_join;
 pub mod hll;
 pub mod nested_loop;

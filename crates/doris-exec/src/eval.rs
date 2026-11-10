@@ -55,6 +55,12 @@ fn date_call(n: &TExprNode) -> bool {
     crate::datetime::supported(&name, &args, &to)
 }
 
+/// A call `geo::supported` accepts, by its name and signature.
+fn geo_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::geo::supported(&name, &args, &to)
+}
+
 /// The bit functions, as ARITHMETIC_EXPR (`bitand` …) or FUNCTION_CALL (`bit_count` …).
 const BIT_FUNCTIONS: &[&str] = &[
     "bitand", "bitor", "bitxor", "bitnot", "bit_count", "bit_shift_left", "bit_shift_right", "bit_test", "bit_test_all", "xor",
@@ -223,6 +229,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
+                Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -579,6 +586,10 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
             (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::geo::is_geo_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::geo::eval(&function_name(n).unwrap_or_default(), &args, rows))
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
             let to = node_type(n)?;
