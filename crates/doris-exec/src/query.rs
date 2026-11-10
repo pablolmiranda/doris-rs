@@ -475,15 +475,9 @@ fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
         _ => {}
     }
     if matches!(op, JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter) {
-        use doris_thrift::gen::types::TPrimitiveType as T;
         let m = h.match_condition.as_ref().ok_or_else(|| ExecError::BadRequest("an ASOF join without its match condition".into()))?;
+        crate::hash_join::check_asof_condition(m)?;
         let (_, (p, b)) = crate::hash_join::asof_condition(m)?;
-        for side in [&p, &b] {
-            let ty = side.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true));
-            if !ty.is_some_and(|t| matches!(t.ptype, T::DATEV2 | T::DATETIMEV2)) {
-                return Err(unsupported("an ASOF match on a type other than DATEV2 or DATETIMEV2"));
-            }
-        }
         check_exprs([&p, &b], false)?;
     }
     if h.vintermediate_tuple_id_list.as_ref().is_none_or(Vec::is_empty) {
@@ -628,6 +622,137 @@ fn check_sets(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), Ex
                 return Err(unsupported(format!("an {name} over {a} {child} in {n} instances")));
             }
         }
+    }
+    Ok(())
+}
+
+/// Which instance a subtree's rows are in, within a fragment of several instances.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dist {
+    /// Hashed by doris-rs's own shuffle (HASH_PARTITIONED exchanges).
+    Hashed,
+    /// In the instance holding the row's storage bucket: the instance's own scans, or a
+    /// bucket shuffle to them.
+    Bucketed,
+    /// The same rows in every instance (UNPARTITIONED exchanges).
+    Whole,
+    /// No rows from elsewhere (an empty set, constants).
+    Neutral,
+    /// Anything else: round robin, or sides that disagree.
+    Other,
+}
+
+/// The distribution of a subtree's rows: an exchange's is its sinks', a scan's its buckets'; a
+/// broadcast or nested-loop join keeps its probe side's, a shuffle join is hashed, and a
+/// bucket-shuffle or colocate join bucketed.
+fn dist(t: &PlanTree, plan: &QueryPlan) -> Dist {
+    use doris_thrift::gen::plan_nodes::TJoinDistributionType as D;
+    match t.node.node_type {
+        P::EXCHANGE_NODE => {
+            let kinds: Vec<TPartitionType> = feeding_sinks(plan, t.node.node_id).into_iter().map(|(p, _)| p).collect();
+            match kinds.first().copied().filter(|k| kinds.iter().all(|x| x == k)) {
+                Some(TPartitionType::HASH_PARTITIONED) => Dist::Hashed,
+                Some(TPartitionType::BUCKET_SHFFULE_HASH_PARTITIONED) => Dist::Bucketed,
+                Some(TPartitionType::UNPARTITIONED) => Dist::Whole,
+                _ => Dist::Other,
+            }
+        }
+        P::OLAP_SCAN_NODE => Dist::Bucketed,
+        P::HASH_JOIN_NODE => match t.node.hash_join_node.as_ref().and_then(|h| h.dist_type) {
+            Some(D::PARTITIONED) => Dist::Hashed,
+            Some(D::BUCKET_SHUFFLE | D::COLOCATE) => Dist::Bucketed,
+            _ => t.children.first().map_or(Dist::Other, |c| dist(c, plan)),
+        },
+        P::CROSS_JOIN_NODE => t.children.first().map_or(Dist::Other, |c| dist(c, plan)),
+        _ if t.children.is_empty() => {
+            if matches!(t.node.node_type, P::EMPTY_SET_NODE | P::UNION_NODE) {
+                Dist::Neutral
+            } else {
+                Dist::Other
+            }
+        }
+        _ => {
+            let kids: Vec<Dist> = t.children.iter().map(|c| dist(c, plan)).filter(|d| *d != Dist::Neutral).collect();
+            match kids.first() {
+                None => Dist::Neutral,
+                Some(d) if kids.iter().all(|x| x == d) => *d,
+                _ => Dist::Other,
+            }
+        }
+    }
+}
+
+/// The joins of a fragment of several instances that each run their own rows, against the plan:
+/// rows with equal keys must meet in one instance, or a match is lost.
+/// - BROADCAST: the build side is whole in each instance;
+/// - PARTITIONED: both sides are hashed by doris-rs's shuffle, the same hash for both (the FE
+///   casts the keys to one type); a side that is an exchange is hashed on its own keys;
+/// - BUCKET_SHUFFLE and COLOCATE: both sides are in the instance of their storage bucket.
+///
+/// A nested-loop join takes its build side whole in each instance, and cannot emit the build
+/// rows no instance matched (RIGHT and FULL OUTER), so those run in one instance only.
+fn check_joins(t: &PlanTree, f: &FragmentPlan, plan: &QueryPlan) -> Result<(), ExecError> {
+    use doris_thrift::gen::plan_nodes::TJoinDistributionType as D;
+    for c in &t.children {
+        check_joins(c, f, plan)?;
+    }
+    let n = f.instances.len();
+    if n <= 1 || f.mode == RunMode::Merged {
+        return Ok(());
+    }
+    let child = |i: usize| t.children.get(i).ok_or_else(|| ExecError::BadRequest(format!("join node {} without child {i}", t.node.node_id)));
+    // whole: every exchange of the side reaches every instance (no shared build for these)
+    let whole_everywhere = |c: &PlanTree| {
+        fn exchange_ids(t: &PlanTree, out: &mut Vec<i32>) {
+            if t.node.node_type == P::EXCHANGE_NODE {
+                out.push(t.node.node_id);
+            }
+            t.children.iter().for_each(|c| exchange_ids(c, out));
+        }
+        let mut ids = Vec::new();
+        exchange_ids(c, &mut ids);
+        dist(c, plan) == Dist::Whole && ids.iter().all(|e| f.instances.iter().all(|i| plan_senders(plan, *e, &i.id) > 0))
+    };
+    match t.node.node_type {
+        P::HASH_JOIN_NODE => {
+            let h = t.node.hash_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("HASH_JOIN_NODE without its parameters".into()))?;
+            let (probe, build) = (child(0)?, child(1)?);
+            // an exchange child is hashed on some of its side's keys
+            let on_keys = |c: &PlanTree, left: bool| {
+                if c.node.node_type != P::EXCHANGE_NODE {
+                    return true;
+                }
+                let keys: Vec<TExpr> = h.eq_join_conjuncts.iter().map(|e| if left { e.left.clone() } else { e.right.clone() }).collect();
+                let Some(keys) = slot_ids(&keys) else { return false };
+                feeding_sinks(plan, c.node.node_id)
+                    .iter()
+                    .all(|(_, exprs)| slot_ids(exprs).is_some_and(|s| !s.is_empty() && s.iter().all(|x| keys.contains(x))))
+            };
+            let dist_type = h.dist_type.unwrap_or(D::NONE);
+            let ok = match dist_type {
+                // a shared build reaches the first instance, which forwards it (`shared_build`)
+                D::BROADCAST => dist(build, plan) == Dist::Whole,
+                D::PARTITIONED => dist(probe, plan) == Dist::Hashed && dist(build, plan) == Dist::Hashed && on_keys(probe, true) && on_keys(build, false),
+                D::BUCKET_SHUFFLE | D::COLOCATE => dist(probe, plan) == Dist::Bucketed && dist(build, plan) == Dist::Bucketed,
+                _ => false,
+            };
+            if !ok {
+                const NAMES: &[&str] = &["NONE", "BROADCAST", "PARTITIONED", "BUCKET_SHUFFLE", "COLOCATE"];
+                let name = usize::try_from(dist_type.0).ok().and_then(|i| NAMES.get(i)).map_or_else(|| format!("{dist_type:?}"), |s| s.to_string());
+                return Err(unsupported(format!("a {name} join whose inputs are not distributed on its keys in {n} instances")));
+            }
+        }
+        P::CROSS_JOIN_NODE => {
+            use crate::hash_join::{join_op, JoinOp};
+            let j = t.node.nested_loop_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("CROSS_JOIN_NODE without its parameters".into()))?;
+            if matches!(join_op(j.join_op), Some(JoinOp::RightOuter | JoinOp::FullOuter)) || !whole_everywhere(child(1)?) {
+                return Err(unsupported(format!(
+                    "a CROSS_JOIN_NODE {} whose build side is not whole in each of {n} instances",
+                    join_op_name(j.join_op)
+                )));
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -822,10 +947,17 @@ fn check_senders(plan: &QueryPlan) -> Result<(), ExecError> {
             let declared = f.per_exch_num_senders.get(&n.node_id).copied();
             let shared = shared_build(plan, fi, n.node_id);
             for (ii, r) in f.instances.iter().enumerate() {
+                let senders = plan_senders(plan, n.node_id, &r.id);
+                // a merged fragment's other instances run nothing: rows sent to them would be lost
                 if ii > 0 && f.mode == RunMode::Merged {
+                    if senders > 0 {
+                        return Err(unsupported(format!(
+                            "exchange node {} sending to instance {ii} of a merged fragment (parallel_instances)",
+                            n.node_id
+                        )));
+                    }
                     continue;
                 }
-                let senders = plan_senders(plan, n.node_id, &r.id);
                 if ii > 0 && shared && senders == 0 {
                     continue;
                 }
@@ -914,6 +1046,7 @@ pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
     for f in &plan.fragments {
         check_sets(&f.root, f, plan)?;
         check_windows(&f.root, f, plan)?;
+        check_joins(&f.root, f, plan)?;
     }
     check_senders(plan)?;
     for s in plan.desc.slots.values() {

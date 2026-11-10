@@ -127,25 +127,24 @@ fn ordered(plan: &TPipelineFragmentParamsList) -> bool {
         })
 }
 
-/// Whether the result fragment's top node takes a LIMIT of rows it does not sort: which rows it
-/// keeps is each BE's arrival order (C++'s varied across reference runs: the marks mask them), so
-/// such a reply is compared by its row count, as the readback check compares `*_head_unordered`.
+/// Whether the result fragment's top node is an exchange taking a LIMIT of rows it does not
+/// sort, from more than one sender: which rows it keeps is the senders' arrival order (C++'s
+/// varied across reference runs: the marks mask them), so such a reply is compared by its row
+/// count, as the readback check compares `*_head_unordered`. With one sender the rows are fixed.
 fn head_unordered(plan: &TPipelineFragmentParamsList) -> bool {
     use doris_thrift::gen::data_sinks::TDataSinkType;
     !ordered(plan)
-        && plan
-            .params_list
-            .iter()
-            .flatten()
-            .filter_map(|p| p.fragment.as_ref())
-            .filter(|f| f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::RESULT_SINK))
-            .filter_map(|f| f.plan.as_ref())
-            .any(|p| {
-                let keeps_order = |n: &&doris_thrift::gen::plan_nodes::TPlanNode| {
-                    matches!(n.node_type, TPlanNodeType::MATERIALIZATION_NODE | TPlanNodeType::SELECT_NODE) && n.num_children == 1
-                };
-                p.nodes.iter().find(|n| !keeps_order(n)).is_some_and(|n| n.limit >= 0)
+        && plan.params_list.iter().flatten().any(|p| {
+            let Some(f) = p.fragment.as_ref().filter(|f| f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::RESULT_SINK)) else {
+                return false;
+            };
+            let keeps_order = |n: &&doris_thrift::gen::plan_nodes::TPlanNode| {
+                matches!(n.node_type, TPlanNodeType::MATERIALIZATION_NODE | TPlanNodeType::SELECT_NODE) && n.num_children == 1
+            };
+            f.plan.iter().flat_map(|pl| pl.nodes.iter().find(|n| !keeps_order(n))).any(|n| {
+                n.node_type == TPlanNodeType::EXCHANGE_NODE && n.limit >= 0 && p.per_exch_num_senders.get(&n.node_id).is_some_and(|s| *s > 1)
             })
+        })
 }
 
 fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
@@ -834,14 +833,12 @@ const COMPARED_UNORDERED: &[&str] = &[
     "query_p0.sql_functions.window_functions.test_window_float_sliding_frame.test_window_float_sliding_frame",
 ];
 
-/// The replays with a result query whose top node takes a LIMIT of unsorted rows: `head_unordered`
-/// compares those replies by row count. Listed so that a change to the set shows in review.
+/// The replays with a result query whose top exchange takes a LIMIT of unsorted rows from several
+/// senders: `head_unordered` compares those replies by row count. Listed so that a change to the set shows in review.
 const COMPARED_BY_COUNT: &[&str] = &[
-    "correctness_p0.test_colocate_join_with_different_tablets.test_colocate_join_with_different_tablets",
-    "correctness_p0.test_outer_join_with_subquery.test_outer_join_with_subquery",
+    // `GROUP BY t2.c1 LIMIT 1 OFFSET 1` (no ORDER BY) gathered from 10 instances: the group kept
+    // is whichever instance's arrives first; the reference varied too (exchanges 29 and 31)
     "nereids_p0.join.test_limit_join.test_limit_join",
-    "nereids_p0.test_filter_pushdown_set.test_filter_pushdown_set",
-    "query_p0.dual.dual.dual",
 ];
 
 #[test]

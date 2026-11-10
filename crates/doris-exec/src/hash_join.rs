@@ -265,6 +265,20 @@ pub fn asof_condition(e: &doris_thrift::gen::exprs::TExpr) -> Result<(AsofOp, TE
     Ok((how, (side(1, mid), side(mid, end))))
 }
 
+/// An ASOF `match_condition` doris-rs runs: GE, GT, LE or LT between two DATEV2 or two
+/// DATETIMEV2 values (their packed integers compare as the values do only within one type).
+pub fn check_asof_condition(e: &doris_thrift::gen::exprs::TExpr) -> Result<(), ExecError> {
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    let (_, (p, b)) = asof_condition(e)?;
+    let ty = |x: &doris_thrift::gen::exprs::TExpr| x.nodes.first().and_then(|n| crate::value::ColType::from_type_desc("", &n.type_, true));
+    match (ty(&p), ty(&b)) {
+        (Some(p), Some(b)) if p.ptype == b.ptype && p.scale == b.scale && matches!(p.ptype, T::DATEV2 | T::DATETIMEV2) => Ok(()),
+        _ => Err(ExecError::Unsupported {
+            what: "an ASOF match other than between two DATEV2 or two DATETIMEV2 of one scale".into(),
+        }),
+    }
+}
+
 /// The probe and build sides of a comparison.
 pub type TExprPair = (doris_thrift::gen::exprs::TExpr, doris_thrift::gen::exprs::TExpr);
 
@@ -333,8 +347,10 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
         let mut found = false;
         let mut null = false;
         for (_, from_null) in c {
-            // the mark conjuncts AND three-valued into TRUE (PI:148-156, vexpr_context.cpp:324-370)
+            // the mark conjuncts AND three-valued into TRUE (PI:148-156, vexpr_context.cpp:324-370);
+            // a null-aware join then takes the mark as "found a build row" (PI:774-799)
             let (mut value, mut is_null) = match mark_conj[at] {
+                _ if null_aware => (true, false),
                 Some(true) => (true, false),
                 Some(false) => (false, false),
                 None => (false, true),
@@ -746,5 +762,22 @@ mod tests {
             got.iter().map(|r| r.last().cloned()).collect::<Vec<_>>(),
             [Some(Datum::Bool(true)), Some(Datum::Null)]
         );
+    }
+
+    fn false_cond(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+        Ok(vec![Some(false); rows.len()])
+    }
+
+    /// A null-aware mark is `build row != 0` (PI:774-799): C++ overwrites the mark filter, so a
+    /// mark conjunct does not decide it (the FE sends none for null-aware joins).
+    #[test]
+    fn null_aware_mark_ignores_mark_conjuncts() {
+        for cond in [false_cond as fn(&[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError>, null_cond] {
+            let j = HashJoin {
+                mark_conj: Some(&cond),
+                ..marked(JoinOp::NullAwareLeftSemi)
+            };
+            assert_eq!(marks(&j, &[Some(1), Some(2)], &[Some(1)]), [Some(true), Some(false)]);
+        }
     }
 }

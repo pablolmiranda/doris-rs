@@ -352,7 +352,6 @@ impl Instance<'_> {
         if build.block.is_empty() && short_circuit && !mark {
             return self.chunk_of(Vec::new(), &slots);
         }
-        let probe = self.child(t, 0)?;
         // an ASOF join's value is the last key
         let asof = match (&h.match_condition, matches!(op, JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter)) {
             (Some(m), true) => Some(crate::hash_join::asof_condition(m)?),
@@ -370,9 +369,19 @@ impl Instance<'_> {
             }
             Ok((0..c.block.len()).map(|r| cols.iter().map(|col| col[r].clone()).collect()).collect())
         };
-        let null_safe = h.eq_join_conjuncts.iter().map(|e| e.opcode == Some(doris_thrift::gen::opcodes::TExprOpcode::EQ_FOR_NULL)).collect();
+        let null_safe: Vec<bool> = h.eq_join_conjuncts.iter().map(|e| e.opcode == Some(doris_thrift::gen::opcodes::TExprOpcode::EQ_FOR_NULL)).collect();
+        let build_keys = keys(&build, false)?;
+        // NULL_AWARE_LEFT_ANTI with a NULL build key leaves no row, and C++ does not run the probe
+        // child (`_short_circuit_for_null_in_build_side`, hashjoin_build_sink.cpp:323-331)
+        let null_key = |k: &Vec<Datum>| k.iter().zip(null_safe.iter().chain(std::iter::repeat(&false))).any(|(d, safe)| *d == Datum::Null && !safe);
+        if op == JoinOp::NullAwareLeftAnti && !mark && build_keys.iter().any(null_key) {
+            return self.chunk_of(Vec::new(), &slots);
+        }
+        let probe = self.child(t, 0)?;
         let (pw, bw) = (probe.slots.len(), build.slots.len());
-        let layout = Layout::new(slots.len(), pw, bw, mark)?;
+        let has_other = h.other_join_conjuncts.as_ref().is_some_and(|c| !c.is_empty());
+        let has_mark_conj = h.mark_join_conjuncts.as_ref().is_some_and(|c| !c.is_empty());
+        let layout = Layout::new(slots.len(), pw, bw, mark, Layout::sides(op, has_other, mark, has_mark_conj))?;
         let conjuncts = |exprs: &[TExpr], rows: &[Vec<Datum>]| self.joined_conjuncts(exprs, rows, &layout, &slots, mark);
         let other_exprs = h.other_join_conjuncts.clone().unwrap_or_default();
         let mark_exprs = h.mark_join_conjuncts.clone().unwrap_or_default();
@@ -387,7 +396,7 @@ impl Instance<'_> {
             asof: asof.as_ref().map(|(how, _)| (*how, h.eq_join_conjuncts.len())),
         };
         let probe_side = Side { keys: keys(&probe, true)?, rows: probe.block.rows, width: pw };
-        let build_side = Side { keys: keys(&build, false)?, rows: build.block.rows, width: bw };
+        let build_side = Side { keys: build_keys, rows: build.block.rows, width: bw };
         let rows = hash_join(&j, probe_side, build_side)?;
         self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
     }
@@ -430,7 +439,8 @@ impl Instance<'_> {
         let build = self.child(t, 1)?;
         let probe = self.child(t, 0)?;
         let (pw, bw) = (probe.slots.len(), build.slots.len());
-        let layout = Layout::new(slots.len(), pw, bw, mark)?;
+        // the nested-loop join keeps both sides (`nested_loop_join_probe_operator.cpp:407-408`)
+        let layout = Layout::new(slots.len(), pw, bw, mark, Layout::sides(op, true, mark, true))?;
         let exprs: Vec<TExpr> = match (&j.join_conjuncts, &j.vjoin_conjunct) {
             (Some(c), _) if !c.is_empty() => c.clone(),
             (_, Some(v)) => vec![v.clone()],
@@ -470,7 +480,9 @@ impl Instance<'_> {
             rows = vec![vec![Datum::Null; slots.len()]];
         }
         let mut out = self.chunk_of(rows, &slots)?;
-        if a.should_convert_output_to_nullable == Some(true) {
+        // C++ makes the columns nullable for a block with rows (and for the NULL row), so no rows
+        // keep their types (`assert_num_rows_operator.cpp:76-97`)
+        if a.should_convert_output_to_nullable == Some(true) && !out.block.is_empty() {
             for ty in &mut out.block.types {
                 ty.nullable = true;
             }
@@ -1033,8 +1045,15 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
             Ok(parts)
         }
         T::BUCKET_SHFFULE_HASH_PARTITIONED => {
-            // destination i is the instance scanning bucket i (`partitioner.cpp:31-66`)
-            let exprs = p.partition_exprs.clone().unwrap_or_default();
+            // destination i is the instance scanning bucket i; a constant column is not hashed
+            // (`partitioner.cpp:31-66`)
+            let exprs: Vec<TExpr> = p
+                .partition_exprs
+                .iter()
+                .flatten()
+                .filter(|e| e.nodes.iter().any(|n| n.node_type == doris_thrift::gen::exprs::TExprNodeType::SLOT_REF))
+                .cloned()
+                .collect();
             let values = project(&exprs, &out)?;
             let mut parts: Vec<Chunk> = (0..n).map(|_| empty()).collect();
             for (row, key) in out.block.rows.into_iter().zip(values.rows) {
@@ -1055,10 +1074,21 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
     }
 }
 
+/// Which sides of a joined row a join's intermediate tuple holds, by its op
+/// (`hashjoin_probe_operator.cpp:618-621`, FE `PhysicalPlanTranslator.java:1895-1915`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sides {
+    /// Right semi and anti joins without other (or mark) conjuncts: the build side only.
+    Build,
+    /// Left semi, anti and null-aware joins: the probe side, or both sides when they have
+    /// other conjuncts.
+    ProbeOrBoth,
+    Both,
+}
+
 /// Where a joined row (probe columns, build columns, then the mark) goes in the join's
-/// intermediate tuple: all of it, the probe side (left semi and anti joins without other
-/// conjuncts) or the build side (right semi and anti joins), each with the mark if any
-/// (`join_probe_operator.cpp:54-62`, `hashjoin_probe_operator.cpp:618-621`).
+/// intermediate tuple: the sides its op holds, each with the mark if any
+/// (`join_probe_operator.cpp:54-62`).
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
     probe: usize,
@@ -1068,18 +1098,27 @@ pub struct Layout {
 }
 
 impl Layout {
-    pub fn new(slots: usize, probe: usize, build: usize, mark: bool) -> Result<Layout, ExecError> {
+    /// The sides a join of `op` holds.
+    pub fn sides(op: crate::hash_join::JoinOp, has_other: bool, mark: bool, has_mark_conj: bool) -> Sides {
+        use crate::hash_join::JoinOp::*;
+        match op {
+            RightSemi | RightAnti if !has_other && (!mark || !has_mark_conj) => Sides::Build,
+            LeftSemi | LeftAnti | NullAwareLeftAnti | NullAwareLeftSemi => Sides::ProbeOrBoth,
+            _ => Sides::Both,
+        }
+    }
+
+    pub fn new(slots: usize, probe: usize, build: usize, mark: bool, sides: Sides) -> Result<Layout, ExecError> {
         let m = usize::from(mark);
-        let (keep_probe, keep_build) = if slots == probe + build + m {
-            (true, true)
-        } else if slots == probe + m {
-            (true, false)
-        } else if slots == build + m {
-            (false, true)
-        } else {
-            return Err(ExecError::BadRequest(format!(
-                "a join's intermediate tuple has {slots} slots for {probe} probe and {build} build columns"
-            )));
+        let (keep_probe, keep_build) = match sides {
+            Sides::Build if slots == build + m => (false, true),
+            Sides::ProbeOrBoth if slots == probe + m => (true, false),
+            Sides::ProbeOrBoth | Sides::Both if slots == probe + build + m => (true, true),
+            _ => {
+                return Err(ExecError::BadRequest(format!(
+                    "a join's intermediate tuple has {slots} slots for {probe} probe and {build} build columns ({sides:?})"
+                )))
+            }
         };
         Ok(Layout { probe, build, keep_probe, keep_build })
     }
