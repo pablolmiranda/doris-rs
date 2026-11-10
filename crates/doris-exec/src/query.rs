@@ -371,7 +371,10 @@ fn unsupported(what: impl Into<String>) -> ExecError {
 }
 
 fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool) -> Result<(), ExecError> {
-    exprs.into_iter().try_for_each(|e| check_nodes(e, aggregates))
+    exprs.into_iter().try_for_each(|e| {
+        check_nodes(e, aggregates)?;
+        crate::eval::check_constants(e)
+    })
 }
 
 fn check_partition(t: TPartitionType, what: &str) -> Result<(), ExecError> {
@@ -1044,6 +1047,11 @@ fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
 
 /// Checks every fragment holds only what doris-rs runs; names the first thing it does not.
 pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
+    // constants are evaluated at prepare under the query's regexp options
+    crate::regexp::with_regex_options(plan.regex, || check_plan_inner(plan))
+}
+
+fn check_plan_inner(plan: &QueryPlan) -> Result<(), ExecError> {
     if plan.binary_rows {
         return Err(unsupported("results in the MySQL binary row format"));
     }

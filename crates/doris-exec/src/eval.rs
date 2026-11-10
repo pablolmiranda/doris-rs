@@ -49,6 +49,12 @@ fn bit_call(n: &TExprNode) -> bool {
     crate::bits::supported(&name, &args, &to)
 }
 
+/// A call `datetime::supported` accepts, by its name and signature.
+fn date_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::datetime::supported(&name, &args, &to)
+}
+
 /// The bit functions, as ARITHMETIC_EXPR (`bitand` …) or FUNCTION_CALL (`bit_count` …).
 const BIT_FUNCTIONS: &[&str] = &[
     "bitand", "bitor", "bitxor", "bitnot", "bit_count", "bit_shift_left", "bit_shift_right", "bit_test", "bit_test_all", "xor",
@@ -216,6 +222,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
+                Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -243,6 +250,46 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                     what: "a nested type".into(),
                 })
             }
+        }
+    }
+    Ok(())
+}
+
+/// Evaluates every all-constant call subtree once, as C++ does at open
+/// (`VExpr::get_const_col`, vexpr.cpp:819-845), so a coded error (a date out of range, an
+/// overflow) fails the fragment at prepare. Other errors are left for the run; the clock
+/// functions are skipped (no query clock exists yet).
+pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
+    let literal = |n: &TExprNode| {
+        matches!(
+            n.node_type,
+            N::INT_LITERAL | N::LARGE_INT_LITERAL | N::STRING_LITERAL | N::BOOL_LITERAL | N::FLOAT_LITERAL | N::DECIMAL_LITERAL | N::DATE_LITERAL | N::NULL_LITERAL
+        )
+    };
+    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
+    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
+    // a regexp's constant pattern is compiled at open
+    for (i, n) in e.nodes.iter().enumerate() {
+        if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("regexp" | "rlike")) {
+            let pattern = i + 1 + subtree_len(&e.nodes, i + 1);
+            if let Some(p) = e.nodes.get(pattern).filter(|p| p.node_type == N::STRING_LITERAL).and_then(|p| p.string_literal.as_ref()) {
+                crate::regexp::check_constant_pattern(p.value.as_bytes(), crate::regexp::options())?;
+            }
+        }
+    }
+    let mut i = 0;
+    while i < e.nodes.len() {
+        let len = subtree_len(&e.nodes, i);
+        let Some(sub) = e.nodes.get(i..i + len) else { break };
+        let constant = call(&sub[0]) && sub[1..].iter().all(|n| literal(n) || call(n)) && sub.iter().any(literal) && !sub.iter().any(clock);
+        if !constant {
+            i += 1;
+            continue;
+        }
+        let one = Block { types: vec![], rows: vec![vec![]] };
+        match eval_column(&TExpr { nodes: sub.to_vec() }, &one, &SlotMap::default()) {
+            Err(err @ ExecError::Coded { .. }) => return Err(err),
+            _ => i += len,
         }
     }
     Ok(())
@@ -531,6 +578,13 @@ fn eval_at(
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
+            (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
             (to, out)
         }
         N::ARITHMETIC_EXPR => {

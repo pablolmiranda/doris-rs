@@ -438,3 +438,18 @@ fn batch2_replays_hold_their_features() {
     assert!(seen.contains("TABLE_FUNCTION_NODE"), "no batch 2 replay holds a TABLE_FUNCTION_NODE");
     assert!(seen.len() >= 30, "batch 2 replays hold only {seen:?}");
 }
+
+#[test]
+fn exec_replies_are_loaded() {
+    // C++ evaluates constants at open: years_add('9999-12-31', 1) fails exec_plan_fragment itself
+    let r = replays::load("query_p0.sql_functions.test_years_add.test_years_add");
+    let refused: Vec<String> = r
+        .steps
+        .iter()
+        .filter_map(|s| match s {
+            replays::Step::ExecPlanFragment { reply: Some(reply), .. } if reply.status.status_code != 0 => Some(reply.status.error_msgs.join("")),
+            _ => None,
+        })
+        .collect();
+    assert!(refused.iter().any(|m| m == "(127.0.0.1)[E-218]Operation year_add of 9999-12-31, 1 out of range"), "{refused:?}");
+}

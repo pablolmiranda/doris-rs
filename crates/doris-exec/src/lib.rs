@@ -11,6 +11,7 @@ pub mod clock;
 pub mod columnar;
 pub mod cond;
 pub mod datagen;
+pub mod datetime;
 pub mod error_log;
 pub mod eval;
 pub mod exchange;

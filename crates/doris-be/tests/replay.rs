@@ -246,9 +246,18 @@ impl Driver<'_> {
                 assert!(self.be.query.wait_idle(Duration::from_secs(60)), "{}: a write never finished", self.r.suite);
             }
         }
-        if reply.status.status_code != 0 {
-            let q = self.plans.get(&query_id(&plan)).map_or(usize::MAX, |(n, _)| *n);
+        // the reference's own answer: C++ fails exec_plan_fragment when a constant does
+        let qid = query_id(&plan);
+        let reference = self.r.steps.iter().find_map(|s| match s {
+            Step::ExecPlanFragment { request, reply: Some(reply), .. } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some(reply.status.clone()),
+            _ => None,
+        });
+        let q = self.plans.get(&qid).map_or(usize::MAX, |(n, _)| *n);
+        let failed_alike = reference.as_ref().is_some_and(|st| st.status_code == reply.status.status_code && st.error_msgs == reply.status.error_msgs);
+        if reply.status.status_code != 0 && !failed_alike {
             self.mismatch(q, format!("refused: {:?}", reply.status.error_msgs));
+        } else if reply.status.status_code == 0 && reference.as_ref().is_some_and(|st| st.status_code != 0) {
+            self.mismatch(q, format!("accepted what the reference refused: {:?}", reference.map(|st| st.error_msgs)));
         }
     }
 
@@ -278,7 +287,7 @@ impl Driver<'_> {
         let r = self.r;
         if !self.executed.contains(&qid) {
             let exec = r.steps.iter().find_map(|s| match s {
-                Step::ExecPlanFragment { rpc, request } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone())),
+                Step::ExecPlanFragment { rpc, request, .. } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone())),
                 _ => None,
             });
             if let Some((rpc, req)) = exec {
@@ -394,7 +403,7 @@ pub fn replay_writes(r: &Replay) -> (Vec<Mismatch>, Vec<((i64, i64), i32, String
                 d.be.agent.submit_tasks(tasks.clone());
                 assert!(d.be.agent.wait_idle(Duration::from_secs(60)), "{}: agent tasks never finished", r.suite);
             }
-            Step::ExecPlanFragment { rpc, request } => d.exec(*rpc, request),
+            Step::ExecPlanFragment { rpc, request, .. } => d.exec(*rpc, request),
             Step::Start(req) => d.start(req.query_id.as_ref().map(|q| (q.hi, q.lo)).unwrap_or_default()),
             Step::Fetch { request, .. } => d.fetch(request),
             Step::Cancel(req) => {
@@ -822,6 +831,8 @@ fn joins_match_the_reference() {
 /// result sink) but not at the result fragment's top: `ordered` compares their rows unordered.
 /// Listed so that a change to the set shows in review.
 const COMPARED_UNORDERED: &[&str] = &[
+    // a window's sort over a lateral view, with no ORDER BY on the query (M6 s7 batch 2)
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview",
     // a scalar subquery's ORDER BY … LIMIT 1 under a join
     "correctness_p0.test_join_with_projection.test_join_with_projection",
     "correctness_p0.test_no_grouping_window.test_no_grouping_window",
