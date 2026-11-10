@@ -825,6 +825,9 @@ const COMPARED_UNORDERED: &[&str] = &[
     // a scalar subquery's ORDER BY … LIMIT 1 under a join
     "correctness_p0.test_join_with_projection.test_join_with_projection",
     "correctness_p0.test_no_grouping_window.test_no_grouping_window",
+    // a window's sort under an outer join, with no ORDER BY on the query (M6 s7)
+    "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
+    "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
     "nereids_p0.aggregate.agg_window_project.agg_window_project",
     // a subquery's ORDER BY … OFFSET under a join
     "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
