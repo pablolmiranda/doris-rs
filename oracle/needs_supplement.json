@@ -98,6 +98,12 @@
     "result:cpp_instance_order"
    ],
    "reason": "Its aggregation over a colocated join at exchange 37 (groups k=2 and k=1, in two buckets) has no ORDER BY, and its rows reach the result sink from several instances in the order the instances finish. The reference gave one order in its runs; doris-rs gives k=1 first, in m6-s7b1-full-1 and in five direct runs of the query (runs m6-s7b1-full-1 and m6-s7b1-rerun-1, 2026-11-10). The out gate, which compares rows as sets, passes."
+  },
+  "query_p0.aggregate.test_regr_slope.test_regr_slope": {
+   "needs": [
+    "result:cpp_instance_order"
+   ],
+   "reason": "Exchange 35, select regr_slope(y, x) from test_regr_slope_double: the FE plans four scan instances of one tablet each, and the merge fragment folds their partial states in the order they arrive, which the last bit of the double depends on. Holding the states per tablet as the reference's crc32 buckets give ({}, {1}, {3,5}, {2,4}), tablet order gives 0.6987176230207439 and four of the six orders give the reference's 0.6987176230207438; the traffic records no per-instance completion for a query, so the reference's order is not visible (run m6-s7b2-full-1, 2026-11-10). The out gate passes."
   }
  },
  "groups": []

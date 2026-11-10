@@ -581,3 +581,16 @@ fn compact_zero_date_is_null() {
     cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
     assert_eq!(one_row(doris_fixtures::build::over(cast, vec![string("00000000")])), Datum::Null);
 }
+
+#[test]
+fn numbers_cast_to_boolean_are_nonzero() {
+    use doris_fixtures::build::{blank, over};
+    let cast = |e: doris_thrift::gen::exprs::TExpr| one_row(over(blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, ty(T::BOOLEAN), 0), vec![e]));
+    // cast_to_boolean.h: `from != 0` for every integer, float and decimal
+    assert_eq!(cast(int(2, ty(T::INT))), Datum::Bool(true));
+    assert_eq!(cast(int(-7, ty(T::BIGINT))), Datum::Bool(true));
+    assert_eq!(cast(int(0, ty(T::INT))), Datum::Bool(false));
+    assert_eq!(cast(float(0.5, ty(T::DOUBLE))), Datum::Bool(true));
+    assert_eq!(cast(float(0.0, ty(T::DOUBLE))), Datum::Bool(false));
+    assert_eq!(cast(int(5, scalar(T::DECIMAL64, -1, 10, 2))), Datum::Bool(true));
+}

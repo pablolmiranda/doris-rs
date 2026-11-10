@@ -527,6 +527,9 @@ fn eval_at(
                     if let Some(r) = float_to_number(d, &to) {
                         return Ok(r);
                     }
+                    if let Some(r) = number_to_bool(d, &from, &to) {
+                        return Ok(r);
+                    }
                     // a FLOAT as text is the float's own shortest text, not its double's
                     if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
                         return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
@@ -958,6 +961,27 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A number cast to BOOLEAN, as `cast_to_boolean.h` does it: true unless the value is zero (for a
+/// decimal, its unscaled value).
+fn number_to_bool(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
+    if to.ptype != T::BOOLEAN {
+        return None;
+    }
+    let numeric = matches!(
+        from.ptype,
+        T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::FLOAT | T::DOUBLE | T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I | T::DECIMAL256
+    );
+    if !numeric {
+        return None;
+    }
+    Some(match d {
+        Datum::Int(v) => Datum::Bool(*v != 0),
+        Datum::Float(f) => Datum::Bool(*f != 0.0),
+        Datum::Double(f) => Datum::Bool(*f != 0.0),
+        _ => return None,
+    })
 }
 
 /// A FLOAT or DOUBLE cast to an integer or a decimal, numerically (the non-strict cast; None
