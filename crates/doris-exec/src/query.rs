@@ -402,6 +402,10 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     let name = node_type_name(n.node_type);
     match n.node_type {
         P::OLAP_SCAN_NODE | P::EMPTY_SET_NODE | P::SELECT_NODE => {}
+        P::TABLE_FUNCTION_NODE => {
+            let t = n.table_function_node.as_ref().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its parameters".into()))?;
+            crate::table_function::check(t)?;
+        }
         P::REPEAT_NODE => {
             let r = n.repeat_node.as_ref().ok_or_else(|| ExecError::BadRequest("REPEAT_NODE without its parameters".into()))?;
             crate::repeat::check_repeat(r)?;

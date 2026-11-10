@@ -138,6 +138,7 @@ impl Instance<'_> {
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
+            P::TABLE_FUNCTION_NODE => self.table_function(t)?,
             P::ANALYTIC_EVAL_NODE => self.analytic(t)?,
             P::PARTITION_SORT_NODE => self.partition_sort(t)?,
             P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
@@ -688,6 +689,39 @@ impl Instance<'_> {
         Ok(Chunk { block: self.typed(block, &slots)?, slots })
     }
 
+    /// TABLE_FUNCTION_NODE: the child's slots (a slot not in `outputSlotIds` at its default),
+    /// then one column per function, each child row once per combination of the functions'
+    /// values (`table_function_operator.cpp`).
+    fn table_function(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::table_function::{expand, function_name, values};
+        let n = &t.node;
+        let tf = n.table_function_node.as_ref().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        let map = slot_map(&child.slots);
+        let fns = tf.fn_call_expr_list.as_deref().unwrap_or_default();
+        let mut lists = Vec::with_capacity(fns.len());
+        for e in fns {
+            let name = function_name(e).unwrap_or_default();
+            let (_, arg) = eval_column(&TExpr { nodes: e.nodes[1..].to_vec() }, &child.block, &map)?;
+            lists.push(arg.iter().map(|a| values(&name, a)).collect::<Vec<_>>());
+        }
+        let fn_tuple = *n.row_tuples.last().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its tuples".into()))?;
+        let fn_slots = self.plan.desc.tuple_slots(fn_tuple)?.to_vec();
+        if fn_slots.len() != fns.len() {
+            return Err(ExecError::BadRequest(format!("a TABLE_FUNCTION_NODE with {} functions for {} slots", fns.len(), fn_slots.len())));
+        }
+        let keep: Vec<bool> = child.slots.iter().map(|s| tf.output_slot_ids.as_ref().is_none_or(|o| o.contains(s))).collect();
+        let defaults: Vec<Datum> = child.block.types.iter().map(default_of).collect();
+        let rows = expand(&child.block.rows, &lists, &keep, &defaults);
+        let mut types = child.block.types.clone();
+        for s in &fn_slots {
+            types.push(self.plan.desc.slots.get(s).map(|s| s.ty.clone()).ok_or_else(|| ExecError::BadRequest(format!("slot {s} is not described")))?);
+        }
+        let mut slots = child.slots;
+        slots.extend(fn_slots);
+        Ok(Chunk { block: Block { types, rows }, slots })
+    }
+
     /// A scalar first-phase aggregation straight over a scan of several tablets: one partial
     /// state per tablet, as C++'s parallel scan tasks each keep their own (the merge combines
     /// them). None for any other aggregation.
@@ -1200,6 +1234,20 @@ impl Layout {
         }
         out.extend_from_slice(&row[self.probe + self.build..]);
         out
+    }
+}
+
+/// `insert_many_defaults`: NULL in a nullable column, else the type's zero.
+fn default_of(t: &crate::value::ColType) -> Datum {
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    match t.ptype {
+        _ if t.nullable => Datum::Null,
+        T::BOOLEAN => Datum::Bool(false),
+        T::FLOAT => Datum::Float(0.0),
+        T::DOUBLE => Datum::Double(0.0),
+        T::CHAR | T::VARCHAR | T::STRING => Datum::Bytes(vec![]),
+        T::ARRAY => Datum::Array(vec![]),
+        _ => Datum::Int(0),
     }
 }
 
