@@ -868,3 +868,35 @@ fn replays_compared_unordered_are_listed() {
     assert_eq!(got, COMPARED_UNORDERED, "{got:#?}");
 }
 
+
+/// The M6 story 7 batch 1 replays, as in the fixtures test.
+const BATCH1: [&str; 16] = [
+    "correctness_p0.test_assert_row_num.test_assert_num_rows",
+    "correctness_p0.test_grouping_sets_empty.test_grouping_sets_empty",
+    "correctness_p0.test_like_predicate_with_concat.test_like_predicate_with_concat",
+    "correctness_p0.test_null_equal.test_null_equal",
+    "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
+    "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
+    "nereids_p0.aggregate.agg_distinct_case_when.agg_distinct_case_when",
+    "nereids_p0.aggregate.agg_with_distinct_project.agg_with_distinct_project",
+    "nereids_p0.aggregate.aggregate_groupby_simplify.aggregate_groupby_simplify",
+    "nereids_p0.aggregate.aggregate_stddev_over_range.aggregate_stddev_over_range",
+    "nereids_p0.grouping_sets.test_grouping_sets1.test_grouping_sets1",
+    "query_p0.having.having_between.test_having_between",
+    "query_p0.join.rqg.rqg500079780.rqg500079780.rqg1333347798",
+    "query_p0.set.test_user_var.test_user_var",
+    "query_p0.sql_functions.string_functions.test_regexp_chinese.test_regexp_chinese",
+    "query_p0.sql_functions.string_functions.test_regexp_extended_nonconstant_pattern.test_regexp_extended_nonconstant_pattern",
+];
+
+#[test]
+fn batch1_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH1 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
