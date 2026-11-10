@@ -50,6 +50,34 @@ are rejected for:
 
 The full run checks those.
 
+## As built (differences from the tasks below)
+
+The tasks below are the plan as written. Implementation changed these:
+
+- **Eligible is 579, not 586.** The full run found 9 eligible suites failing. Two needed a
+  RIGHT SEMI mark join (below). Seven need what the replies cannot show, and the supplement
+  now blocks them: `agg_with_distinct_project`, `eager_agg` and `bilateral_eager_agg` return
+  rows from several instances with no ORDER BY (`result:cpp_instance_order`; doris-rs's own
+  order changed between runs); `hot_value_str_to_date` explains a folded `CURDATE()`
+  (`result:reference_date`); `partitionRowCount` shows on-disk size, 4.228 KB on C++ against
+  3.568 KB (`result:cpp_data_size`); `test_show_column_stats_command` reads a UNIQUE KEYS
+  table; `test_regexp_extended_nonconstant_pattern` expects Boost's backtrack-limit error.
+- **RIGHT SEMI mark joins are run** (`mark_join`, `rqg1333347798`): each build row keeps a
+  three-valued mark (TRUE wins over NULL), and every build row comes out in build order with
+  it. A RIGHT ANTI mark join stays refused: C++ sets its marks by output row.
+- **GROUP_COMMIT_BLOCK_SINK moved to batch 2:** research sized it at 5 to 8 times any other
+  feature here.
+- **Fixes from the final review:** all 10 findings, Minors included, each test-first. The
+  RIGHT SEMI mark join, added after that review, had its own review: 4 Minors, all closed (three
+  test gaps, each test watched failing under a mutation; one question answered). The ledger
+  lists them.
+- **The full runs.** `m6-s7b1-full-1` ran before the RIGHT SEMI mark join and the supplement.
+  `m6-s7b1-full-2` does not count: DNS for the reference data host failed in its first minute
+  and 14 data loads failed; every lost ratchet suite sat under those 14 loads. `m6-s7b1-full-3`
+  on the final code (fresh FE, storage wiped): 579 eligible, 0 failing in either gate, no
+  ratchet suite lost. 627 suites pass the out gate (460 that reach the BE) and 511 the strict
+  gate (431); the ratchets gain 32 and 28. The readback and swap checks pass.
+
 ## Research
 
 The three research docs hold the C++ semantics, with file and line citations:
@@ -118,16 +146,16 @@ in that task.
 **Files:** `oracle/scores/epic1-supported.json`, `crates/doris-fixtures/tests/replays.rs`,
 `crates/doris-be/tests/replay.rs`, `crates/doris-fixtures/replays/` (the 16 new replays).
 
-- [ ] **Step 1: Write the failing test** `batch1_replays_hold_their_features` in
+- [x] **Step 1: Write the failing test** `batch1_replays_hold_their_features` in
   `doris-fixtures/tests/replays.rs`. Every replay in the new `BATCH1` list exists, and the set
   of its features includes at least one batch-1 feature.
-- [ ] **Step 2: Run** `cargo test -q -p doris-fixtures --test replays`. Expected: FAIL (missing
+- [x] **Step 2: Run** `cargo test -q -p doris-fixtures --test replays`. Expected: FAIL (missing
   replays).
-- [ ] **Step 3:** Add the 13 features to `epic1-supported.json` (written with
+- [x] **Step 3:** Add the 13 features to `epic1-supported.json` (written with
   `json.dumps(indent=1)`), then run `extract-replays --only` for the 16 suites.
-- [ ] **Step 4: Run** the test. Expected: PASS. Add `batch1_matches_the_reference` to
+- [x] **Step 4: Run** the test. Expected: PASS. Add `batch1_matches_the_reference` to
   `doris-be/tests/replay.rs` over `BATCH1`; it stays red until Task 7.
-- [ ] **Step 5: Commit** ("M6 s7: batch 1 replays").
+- [x] **Step 5: Commit** ("M6 s7: batch 1 replays").
 
 ### Task 2: to_date, eq_for_null, concat_ws, assert_true
 
@@ -148,17 +176,17 @@ Rules (scalars §2–§5):
   row with a NULL or false condition fails the query with `Coded{INVALID_ARGUMENT, "[E33] msg"}`.
   Otherwise the result is a column of true.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `to_date_takes_the_date_bits` (`2024-03-05 10:11:12` → `2024-03-05`; NULL → NULL);
   - `eq_for_null_is_two_valued` (NULL⇔NULL true, NULL⇔1 false, 1⇔1 true);
   - `concat_ws_skips_null_args_and_null_sep_is_null`;
   - `assert_true_fails_with_e33` (the message is `[E33] ANALYZE_SKIP_LONG_STRING_COLUMN`, the
     status INVALID_ARGUMENT);
   - `assert_true_needs_a_literal_message` (refused at prepare).
-- [ ] **Step 2: Run** `cargo test -q -p doris-exec`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** ("M6 s7: to_date, eq_for_null, concat_ws, assert_true").
+- [x] **Step 2: Run** `cargo test -q -p doris-exec`. Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run.** Expected: PASS.
+- [x] **Step 5: Commit** ("M6 s7: to_date, eq_for_null, concat_ws, assert_true").
 
 ### Task 3: regexp
 
@@ -180,7 +208,7 @@ Rules (scalars §1, §6):
     that fails to compile gives `Invalid regex expression: {p}. Error: `.
 - `enable_hyperscan_fallback = false` with a constant pattern is refused.
 
-- [ ] **Step 1: Write the failing tests** in `regexp.rs`:
+- [x] **Step 1: Write the failing tests** in `regexp.rs`:
   - `classifies_like_cpp` (`'^abc'` STARTS, `'abc$'` ENDS, `'abc'` SUBSTRING, `'.*'` ALLPASS);
   - `ascii_classes_on_utf8` (`'\w+'` on `'中文'` does not match; `'[中文]'` does);
   - `re2_rejects_lookahead_with_its_text` (`'(?=a)'` → `invalid perl operator: (?=` plus the
@@ -189,11 +217,11 @@ Rules (scalars §1, §6):
   - `constant_pattern_fails_at_prepare_over_no_rows`;
   - `boost_gate_accepts_lookahead_and_refuses_nested_quantifiers`;
   - the suite's own rows from `test_regexp_chinese` and `test_like_predicate_with_concat`.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Use `regex::bytes` for the RE2 and Hyperscan paths, and
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement.** Use `regex::bytes` for the RE2 and Hyperscan paths, and
   `fancy-regex` for the Boost gate, added if the gate needs lookaround (ruling recorded).
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** ("M6 s7: regexp").
+- [x] **Step 4: Run.** Expected: PASS.
+- [x] **Step 5: Commit** ("M6 s7: regexp").
 
 ### Task 4: sum0, stddev, group_concat
 
@@ -212,17 +240,17 @@ Rules (aggregates §2–§4):
   - No accepted row gives NULL.
   - Ordering (`agg_sort_infos`) and DISTINCT are refused.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `sum0_of_no_rows_is_zero`;
   - `stddev_of_one_row_is_zero`;
   - `stddev_of_an_infinity_is_nan`;
   - `stddev_merges_two_phases_like_one` (values from `aggregate_stddev_over_range`'s .out);
   - `group_concat_skips_nulls_and_keeps_input_order`;
   - `group_concat_of_no_rows_is_null`.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** ("M6 s7: sum0, stddev, group_concat").
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run.** Expected: PASS.
+- [x] **Step 5: Commit** ("M6 s7: sum0, stddev, group_concat").
 
 ### Task 5: ndv, window_funnel_v2, ntile
 
@@ -243,7 +271,7 @@ Rules (aggregates §1, §5, §6):
 - **`ntile(n)`** gives bucket `i` (1-based) by C++'s formula in §6. A partition larger than 4064
   rows is refused at run time.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `murmur64a_matches_known_vectors`;
   - `ndv_is_exact_below_160`;
   - `ndv_switches_to_registers_past_160` (a value computed by the formula over a fixed input);
@@ -251,10 +279,10 @@ Rules (aggregates §1, §5, §6):
   - `window_funnel_v2_modes` (the suite's .out rows);
   - `ntile_splits_like_cpp` (7 rows, `ntile(3)` → 1,1,1,2,2,3,3);
   - `ntile_refuses_a_partition_past_one_block`.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** ("M6 s7: ndv, window_funnel_v2, ntile").
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run.** Expected: PASS.
+- [x] **Step 5: Commit** ("M6 s7: ndv, window_funnel_v2, ntile").
 
 ### Task 6: REPEAT_NODE and DATA_GEN_SCAN_NODE
 
@@ -274,33 +302,33 @@ Rules (nodes-sink §1, §2):
   - An instance without a range produces nothing.
   - Anything else is refused at prepare.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `repeat_emits_each_chunk_per_repeat`;
   - `repeat_nulls_slots_outside_the_kept_set`;
   - `repeat_with_no_exprs_outputs_grouping_columns_only`;
   - `numbers_counts_from_zero`;
   - `numbers_with_const_value_repeats_it`;
   - `data_gen_refuses_other_functions`.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** ("M6 s7: repeat and data-gen scan").
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run.** Expected: PASS.
+- [x] **Step 5: Commit** ("M6 s7: repeat and data-gen scan").
 
 ### Task 7: The replays pass
 
-- [ ] **Step 1: Run** `cargo test -q -p doris-be --test replay`. Expected: FAIL only in
+- [x] **Step 1: Run** `cargo test -q -p doris-be --test replay`. Expected: FAIL only in
   `batch1_matches_the_reference`. Fix each mismatch test-first, with a unit test per root
   cause.
-- [ ] **Step 2: Run** `cargo test -q --workspace --no-fail-fast`. Expected: PASS.
-- [ ] **Step 3: Commit** ("M6 s7: the batch 1 replays pass").
+- [x] **Step 2: Run** `cargo test -q --workspace --no-fail-fast`. Expected: PASS.
+- [x] **Step 3: Commit** ("M6 s7: the batch 1 replays pass").
 
 ### Task 8: Gate, docs, As built
 
-- [ ] **Step 1: Full run** on a fresh FE with storage wiped:
+- [x] **Step 1: Full run** on a fresh FE with storage wiped:
   `RUN_ID=m6-s7b1-full-N make epic-check TARGET=rust`, then `make epic-grade`. Expected: 586
   eligible (fewer if supplements are added), 0 failing in either gate, no ratchet suite lost.
-- [ ] **Step 2:** Regenerate the ratchets from `grade.json`, as story 6 did.
-- [ ] **Step 3:** Run `make -C oracle test`, the readback and swap checks, and
+- [x] **Step 2:** Regenerate the ratchets from `grade.json`, as story 6 did.
+- [x] **Step 3:** Run `make -C oracle test`, the readback and swap checks, and
   `cargo test --workspace`.
-- [ ] **Step 4:** Write the README paragraph and the As built section, then commit ("M6 s7
+- [x] **Step 4:** Write the README paragraph and the As built section, then commit ("M6 s7
   batch 1: gate, docs, As built").
