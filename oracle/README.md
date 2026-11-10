@@ -160,6 +160,20 @@ the plan counted. Decimal add, subtract and mod, and DOUBLE mod, are refused: no
 needs them. Errors carry C++'s status codes (`INVALID_ARGUMENT` for `INT64_MIN % -1`,
 `ARITHMETIC_OVERFLOW_ERRROR` for a decimal product past its precision).
 
+After Milestone 6 story 6 (joins: HASH_JOIN_NODE with every join type, mark, null-aware and
+ASOF joins; CROSS_JOIN_NODE; ASSERT_NUM_ROWS_NODE, CASE and `nullable`; broadcast, shuffle,
+bucket shuffle, colocate and local-shuffle plans; run `m6-s6-full-2`, 2026-11-09): 551
+eligible suites, all passing both gates; 595 Epic 1 suites pass the out gate (428 of those that
+reach the BE) and 483 the strict gate (403). The ratchets gain 81 suites in each gate. Rows
+come out in C++'s order: matches in reverse build order, then RIGHT/FULL tails in build order,
+and nested-loop output probe-major. Runtime filters are ignored: each only drops rows its join
+drops anyway. Under `parallel_instances` the first instance runs over every scan range and the
+others only end their streams; a shared broadcast build is received by the first instance and
+forwarded. An ASOF match among equal build values whose rows differ is refused, because C++
+picks one by an unstable sort. Decimal add and subtract are supported now
+(`test_join_result_count` needs them). `assert_true` moved on to story 7: no newly eligible
+suite uses it. The readback check's join is answered by doris-rs in rounds b and c.
+
 The older directory-level gate also works against any target:
 
 ```
