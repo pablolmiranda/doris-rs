@@ -84,9 +84,13 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
     let me_plan = if f.mode == crate::query::RunMode::Merged && instance == 0 {
         let mut all = f.instances[0].clone();
         all.scan_ranges.clear();
+        all.data_gen.clear();
         for i in &f.instances {
             for (node, ranges) in &i.scan_ranges {
                 all.scan_ranges.entry(*node).or_default().extend(ranges.iter().cloned());
+            }
+            for (node, ranges) in &i.data_gen {
+                all.data_gen.entry(*node).or_default().extend(ranges.iter().copied());
             }
         }
         merged = all;
@@ -137,6 +141,8 @@ impl Instance<'_> {
             P::ANALYTIC_EVAL_NODE => self.analytic(t)?,
             P::PARTITION_SORT_NODE => self.partition_sort(t)?,
             P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
+            P::REPEAT_NODE => self.repeat(t)?,
+            P::DATA_GEN_SCAN_NODE => self.data_gen(t)?,
             P::MATERIALIZATION_NODE => self.materialize(t)?,
             _ => {
                 return Err(ExecError::Unsupported {
@@ -635,6 +641,37 @@ impl Instance<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         let block = crate::schema_scan::scan_schema(s, &schema_slots, self.ctx.fe)?;
         Ok(Chunk { block, slots })
+    }
+
+    /// REPEAT_NODE: the child once per repeat (`crate::repeat`), typed onto the output tuple.
+    fn repeat(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let r = t.node.repeat_node.as_ref().ok_or_else(|| ExecError::BadRequest("REPEAT_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        let slots = self.plan.desc.tuple_slots(r.output_tuple_id)?.to_vec();
+        if slots.len() != r.exprs.len() + r.grouping_list.len() {
+            return Err(ExecError::BadRequest("a REPEAT_NODE whose output tuple is not its exprs and grouping columns".into()));
+        }
+        let map = slot_map(&child.slots);
+        let cols = r.exprs.iter().map(|e| crate::eval::eval_column(e, &child.block, &map).map(|(_, v)| v)).collect::<Result<Vec<_>, _>>()?;
+        let rows = child.block.len();
+        let values: Vec<Vec<Datum>> = (0..rows).map(|i| cols.iter().map(|c| c[i].clone()).collect()).collect();
+        let out = crate::repeat::repeat_rows(r, &slots[..r.exprs.len()], &values, rows)?;
+        let types = slots.iter().map(|s| self.plan.desc.slot(*s).map(|s| s.ty.clone())).collect::<Result<Vec<_>, _>>()?;
+        Ok(Chunk { block: self.typed(Block { types, rows: out }, &slots)?, slots })
+    }
+
+    /// DATA_GEN_SCAN_NODE: this instance's `numbers` range, one non-null BIGINT column.
+    fn data_gen(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let d = t.node.data_gen_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its parameters".into()))?;
+        let tuple = d.tuple_id.ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its tuple".into()))?;
+        let mut out = self.empty(tuple)?;
+        if out.slots.len() != 1 || out.block.types[0].ptype != doris_thrift::gen::types::TPrimitiveType::BIGINT {
+            return Err(ExecError::BadRequest("a numbers scan whose tuple is not one BIGINT slot".into()));
+        }
+        for n in self.instance.data_gen.get(&t.node.node_id).into_iter().flatten() {
+            out.block.rows.extend(crate::datagen::numbers(n).into_iter().map(|v| vec![v]));
+        }
+        Ok(out)
     }
 
     fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {

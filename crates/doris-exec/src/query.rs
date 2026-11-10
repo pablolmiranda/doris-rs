@@ -110,6 +110,8 @@ pub struct InstancePlan {
     pub sender_id: i32,
     /// Scan node → `(tablet id, version)` ranges.
     pub scan_ranges: BTreeMap<i32, Vec<(i64, i64)>>,
+    /// Data-gen scan node → its `numbers` ranges.
+    pub data_gen: BTreeMap<i32, Vec<crate::datagen::Numbers>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -217,8 +219,29 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
                         (*node, r)
                     })
                     .collect(),
+                data_gen: l
+                    .per_node_scan_ranges
+                    .iter()
+                    .map(|(node, ranges)| {
+                        let r = ranges
+                            .iter()
+                            .filter_map(|r| r.scan_range.data_gen_scan_range.as_ref()?.numbers_params.as_ref())
+                            .map(|n| crate::datagen::Numbers {
+                                total: n.total_numbers.unwrap_or(0),
+                                use_const: n.use_const == Some(true),
+                                const_value: n.const_value.unwrap_or(0),
+                            })
+                            .collect::<Vec<_>>();
+                        (*node, r)
+                    })
+                    .filter(|(_, r)| !r.is_empty())
+                    .collect(),
             })
             .collect();
+        // vnumbers_tvf.cpp reads only an instance's first range
+        if instances.iter().any(|i| i.data_gen.values().any(|r| r.len() > 1)) {
+            return Err(unsupported("a data-gen scan with several ranges in one instance"));
+        }
         let write = if sink.type_ == TDataSinkType::OLAP_TABLE_SINK {
             // a later fragment of a prepare is simplified (is_simplified_param): it takes the
             // query's options and globals from the fragment that carries them
@@ -368,6 +391,18 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     let name = node_type_name(n.node_type);
     match n.node_type {
         P::OLAP_SCAN_NODE | P::EMPTY_SET_NODE | P::SELECT_NODE => {}
+        P::REPEAT_NODE => {
+            let r = n.repeat_node.as_ref().ok_or_else(|| ExecError::BadRequest("REPEAT_NODE without its parameters".into()))?;
+            crate::repeat::check_repeat(r)?;
+            check_exprs(&r.exprs, false)?;
+        }
+        P::DATA_GEN_SCAN_NODE => {
+            use doris_thrift::gen::plan_nodes::TDataGenFunctionName;
+            let d = n.data_gen_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its parameters".into()))?;
+            if d.func_name != Some(TDataGenFunctionName::NUMBERS) {
+                return Err(unsupported("a data-gen scan other than numbers"));
+            }
+        }
         P::UNION_NODE => {
             let u = n
                 .union_node

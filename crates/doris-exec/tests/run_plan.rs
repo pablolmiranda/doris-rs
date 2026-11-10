@@ -201,6 +201,7 @@ fn fragment(
 
 fn instance(i: i64, ranges: &[(i32, Vec<(i64, i64)>)]) -> InstancePlan {
     InstancePlan {
+        data_gen: Default::default(),
         id: id(i),
         sender_id: i as i32,
         scan_ranges: ranges.iter().cloned().collect::<BTreeMap<_, _>>(),
