@@ -903,3 +903,58 @@ fn batch1_matches_the_reference() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+/// M6 story 7 batch 2 (geo, table functions, moments, dates, bits).
+const BATCH2: [&str; 39] = [
+    "correctness_p0.test_agg_materialize.test_agg_materialize",
+    "correctness_p0.test_bit_function.test_bit_functions",
+    "correctness_p0.test_bit_shift_lagency.test_bit_shift",
+    "correctness_p0.test_bit_shift_nereids.test_bit_shift_nereids",
+    "correctness_p0.test_bit_test_function.test_bit_test_function",
+    "correctness_p0.test_case_when_date.test_case_when_date",
+    "correctness_p0.test_date_diff.test_date_diff",
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview",
+    "correctness_p0.test_nested_lateral_view.test_nested_lateral_view",
+    "correctness_p0.test_outer_join_sort.test_outer_join_sort",
+    "correctness_p0.test_probe_clean.test_probe_clean",
+    "correctness_p0.test_select_constant.test_select_constant",
+    "correctness_p0.test_table_function_with_subquery.test_table_function_with_subquery",
+    "correctness_p0.test_window_function_with_project.test_window_function_with_project",
+    "correctness_p0.test_xor_pred.test_xor_pred",
+    "datatype_p0.date.test_weekofyear.test_weekofyear",
+    "nereids_p0.expression.operator_precedence.operator_precedence",
+    "nereids_p0.legacy.test_clone_legacy_nullable_from_nereids.test_clone_legacy_nullable_from_nereids",
+    "nereids_p0.sql_functions.datetime_functions.test_date_or_datetime_computation_negative.test_date_or_datetime_computation_negative",
+    "nereids_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "nereids_p0.sql_functions.string_functions.test_split_by_string.test_split_by_string",
+    "nereids_p0.stats.col_stats.estimate_string_as_date.estimate_string_as_date",
+    "nereids_p0.test_generate_subquery_output.test_generate_subquery_output",
+    "nereids_p0.test_select_constant.test_select_constant",
+    "query_p0.aggregate.aggregate_function_kurt.aggregate_function_kurt",
+    "query_p0.aggregate.aggregate_function_skew.aggregate_function_skew",
+    "query_p0.aggregate.support_type.avg_weighted.avg_weighted.avg_weighted",
+    "query_p0.aggregate.support_type.corr.corr.corr",
+    "query_p0.aggregate.support_type.corr_welford.corr_welford.corr_welford",
+    "query_p0.aggregate.support_type.covar.covar.covar",
+    "query_p0.aggregate.support_type.covar_samp.covar_samp.covar_samp",
+    "query_p0.aggregate.support_type.regr_intercept.regr_intercept.regr_intercept",
+    "query_p0.aggregate.support_type.regr_slope.regr_slope.regr_slope",
+    "query_p0.join.left_anti_with_other.left_anti_with_other.left_anti_with_other",
+    "query_p0.join.test_ignore.test_ignore.test_ignore",
+    "query_p0.lateral_view.test_with_view.lateral_view_with_inline_view",
+    "query_p0.sort_spill.sort_spill.sort_spill",
+    "query_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "query_p0.sql_functions.test_years_add.test_years_add",
+];
+
+#[test]
+fn batch2_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH2 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
