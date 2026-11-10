@@ -150,9 +150,13 @@ impl WindowFn {
                     WindowKind::Last { ignore_nulls }
                 }
             }
-            // a set state; its window semantics are not C++'s known ones; the M6 s7 aggregates'
-            // window semantics were not researched
-            f @ ("multi_distinct_count" | "sum0" | "stddev" | "group_concat" | "ndv" | "window_funnel_v2") => {
+            // the M6 s7 aggregates' window semantics were not researched
+            f @ ("sum0" | "stddev" | "group_concat" | "ndv" | "window_funnel_v2") => {
+                return Err(ExecError::Unsupported {
+                    what: format!("{f} over a window"),
+                })
+            }
+            f if crate::moments::arity(f).is_some() => {
                 return Err(ExecError::Unsupported {
                     what: format!("{f} over a window"),
                 })
@@ -192,6 +196,15 @@ impl WindowFn {
 /// The FE forces each rank-family function's frame (`WindowFunctionChecker`): `row_number`
 /// over ROWS from the partition's start to the current row, `rank` and `dense_rank` over RANGE
 /// to the current row. Any other is refused rather than guessed.
+/// `check_frame` for a node's function: an aggregate over RANGE to the current row with no
+/// ORDER BY (the FE's `OVER ()`) reads the whole partition, every row being a peer.
+pub fn check_window(f: &WindowFn, frame: &Frame, ordered: bool) -> Result<(), ExecError> {
+    match (&f.kind, frame) {
+        (WindowKind::Agg(_), Frame::RangeToCurrent) if !ordered => check_frame(f, &Frame::Partition),
+        _ => check_frame(f, frame),
+    }
+}
+
 pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
     let ok = match f.kind {
         WindowKind::RowNumber => *frame == Frame::Rows { start: None, end: Some(0) },
@@ -206,6 +219,9 @@ pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
             }
             true
         }
+        // a set state: only over the whole partition, where it is the partition's distinct count
+        // (its sliding-frame semantics are not ported)
+        WindowKind::Agg(ref a) if a.function == "multi_distinct_count" => *frame == Frame::Partition,
         _ => true,
     };
     if ok {

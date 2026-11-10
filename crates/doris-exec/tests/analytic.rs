@@ -1,7 +1,7 @@
 //! Window functions over sorted rows, as the C++ BE's ANALYTIC_EVAL_NODE computes them: frames
 //! clamped to the partition, peers by value (NULL = NULL, -0.0 = 0.0), values added in row order.
 use doris_exec::aggregate::AggSpec;
-use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, Window, WindowFn, WindowKind};
+use doris_exec::analytic::{check_frame, check_window, split_float_keys, window_columns, Frame, Window, WindowFn, WindowKind};
 use doris_exec::value::ColType;
 use doris_fixtures::build;
 use doris_segment::writer::Datum;
@@ -292,19 +292,6 @@ fn two_arguments_mean_ignore_nulls_whatever_the_flag() {
 }
 
 #[test]
-fn multi_distinct_count_is_not_a_window_aggregate() {
-    let e = build::aggregate(
-        "multi_distinct_count",
-        build::ty(T::BIGINT),
-        vec![build::ty(T::INT)],
-        false,
-        vec![build::slot(1, build::ty(T::INT))],
-    );
-    let err = WindowFn::from_expr(&e).unwrap_err().to_string();
-    assert!(err.contains("multi_distinct_count over a window"), "{err}");
-}
-
-#[test]
 fn lead_and_lag_need_the_frame_the_fe_forces() {
     let lead = win(WindowKind::Lead(1), T::INT);
     let lag = win(WindowKind::Lag(1), T::INT);
@@ -415,4 +402,39 @@ fn ntile_refuses_past_the_querys_batch_size() {
     let f = win(WindowKind::Ntile(3), T::BIGINT);
     assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 1024 }).is_err());
     assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 4064 }).is_ok());
+}
+
+#[test]
+fn batch2_aggregates_are_not_window_aggregates() {
+    for f in ["kurt", "skew", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_samp", "avg_weighted"] {
+        let d = build::ty(T::DOUBLE);
+        let e = build::aggregate(f, d.clone(), vec![d.clone()], false, vec![build::slot(1, d.clone())]);
+        let err = WindowFn::from_expr(&e).unwrap_err().to_string();
+        assert!(err.contains(&format!("{f} over a window")), "{err}");
+    }
+}
+
+/// `multi_distinct_count(x) OVER ()`: the partition's distinct non-NULL values, on every row
+/// (`test_window_function_with_project`).
+#[test]
+fn multi_distinct_count_over_the_whole_partition() {
+    let f = agg("multi_distinct_count", T::VARCHAR, T::BIGINT);
+    let part = [s("a"), s("a"), s("a"), s("b")];
+    let values = vec![s("x"), Datum::Null, s("x"), s("y")];
+    let got = run(&part, &[], Frame::Partition, &f, &[(T::VARCHAR, values)]);
+    assert_eq!(got, [1, 1, 1, 1].map(i).to_vec());
+    let values = vec![s("x"), s("z"), Datum::Null, s("y")];
+    assert_eq!(run(&part, &[], Frame::Partition, &f, &[(T::VARCHAR, values)]), [2, 2, 2, 1].map(i).to_vec());
+    // its sliding-frame semantics are not ported
+    assert!(check_frame(&f, &TO_CURRENT).is_err());
+    assert!(check_frame(&f, &Frame::RangeToCurrent).is_err());
+    check_frame(&f, &Frame::Partition).unwrap();
+    // the FE sends `OVER ()` as RANGE to the current row: without an ORDER BY every row is a
+    // peer, so that frame is the whole partition
+    check_window(&f, &Frame::RangeToCurrent, false).unwrap();
+    assert!(check_window(&f, &Frame::RangeToCurrent, true).is_err());
+    // rank keeps the frame the FE forces
+    check_window(&win(WindowKind::Rank, T::BIGINT), &Frame::RangeToCurrent, false).unwrap();
+    let e = build::aggregate("multi_distinct_count", build::ty(T::BIGINT), vec![build::ty(T::VARCHAR)], false, vec![build::slot(1, build::ty(T::VARCHAR))]);
+    WindowFn::from_expr(&e).unwrap();
 }

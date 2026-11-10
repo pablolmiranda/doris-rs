@@ -461,7 +461,7 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
             check_exprs(a.partition_exprs.iter().chain(&a.order_by_exprs), false)?;
             check_keys(a.partition_exprs.iter().chain(&a.order_by_exprs), "a window key")?;
             for f in &a.analytic_functions {
-                crate::analytic::check_frame(&crate::analytic::WindowFn::from_expr(f)?, &frame)?;
+                crate::analytic::check_window(&crate::analytic::WindowFn::from_expr(f)?, &frame, !a.order_by_exprs.is_empty())?;
             }
         }
         P::PARTITION_SORT_NODE => {
