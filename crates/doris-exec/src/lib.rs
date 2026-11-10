@@ -20,6 +20,7 @@ pub mod nested_loop;
 pub mod partition_sort;
 pub mod pipeline;
 pub mod query;
+pub mod regexp;
 pub mod round;
 pub mod route;
 pub mod sort;

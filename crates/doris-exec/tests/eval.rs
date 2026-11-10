@@ -547,3 +547,23 @@ fn compact_text_casts_to_datetime() {
     let e = doris_fixtures::build::over(cast, vec![date("2023-10-26", ty(T::DATEV2))]);
     assert_eq!(one_row(e), want);
 }
+
+#[test]
+fn regexp_evaluates_with_the_querys_options() {
+    use doris_exec::regexp::{with_regex_options, RegexOptions};
+    let v = ty(T::VARCHAR);
+    let block = Block {
+        types: vec![col("s", T::VARCHAR, 0, 0), col("p", T::VARCHAR, 0, 0)],
+        rows: vec![vec![Datum::Bytes(b"foobar".to_vec()), Datum::Bytes(b"(?<=foo)bar".to_vec())]],
+    };
+    let e = call("regexp", ty(T::BOOLEAN), vec![slot(1, v.clone()), slot(2, v.clone())]);
+    let slots = SlotMap(HashMap::from([(1, 0), (2, 1)]));
+    check_read(&e).expect("supported");
+    let off = eval_column(&e, &block, &slots).expect_err("RE2 rejects lookbehind").to_string();
+    assert!(off.contains("try setting enable_extended_regex=true"), "{off}");
+    let on = RegexOptions { extended: true, hyperscan_fallback: true };
+    let (_, got) = with_regex_options(on, || eval_column(&e, &block, &slots)).expect("Boost runs it");
+    assert_eq!(got, vec![Datum::Bool(true)]);
+    let rlike = call("rlike", ty(T::BOOLEAN), vec![slot(1, v), string("^foo")]);
+    assert_eq!(column_of(rlike, &block), vec![Datum::Bool(true)]);
+}

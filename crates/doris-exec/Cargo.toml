@@ -32,6 +32,9 @@ bytes = { workspace = true }
 ethnum = { workspace = true }
 # LIKE patterns
 regex = { workspace = true }
+# regexp: the pattern gate and the Boost fallback
+regex-syntax = { workspace = true }
+fancy-regex = { workspace = true }
 # now(), current_date() and named time zones
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

@@ -58,6 +58,9 @@ orc-rust = { version = "0.6", default-features = false }
 ethnum = "1"
 # LIKE patterns (M6 s5)
 regex = "1"
+# regexp: the pattern gate (RE2/Hyperscan subset) and the Boost fallback (M6 s7)
+regex-syntax = "0.8"
+fancy-regex = "0.16"
 # now(), current_date() and named time zones (M6 s5)
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.10", features = ["case-insensitive"] }

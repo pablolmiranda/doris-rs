@@ -163,6 +163,8 @@ pub struct QueryPlan {
     /// `enable_share_hash_table_for_broadcast_join`: a broadcast hash join's build input goes to
     /// the first instance of its fragment, and the others share it.
     pub share_broadcast_build: bool,
+    /// `enable_extended_regex` and `enable_hyperscan_fallback`, read by `regexp`.
+    pub regex: crate::regexp::RegexOptions,
 }
 
 impl QueryPlan {
@@ -255,6 +257,11 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
         binary_rows: o.and_then(|o| o.mysql_row_binary_format).unwrap_or(false),
         dry_run: o.and_then(|o| o.dry_run_query).unwrap_or(false),
         share_broadcast_build: o.and_then(|o| o.enable_share_hash_table_for_broadcast_join).unwrap_or(true),
+        // runtime_state.h: extended only when set and true
+        regex: crate::regexp::RegexOptions {
+            extended: o.and_then(|o| o.enable_extended_regex) == Some(true),
+            hyperscan_fallback: o.and_then(|o| o.enable_hyperscan_fallback).unwrap_or(true),
+        },
         clock: crate::clock::QueryClock::from_optional(params.iter().find_map(|p| p.query_globals.as_ref())),
         unchecked_arithmetic: o.and_then(|o| o.check_overflow_for_decimal) == Some(false)
             && format!("{list:?}").contains(&format!("node_type: {:?}", TExprNodeType::ARITHMETIC_EXPR)),

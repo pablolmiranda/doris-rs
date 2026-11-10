@@ -64,6 +64,7 @@ fn string_call(n: &TExprNode) -> bool {
         "like" => (args.len() == 2 || args.len() == 3) && args.iter().all(text) && to.ptype == T::BOOLEAN,
         "concat" => !args.is_empty() && args.iter().all(text) && text(&to),
         "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
+        "regexp" | "rlike" => args.len() == 2 && args.iter().all(text) && to.ptype == T::BOOLEAN,
         "concat_ws" => args.len() >= 2 && args.iter().all(text) && text(&to),
         _ => false,
     }
@@ -200,7 +201,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("like" | "concat" | "length") => string_call(n),
                 Some("round") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
-                Some("concat_ws") => string_call(n),
+                Some("concat_ws" | "regexp" | "rlike") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 _ => false,
@@ -602,6 +603,12 @@ fn eval_at(
                 let (_, v) = kids.first().ok_or_else(|| bad("to_date without its argument"))?;
                 let out = v.iter().map(|d| if let Datum::Int(x) = d { Datum::Int(x >> 37) } else { Datum::Null }).collect();
                 (node_type(n)?, out)
+            }
+            Some("regexp" | "rlike") => {
+                let (_, values) = kids.first().ok_or_else(|| bad("regexp without its value"))?;
+                let (_, patterns) = kids.get(1).ok_or_else(|| bad("regexp without its pattern"))?;
+                let out = crate::regexp::regexp_column(values, patterns, constant.get(1) == Some(&true), crate::regexp::options())?;
+                (boolean(), out)
             }
             Some("concat_ws") => {
                 let t = node_type(n)?;

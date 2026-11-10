@@ -102,14 +102,14 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         ctx,
         prefetched: Default::default(),
     };
-    crate::clock::with_clock(&plan.clock, || {
+    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || {
         if f.mode == crate::query::RunMode::Merged && instance > 0 {
             return me.idle();
         }
         me.prefetch_shared_builds()?;
         let out = me.node(&f.root)?;
         me.sink(out)
-    })
+    }))
 }
 
 impl Instance<'_> {

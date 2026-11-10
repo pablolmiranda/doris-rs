@@ -223,6 +223,7 @@ fn query(fragments: Vec<FragmentPlan>) -> QueryPlan {
         unchecked_arithmetic: false,
         clock: doris_exec::clock::QueryClock::from_optional(None),
         share_broadcast_build: true,
+        regex: Default::default(),
     }
 }
 
