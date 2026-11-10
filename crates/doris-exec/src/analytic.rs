@@ -76,9 +76,15 @@ pub enum WindowKind {
     Last {
         ignore_nulls: bool,
     },
+    /// `ntile(n)`: the frame is ignored, the bucket comes from the partition's size.
+    Ntile(i64),
     /// An aggregate over the frame.
     Agg(AggSpec),
 }
+
+/// The analytic input's block size (`batch_size`): C++ sizes an `ntile` partition from the rows
+/// it has received, so a partition past the first block is numbered from a partial size.
+const NTILE_BLOCK: usize = 4064;
 
 /// One function of the node.
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +124,9 @@ impl WindowFn {
         }
         let kind = match name.as_str() {
             "row_number" => WindowKind::RowNumber,
+            "ntile" => WindowKind::Ntile(args.first().and_then(int_literal).filter(|n| *n > 0).ok_or_else(|| ExecError::Unsupported {
+                what: "an ntile bucket count that is not a positive literal".into(),
+            })?),
             "rank" => WindowKind::Rank,
             "dense_rank" => WindowKind::DenseRank,
             "lead" | "lag" => {
@@ -146,7 +155,7 @@ impl WindowFn {
             }
             // a set state; its window semantics are not C++'s known ones; the M6 s7 aggregates'
             // window semantics were not researched
-            f @ ("multi_distinct_count" | "sum0" | "stddev" | "group_concat") => {
+            f @ ("multi_distinct_count" | "sum0" | "stddev" | "group_concat" | "ndv" | "window_funnel_v2") => {
                 return Err(ExecError::Unsupported {
                     what: format!("{f} over a window"),
                 })
@@ -177,6 +186,7 @@ impl WindowFn {
             WindowKind::Lag(_) => "lag",
             WindowKind::First { .. } => "first_value",
             WindowKind::Last { .. } => "last_value",
+            WindowKind::Ntile(_) => "ntile",
             WindowKind::Agg(a) => &a.function,
         }
     }
@@ -293,6 +303,17 @@ fn partition(
             WindowKind::RowNumber => Datum::Int((cur - ps + 1) as i128),
             WindowKind::Rank => Datum::Int((gs - ps + 1) as i128),
             WindowKind::DenseRank => Datum::Int((gi + 1) as i128),
+            // WindowFunctionNTile::add_range_single_place
+            WindowKind::Ntile(n) => {
+                if pe > NTILE_BLOCK {
+                    return Err(ExecError::Unsupported { what: format!("ntile over a partition past the first {NTILE_BLOCK} rows") });
+                }
+                let (row, size, n) = ((cur - ps) as i64, (pe - ps) as i64, *n);
+                let (small, big) = (size / n, size % n);
+                let first_small = big * (small + 1);
+                let bucket = if row >= first_small { big + 1 + (row - first_small) / small } else { row / (small + 1) + 1 };
+                Datum::Int(bucket.into())
+            }
             WindowKind::Lead(off) => match cur.checked_add(*off as usize).filter(|t| *t < pe) {
                 Some(t) => x()?[t].clone(),
                 None => default(cur),

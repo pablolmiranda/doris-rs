@@ -22,7 +22,7 @@ pub struct SlotMap(pub HashMap<i32, usize>);
 
 const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 /// The aggregate functions an aggregation node computes.
-pub const AGGREGATES: &[&str] = &["count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat"];
+pub const AGGREGATES: &[&str] = &["count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2"];
 
 fn function_name(n: &TExprNode) -> Option<String> {
     n.fn_
