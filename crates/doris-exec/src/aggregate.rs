@@ -334,6 +334,9 @@ enum State {
     Ndv(crate::hll::Hll),
     /// `window_funnel_v2`; `accepted`: a row without a NULL argument was added (the NULL wrapper)
     Funnel { f: crate::funnel::Funnel, accepted: bool },
+    /// kurt, skew, regr_*, corr, corr_welford, covar, covar_samp, avg_weighted; `accepted` as
+    /// for `Funnel`
+    Moments { m: crate::moments::Moments, accepted: bool },
 }
 
 /// The bytes `ndv` hashes for a value: a fixed-width type's in-memory value, little-endian
@@ -477,6 +480,13 @@ impl State {
             }
             "window_funnel_v2" => return Err(ExecError::Unsupported { what: "window_funnel_v2 over a timestamp other than DATETIMEV2".into() }),
             "group_concat" => return Err(ExecError::Unsupported { what: "group_concat with ORDER BY".into() }),
+            name if crate::moments::arity(name).is_some() => {
+                let doubles = f.param_types.len() == crate::moments::arity(name).unwrap_or(0) && f.param_types.iter().all(|t| t.ptype == T::DOUBLE);
+                match crate::moments::Moments::new(name) {
+                    Some(m) if doubles => State::Moments { m, accepted: false },
+                    _ => return Err(ExecError::Unsupported { what: format!("{name} of arguments other than DOUBLE") }),
+                }
+            }
             other => {
                 return Err(ExecError::Unsupported {
                     what: format!("function {other}"),
@@ -548,6 +558,18 @@ impl State {
                     *mean += r;
                     *m2 += (*count as f64 * delta) * r;
                     *count += 1;
+                }
+            }
+            State::Moments { m, accepted } => {
+                // a row with any NULL argument is skipped (the functions' own check, or the wrapper's)
+                let value = |i: usize| match args.get(i).map(|(_, d)| *d) {
+                    Some(Datum::Double(v)) => Some(Some(*v)),
+                    None => Some(None),
+                    _ => None,
+                };
+                if let (Some(a), Some(b)) = (value(0), value(1)) {
+                    m.add(a.unwrap_or(0.0), b.unwrap_or(0.0));
+                    *accepted = true;
                 }
             }
             State::Funnel { f, accepted } => {
@@ -645,6 +667,12 @@ impl State {
                 }
             }
             (State::Ndv(a), State::Ndv(b)) => a.merge(b),
+            (State::Moments { m, accepted }, State::Moments { m: r, accepted: b }) => {
+                if *b {
+                    m.merge(r);
+                    *accepted = true;
+                }
+            }
             (State::Funnel { f, accepted }, State::Funnel { f: g, accepted: b }) => {
                 f.merge(g);
                 *accepted |= b;
@@ -710,6 +738,7 @@ impl State {
                 }
             },
             State::Ndv(h) => Datum::Int(h.estimate().into()),
+            State::Moments { m, accepted } => m.finish(*accepted).map_or(Datum::Null, Datum::Double),
             State::Funnel { accepted: false, .. } if ret.nullable => Datum::Null,
             State::Funnel { f, .. } => Datum::Int(f.get()?.into()),
             State::GroupConcat { data, inited, .. } => match inited {
@@ -788,6 +817,11 @@ impl State {
                     out.extend(t.to_le_bytes());
                     out.push(*e);
                 }
+            }
+            State::Moments { m, accepted } => {
+                out.push(10);
+                out.push(u8::from(*accepted));
+                m.encode(&mut out);
             }
             State::Ndv(h) => {
                 out.push(8);
@@ -870,6 +904,12 @@ impl State {
                     events.push((r.u64()?, r.u8()?));
                 }
                 State::Funnel { f: Funnel { event_count, window, mode, events }, accepted }
+            }
+            10 => {
+                let accepted = r.u8()? == 1;
+                let (m, used) = crate::moments::Moments::decode(r.0).ok_or_else(|| ExecError::Internal("a moments state is cut short".into()))?;
+                r.take(used)?;
+                State::Moments { m, accepted }
             }
             t => return Err(ExecError::Internal(format!("unknown partial aggregate state {t}"))),
         })

@@ -674,8 +674,11 @@ impl Instance<'_> {
 
     fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let a = t.node.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
-        let child = self.child(t, 0)?;
-        let mut block = crate::aggregate::Aggregation::from_thrift(a)?.run(&child)?;
+        let agg = crate::aggregate::Aggregation::from_thrift(a)?;
+        let mut block = match self.tablet_scans(t, &agg)? {
+            Some(parts) => parts,
+            None => agg.run(&self.child(t, 0)?)?,
+        };
         // the FE pushed the limit of an ORDER BY on the group keys into the aggregation
         if let (Some(info), Some(l)) = (&a.agg_sort_info_by_group_key, limit(t.node.limit)) {
             block = crate::aggregate::top_groups(block, info, l);
@@ -683,6 +686,29 @@ impl Instance<'_> {
         let tuple = if a.need_finalize { a.output_tuple_id } else { a.intermediate_tuple_id };
         let slots = self.plan.desc.tuple_slots(tuple)?.to_vec();
         Ok(Chunk { block: self.typed(block, &slots)?, slots })
+    }
+
+    /// A scalar first-phase aggregation straight over a scan of several tablets: one partial
+    /// state per tablet, as C++'s parallel scan tasks each keep their own (the merge combines
+    /// them). None for any other aggregation.
+    fn tablet_scans(&self, t: &PlanTree, agg: &crate::aggregate::Aggregation) -> Result<Option<Block>, ExecError> {
+        let Some(scan) = t.children.first().filter(|c| c.node.node_type == P::OLAP_SCAN_NODE) else { return Ok(None) };
+        let ranges = self.instance.scan_ranges.get(&scan.node.node_id).cloned().unwrap_or_default();
+        if agg.finalize || !agg.group_by.is_empty() || agg.functions.iter().any(|f| f.merge) || ranges.len() < 2 {
+            return Ok(None);
+        }
+        let mut out: Option<Block> = None;
+        for range in ranges {
+            let mut one = self.instance.clone();
+            one.scan_ranges.insert(scan.node.node_id, vec![range]);
+            let tablet = Instance { instance: &one, prefetched: Default::default(), ..*self };
+            let part = agg.run(&tablet.node(scan)?)?;
+            match &mut out {
+                None => out = Some(part),
+                Some(b) => b.rows.extend(part.rows),
+            }
+        }
+        Ok(out)
     }
 
     /// ANALYTIC_EVAL_NODE: each input row, in input order, then one column per function, typed

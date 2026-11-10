@@ -22,7 +22,10 @@ pub struct SlotMap(pub HashMap<i32, usize>);
 
 const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 /// The aggregate functions an aggregation node computes.
-pub const AGGREGATES: &[&str] = &["count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2"];
+pub const AGGREGATES: &[&str] = &[
+    "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
+    "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
+];
 
 fn function_name(n: &TExprNode) -> Option<String> {
     n.fn_
@@ -218,7 +221,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             N::CASE_EXPR => n.case_expr.is_some(),
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
-                Some("nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
+                Some("nullable" | "non_nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
@@ -723,6 +726,18 @@ fn eval_at(
             Some("nullable") => {
                 let (t, v) = kids.into_iter().next().ok_or_else(|| bad("nullable without its argument"))?;
                 (ColType { nullable: true, ..t }, v)
+            }
+            // `non_nullable(x)`: a NULL fails the query (`function_nullables.cpp:69-104`)
+            Some("non_nullable") => {
+                let (t, v) = kids.into_iter().next().ok_or_else(|| bad("non_nullable without its argument"))?;
+                if v.contains(&Datum::Null) {
+                    return Err(ExecError::Coded {
+                        code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
+                        name: "INVALID_ARGUMENT",
+                        msg: format!("There's NULL value in column {} which is illegal for non_nullable", t.name),
+                    });
+                }
+                (ColType { nullable: false, ..t }, v)
             }
             Some(f @ ("if" | "ifnull" | "coalesce")) => {
                 let to = node_type(n)?;
