@@ -242,5 +242,12 @@
   "query_p0.sql_functions.string_functions.test_parse_data_size_nullable.test_parse_data_size_nullable",
   "query_p0.sql_functions.string_functions.test_url_decode.test_url_decode",
   "query_p0.sql_functions.string_functions.test_url_encode.test_url_encode",
-  "query_p0.sql_functions.string_functions.test_url_functions.test_url_functions"
+  "query_p0.sql_functions.string_functions.test_url_functions.test_url_functions",
+  "nereids_p0.compress_materialize.compress_materialize.compress_materialize",
+  "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode",
+  "nereids_p0.sql_functions.hash_functions.test_hash_function.test_hash_function",
+  "nereids_p0.subquery.test_inlineview_with_project.inlineview_with_project",
+  "query_p0.sql_functions.datetime_functions.test_convert_tz.test_convert_tz",
+  "query_p0.sql_functions.datetime_functions.test_week_floor_ceil_microsecond.test_week_floor_ceil_microsecond",
+  "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar"
 ]

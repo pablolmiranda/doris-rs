@@ -116,6 +116,12 @@
     "result:cpp_instance_order"
    ],
    "reason": "Exchange 27, an INTERSECT with no ORDER BY: the set operation runs in several instances over a hash-partitioned exchange, and its rows reach the result sink in the order the instances finish. The reference gave (34, 42) first; doris-rs gave (36, 43) first in m6-s7b3-full-1. The replay, which keeps the recorded plan, gives the reference's order (run m6-s7b3-full-1, 2026-11-11). The out gate sorts the rows and passes."
+  },
+  "query_p0.expr_zonemap.test_expr_zonemap_pruning.test_expr_zonemap_pruning": {
+   "needs": [
+    "be:profile_counters"
+   ],
+   "reason": "It reads the query profile and asserts ExprZoneMapFilteredSegments and other scan counters, which doris-rs does not report. Its query features (starts_with) are supported from M6 story 7 batch 5; the counters are not."
   }
  },
  "groups": []

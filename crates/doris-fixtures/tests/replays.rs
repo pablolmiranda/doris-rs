@@ -503,3 +503,28 @@ fn exec_replies_are_loaded() {
         .collect();
     assert!(refused.iter().any(|m| m == "(127.0.0.1)[E-218]Operation year_add of 9999-12-31, 1 out of range"), "{refused:?}");
 }
+
+const BATCH5: [&str; 7] = [
+    "nereids_p0.compress_materialize.compress_materialize.compress_materialize",
+    "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode",
+    "nereids_p0.sql_functions.hash_functions.test_hash_function.test_hash_function",
+    "nereids_p0.subquery.test_inlineview_with_project.inlineview_with_project",
+    "query_p0.sql_functions.datetime_functions.test_convert_tz.test_convert_tz",
+    "query_p0.sql_functions.datetime_functions.test_week_floor_ceil_microsecond.test_week_floor_ceil_microsecond",
+    "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar",
+];
+
+#[test]
+fn batch5_replays_hold_their_features() {
+    let wanted = ["convert_tz", "date_format", "day_ceil", "day_floor", "day_hour_add", "day_second_add", "decode_as_varchar", "elt", "encode_as_bigint", "encode_as_int", "encode_as_largeint", "encode_as_smallint", "format_round", "from_microsecond", "from_millisecond", "from_second", "from_unixtime", "hour_ceil", "hour_floor", "locate", "milliseconds_add", "minute_ceil", "minute_floor", "minute_second_add", "money_format", "month_ceil", "month_floor", "months_between", "murmur_hash3_32", "murmur_hash3_64", "next_day", "not_null_or_empty", "null_or_empty", "quarter_ceil", "quarter_floor", "second_ceil", "second_floor", "second_microsecond_add", "starts_with", "sub_replace", "unix_timestamp", "week_ceil", "week_floor", "xxhash_32", "xxhash_64", "year_ceil", "year_floor"];
+    let mut seen = BTreeSet::new();
+    for s in BATCH5 {
+        let mut mine = BTreeSet::new();
+        for q in replays::load(s).queries() {
+            mine.extend(replays::functions(&q).into_iter().filter(|f| wanted.contains(&f.as_str())));
+        }
+        assert!(!mine.is_empty(), "{s} holds no batch 5 feature");
+        seen.extend(mine);
+    }
+    assert!(seen.len() >= 13, "batch 5 replays hold only {seen:?}");
+}
