@@ -17,7 +17,7 @@ use doris_thrift::gen::types::{TTabletCommitInfo, TUniqueId};
 
 use crate::error_log::write_error_log;
 use crate::fragment::WriteFragment;
-use crate::route::Router;
+use crate::route::{Routed, Router};
 use crate::value::{ColType, Value};
 use crate::RowError;
 
@@ -58,7 +58,10 @@ impl SinkOutcome {
 }
 
 fn status(code: TStatusCode, msg: Option<String>) -> TStatus {
-    TStatus { status_code: code, error_msgs: msg.map(|m| vec![m]) }
+    TStatus {
+        status_code: code,
+        error_msgs: msg.map(|m| vec![m]),
+    }
 }
 
 /// Bytes a row adds to the sink's input block (`Block::bytes`): each column's data, a 4-byte
@@ -129,7 +132,13 @@ impl TableSink {
     pub fn new(f: &WriteFragment, instance_ids: Vec<TUniqueId>) -> Result<TableSink, crate::ExecError> {
         let router = Router::new(f)?;
         let instances = Mutex::new(instance_ids.iter().map(|_| InstanceRows::default()).collect());
-        Ok(TableSink { f: f.clone(), router, instance_ids, instances, cancelled: Mutex::new(None) })
+        Ok(TableSink {
+            f: f.clone(),
+            router,
+            instance_ids,
+            instances,
+            cancelled: Mutex::new(None),
+        })
     }
 
     /// An instance's rows (destination column order; a row error is filtered), with whether
@@ -140,7 +149,9 @@ impl TableSink {
             return Err(crate::ExecError::Cancelled(why));
         }
         let mut all = self.instances.lock().unwrap_or_else(|e| e.into_inner());
-        let me = all.get_mut(instance).ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
+        let me = all
+            .get_mut(instance)
+            .ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
         // the whole block reaches the sink before its rows are checked
         me.reached += rows.len() as i64;
         for values in rows.iter().flatten() {
@@ -175,6 +186,23 @@ impl TableSink {
     /// query failed (`failure`), commits nothing and reports that status. Either way the counts,
     /// the error log and the first error are those of what reached the sink.
     pub fn finish(self, tablets: &Mutex<TabletManager>, error_dir: &Path, failure: Option<TStatus>) -> SinkOutcome {
+        let f = self.f.clone();
+        let failed = failure.is_some();
+        let (mut out, checked) = self.summarize(error_dir, failure);
+        if !failed {
+            commit(&f, &mut out, checked.names, checked.routed, tablets);
+        }
+        out
+    }
+
+    /// Ends the sink without writing: the counts, error log and first error of what reached it,
+    /// and the rows that passed, to be committed later (`commit_checked`) under another
+    /// transaction, as a group commit's internal load does.
+    pub fn check(self, error_dir: &Path) -> (SinkOutcome, Checked) {
+        self.summarize(error_dir, None)
+    }
+
+    fn summarize(self, error_dir: &Path, failure: Option<TStatus>) -> (SinkOutcome, Checked) {
         let f = &self.f;
         let instances = self.instances.into_inner().unwrap_or_else(|e| e.into_inner());
         let mut out = SinkOutcome {
@@ -186,7 +214,12 @@ impl TableSink {
             bytes: instances.iter().map(|i| i.bytes).sum(),
             first_error: None,
             error_log: None,
-            instances: self.instance_ids.iter().zip(&instances).map(|(id, i)| (id.clone(), i.reached, i.bytes)).collect(),
+            instances: self
+                .instance_ids
+                .iter()
+                .zip(&instances)
+                .map(|(id, i)| (id.clone(), i.reached, i.bytes))
+                .collect(),
         };
         // the first instance (in plan order) that logged errors names the load's log
         if let Some((n, rows)) = instances.iter().enumerate().find(|(_, i)| !i.errors.is_empty()) {
@@ -194,7 +227,10 @@ impl TableSink {
             out.first_error = Some(format!("{}. Src line: {}", e.msg, e.line));
             let id = &self.instance_ids[n];
             let (db, label) = if f.plan == crate::fragment::WritePlan::Stream {
-                ("insert".to_string(), format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64))
+                (
+                    "insert".to_string(),
+                    format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64),
+                )
             } else {
                 // RuntimeState::init: db insert_stmt, the label print_id(fragment_instance_id)
                 ("insert_stmt".to_string(), format!("{:x}-{:x}", id.hi as u64, id.lo as u64))
@@ -204,17 +240,81 @@ impl TableSink {
                 Err(e) => eprintln!("doris-rs be: cannot write the load error log: {e}"),
             }
         }
+        let names = f.dest_columns().iter().map(|c| c.name.clone()).collect();
         if failure.is_some() {
             // a cancelled load counts every row that reached it as loaded and none as filtered
             if failure.as_ref().is_some_and(|s| s.status_code == TStatusCode::CANCELLED) {
                 out.loaded = instances.iter().map(|i| i.reached).sum();
                 out.filtered = 0;
             }
-            return out;
+            return (
+                out,
+                Checked {
+                    names,
+                    routed: Vec::new(),
+                    bytes: 0,
+                },
+            );
         }
+        let bytes = out.bytes;
+        let routed = instances.into_iter().flat_map(|i| i.routed).collect();
+        (out, Checked { names, routed, bytes })
+    }
+}
+
+/// Rows a table sink checked and routed but did not write (`TableSink::check`).
+pub struct Checked {
+    /// The destination columns the rows hold, in order.
+    names: Vec<String>,
+    routed: Vec<Routed>,
+    bytes: i64,
+}
+
+impl Checked {
+    /// Rows that passed.
+    pub fn loaded(&self) -> i64 {
+        self.routed.len() as i64
+    }
+
+    /// Bytes of the rows that reached the sink (`Block::bytes`).
+    pub fn bytes(&self) -> i64 {
+        self.bytes
+    }
+}
+
+/// Writes and commits checked rows, in order, under `f`'s transaction: each touched partition's
+/// tablets (an empty rowset where no row came), as `TableSink::finish` does. The rows must hold
+/// the same columns.
+pub fn commit_checked(f: &WriteFragment, rows: Vec<Checked>, tablets: &Mutex<TabletManager>) -> SinkOutcome {
+    let mut out = SinkOutcome {
+        status: status(TStatusCode::OK, None),
+        commit_infos: Vec::new(),
+        loaded: rows.iter().map(Checked::loaded).sum(),
+        filtered: 0,
+        unselected: 0,
+        bytes: rows.iter().map(|c| c.bytes).sum(),
+        first_error: None,
+        error_log: None,
+        instances: Vec::new(),
+    };
+    let Some(names) = rows.first().map(|c| c.names.clone()) else {
+        return out;
+    };
+    if rows.iter().any(|c| c.names != names) {
+        out.status = status(TStatusCode::INTERNAL_ERROR, Some("group commit loads of different columns".into()));
+        return out;
+    }
+    let routed = rows.into_iter().flat_map(|c| c.routed).collect();
+    commit(f, &mut out, names, routed, tablets);
+    out
+}
+
+/// Groups routed rows by tablet and commits them (`commit_tablets`).
+fn commit(f: &WriteFragment, out: &mut SinkOutcome, names: Vec<String>, routed: Vec<Routed>, tablets: &Mutex<TabletManager>) {
+    {
         let mut groups: BTreeMap<i64, Vec<Vec<Datum>>> = BTreeMap::new();
         let mut touched: BTreeSet<i64> = BTreeSet::new();
-        for r in instances.into_iter().flat_map(|i| i.routed) {
+        for r in routed {
             touched.insert(r.partition_id);
             // a row goes to one tablet per index: moved, not copied, when there is one index
             match r.tablets.as_slice() {
@@ -226,8 +326,8 @@ impl TableSink {
                 }
             }
         }
-        commit(f, &mut out, groups, &touched, tablets);
-        out
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        commit_tablets(f, out, &names, groups, &touched, tablets);
     }
 }
 
@@ -251,10 +351,16 @@ pub fn run_sink(
 
 /// Writes every tablet of every index of each touched partition (an empty rowset where no row
 /// came) and commits them to the load's transaction.
-fn commit(f: &WriteFragment, out: &mut SinkOutcome, mut groups: BTreeMap<i64, Vec<Vec<Datum>>>, touched: &BTreeSet<i64>, tablets: &Mutex<TabletManager>) {
+fn commit_tablets(
+    f: &WriteFragment,
+    out: &mut SinkOutcome,
+    names: &[&str],
+    mut groups: BTreeMap<i64, Vec<Vec<Datum>>>,
+    touched: &BTreeSet<i64>,
+    tablets: &Mutex<TabletManager>,
+) {
     let load_id = uid(&f.sink.load_id);
     let txn = f.sink.txn_id;
-    let names: Vec<&str> = f.dest_columns().iter().map(|c| c.name.as_str()).collect();
     // The tablet lock is held only to read each tablet's meta and to commit: segments are
     // written and synced without it, so publishes, reports and other loads are not held up.
     struct Planned {
@@ -285,13 +391,23 @@ fn commit(f: &WriteFragment, out: &mut SinkOutcome, mut groups: BTreeMap<i64, Ve
                             .iter()
                             .map(|c| {
                                 let name = c.name.as_deref().unwrap_or_default();
-                                names.iter().position(|n| *n == name).ok_or_else(|| format!("column {name} is not written"))
+                                names
+                                    .iter()
+                                    .position(|n| *n == name)
+                                    .ok_or_else(|| format!("column {name} is not written"))
                             })
                             .collect::<Result<_, _>>()?;
                         let rows: Vec<Vec<Datum>> = rows.into_iter().map(|r| pick.iter().map(|i| r[*i].clone()).collect()).collect();
                         let id = mgr.next_rowset_id();
                         let dir = mgr.tablet_path(tablet).ok_or("no tablet path")?;
-                        Ok::<_, String>(Planned { partition: part.id, tablet, meta, dir, id, rows })
+                        Ok::<_, String>(Planned {
+                            partition: part.id,
+                            tablet,
+                            meta,
+                            dir,
+                            id,
+                            rows,
+                        })
                     })();
                     match res {
                         Ok(p) => planned.push(p),
@@ -313,7 +429,11 @@ fn commit(f: &WriteFragment, out: &mut SinkOutcome, mut groups: BTreeMap<i64, Ve
         if let Err(e) = mgr.commit_txn(partition, txn, tablet, load_id, rs) {
             return fail(out, e.to_string());
         }
-        out.commit_infos.push(TTabletCommitInfo { tablet_id: tablet, backend_id: f.backend_id, invalid_dict_cols: None });
+        out.commit_infos.push(TTabletCommitInfo {
+            tablet_id: tablet,
+            backend_id: f.backend_id,
+            invalid_dict_cols: None,
+        });
     }
 }
 
