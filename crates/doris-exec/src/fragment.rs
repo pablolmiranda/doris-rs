@@ -23,9 +23,7 @@ const VERSION_3: i32 = 3;
 
 pub fn decode_fragments(req: &PExecPlanFragmentRequest) -> Result<TPipelineFragmentParamsList, ExecError> {
     if req.version != Some(VERSION_3) {
-        return Err(ExecError::Unsupported {
-            what: format!("fragment request version {:?}", req.version),
-        });
+        return Err(ExecError::Unsupported { what: format!("fragment request version {:?}", req.version) });
     }
     let bytes = req.request.as_deref().ok_or_else(|| ExecError::BadRequest("no request bytes".into()))?;
     let mut b = bytes;
@@ -93,10 +91,7 @@ fn node_name(t: TPlanNodeType) -> String {
         (TPlanNodeType::EXCEPT_NODE, "EXCEPT_NODE"),
         (TPlanNodeType::GROUP_COMMIT_SCAN_NODE, "GROUP_COMMIT_SCAN_NODE"),
     ];
-    names
-        .iter()
-        .find(|(n, _)| *n == t)
-        .map_or_else(|| format!("plan node type {}", t.0), |(_, s)| s.to_string())
+    names.iter().find(|(n, _)| *n == t).map_or_else(|| format!("plan node type {}", t.0), |(_, s)| s.to_string())
 }
 
 /// The slots of a tuple, in descriptor table order.
@@ -131,9 +126,7 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
         [n] if n.node_type == TPlanNodeType::GROUP_COMMIT_SCAN_NODE => WritePlan::GroupCommit,
         [] => return Err(ExecError::BadRequest("an empty plan".into())),
         _ => {
-            let other = nodes
-                .iter()
-                .find(|n| !matches!(n.node_type, TPlanNodeType::UNION_NODE | TPlanNodeType::FILE_SCAN_NODE));
+            let other = nodes.iter().find(|n| !matches!(n.node_type, TPlanNodeType::UNION_NODE | TPlanNodeType::FILE_SCAN_NODE));
             return Err(ExecError::Unsupported {
                 what: other.map_or_else(|| "a plan of several nodes".to_string(), |n| node_name(n.node_type)),
             });
@@ -142,22 +135,11 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
     let wf = table_sink(params, plan.clone())?;
     if plan == WritePlan::Values {
         let n = &nodes[0];
-        let union = n
-            .union_node
-            .as_ref()
-            .ok_or_else(|| ExecError::BadRequest("UNION_NODE without its params".into()))?;
+        let union = n.union_node.as_ref().ok_or_else(|| ExecError::BadRequest("UNION_NODE without its params".into()))?;
         if !union.result_expr_lists.is_empty() {
-            return Err(ExecError::Unsupported {
-                what: "a union with children".into(),
-            });
+            return Err(ExecError::Unsupported { what: "a union with children".into() });
         }
-        for e in union
-            .const_expr_lists
-            .iter()
-            .flatten()
-            .chain(n.projections.iter().flatten())
-            .chain(fragment.output_exprs.iter().flatten())
-        {
+        for e in union.const_expr_lists.iter().flatten().chain(n.projections.iter().flatten()).chain(fragment.output_exprs.iter().flatten()) {
             check(e)?;
         }
     }
@@ -201,9 +183,7 @@ pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<W
         .clone()
         .ok_or_else(|| ExecError::BadRequest("OLAP_TABLE_SINK without its params".into()))?;
     if sink.schema.is_partial_update == Some(true) {
-        return Err(ExecError::Unsupported {
-            what: "partial update".into(),
-        });
+        return Err(ExecError::Unsupported { what: "partial update".into() });
     }
     let group_commit = match (is_group_commit, sink.group_commit_mode) {
         (false, None) => None,
@@ -221,9 +201,7 @@ pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<W
         });
     }
     if sink.partition.enable_automatic_partition == Some(true) {
-        return Err(ExecError::Unsupported {
-            what: "automatic partitions".into(),
-        });
+        return Err(ExecError::Unsupported { what: "automatic partitions".into() });
     }
     let base = base_columns(&sink);
     let dest = sink
@@ -232,16 +210,13 @@ pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<W
         .iter()
         .map(|s| match base.get(&s.col_name) {
             Some(c) => Ok(ColType::from_column(c)),
-            None => ColType::from_type_desc(&s.col_name, &s.slot_type, s.null_indicator_bit >= 0).ok_or_else(|| ExecError::Unsupported {
-                what: format!("column {} of a nested type", s.col_name),
-            }),
+            None => ColType::from_type_desc(&s.col_name, &s.slot_type, s.null_indicator_bit >= 0)
+                .ok_or_else(|| ExecError::Unsupported { what: format!("column {} of a nested type", s.col_name) }),
         })
         .collect::<Result<Vec<_>, _>>()?;
     for c in base.values().map(ColType::from_column).chain(dest.iter().cloned()) {
         if !c.writable() {
-            return Err(ExecError::Unsupported {
-                what: format!("column {} of type {}", c.name, c.type_name()),
-            });
+            return Err(ExecError::Unsupported { what: format!("column {} of type {}", c.name, c.type_name()) });
         }
     }
     let instance_id = params
@@ -302,10 +277,7 @@ impl WriteFragment {
         if exprs.is_empty() {
             return self.dest.iter().map(|c| c.nullable).collect();
         }
-        exprs
-            .iter()
-            .map(|e| e.nodes.first().and_then(|n| n.is_nullable).unwrap_or(true))
-            .collect()
+        exprs.iter().map(|e| e.nodes.first().and_then(|n| n.is_nullable).unwrap_or(true)).collect()
     }
 
     /// The sink's destination columns, in the order rows reach it.
@@ -322,10 +294,7 @@ impl WriteFragment {
         let n = self.node();
         let union = n.union_node.as_ref().expect("checked");
         let union_slots: Vec<i32> = tuple_slots(&self.params, union.tuple_id).iter().map(|s| s.id).collect();
-        let proj_slots: Vec<i32> = n
-            .output_tuple_id
-            .map(|t| tuple_slots(&self.params, t).iter().map(|s| s.id).collect())
-            .unwrap_or_default();
+        let proj_slots: Vec<i32> = n.output_tuple_id.map(|t| tuple_slots(&self.params, t).iter().map(|s| s.id).collect()).unwrap_or_default();
         Ok(union
             .const_expr_lists
             .iter()

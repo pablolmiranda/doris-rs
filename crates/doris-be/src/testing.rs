@@ -6,10 +6,10 @@ use std::sync::{Condvar, Mutex};
 use doris_thrift::gen::frontend_service::{
     FrontendServiceDescribeTablesArgs, FrontendServiceDescribeTablesResult, FrontendServiceGetDbNamesArgs, FrontendServiceGetDbNamesResult,
     FrontendServiceGetTableNamesArgs, FrontendServiceGetTableNamesResult, FrontendServiceListTableStatusArgs, FrontendServiceListTableStatusResult,
-    FrontendServiceShowVariablesArgs, FrontendServiceShowVariablesResult, TDescribeTablesParams, TDescribeTablesResult, TGetDbsParams, TGetDbsResult,
-    TGetTablesParams, TGetTablesResult, TListTableStatusResult, TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest,
-    TLoadTxnCommitResult, TLoadTxnRollbackRequest, TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult, TShowVariableRequest,
-    TShowVariableResult, TStreamLoadPutRequest, TStreamLoadPutResult,
+    FrontendServiceShowVariablesArgs, FrontendServiceShowVariablesResult, TDescribeTablesParams, TDescribeTablesResult, TGetDbsParams,
+    TGetDbsResult, TGetTablesParams, TGetTablesResult, TListTableStatusResult, TShowVariableRequest, TShowVariableResult,
+    TLoadTxnBeginRequest, TLoadTxnBeginResult, TLoadTxnCommitRequest, TLoadTxnCommitResult, TLoadTxnRollbackRequest,
+    TLoadTxnRollbackResult, TReportExecStatusParams, TReportExecStatusResult, TStreamLoadPutRequest, TStreamLoadPutResult,
 };
 use doris_thrift::gen::master_service::{TFinishTaskRequest, TMasterResult, TReportRequest};
 use doris_thrift::gen::types::TNetworkAddress;
@@ -80,23 +80,11 @@ impl FakeFe {
             let _ = write(&mut o);
             let _ = o.write_message_end();
         }
-        let reply = self
-            .recorded
-            .lock()
-            .unwrap()
-            .as_mut()
-            .and_then(|f| f(method, &call))
-            .ok_or_else(unscripted)?;
+        let reply = self.recorded.lock().unwrap().as_mut().and_then(|f| f(method, &call)).ok_or_else(unscripted)?;
         let mut b = reply.as_slice();
         let mut i = TBinaryInputProtocol::new(&mut b, true);
-        i.read_message_begin().map_err(|e| FeError::Call {
-            addr: "fake".into(),
-            msg: e.to_string(),
-        })?;
-        read(&mut i).map_err(|e| FeError::Call {
-            addr: "fake".into(),
-            msg: e.to_string(),
-        })
+        i.read_message_begin().map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })?;
+        read(&mut i).map_err(|e| FeError::Call { addr: "fake".into(), msg: e.to_string() })
     }
 
     /// Makes every later `report_exec_status` panic.
@@ -144,9 +132,7 @@ impl FakeFe {
     }
 
     fn fail(&self) -> bool {
-        self.failures
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok()
+        self.failures.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
     }
 }
 
@@ -160,10 +146,7 @@ impl FeClient for FakeFe {
         drop(self.unblocked.wait_while(blocked, |b| *b).unwrap());
         self.attempts.fetch_add(1, Ordering::SeqCst);
         if self.fail() {
-            return Err(FeError::Call {
-                addr: "fake".into(),
-                msg: "injected failure".into(),
-            });
+            return Err(FeError::Call { addr: "fake".into(), msg: "injected failure".into() });
         }
         self.finishes.lock().unwrap().push(req);
         Ok(ok())
@@ -204,68 +187,44 @@ impl FeClient for FakeFe {
     }
 
     fn get_db_names(&self, _fe: &TNetworkAddress, req: TGetDbsParams) -> Result<TGetDbsResult, FeError> {
-        self.recorded_call(
-            "getDbNames",
-            |o| FrontendServiceGetDbNamesArgs { params: req }.write_to_out_protocol(o),
-            |i| FrontendServiceGetDbNamesResult::read_from_in_protocol(i),
-        )?
-        .result_value
-        .ok_or_else(no_value)
+        self.recorded_call("getDbNames", |o| FrontendServiceGetDbNamesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceGetDbNamesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
     }
 
     fn get_table_names(&self, _fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TGetTablesResult, FeError> {
-        self.recorded_call(
-            "getTableNames",
-            |o| FrontendServiceGetTableNamesArgs { params: req }.write_to_out_protocol(o),
-            |i| FrontendServiceGetTableNamesResult::read_from_in_protocol(i),
-        )?
-        .result_value
-        .ok_or_else(no_value)
+        self.recorded_call("getTableNames", |o| FrontendServiceGetTableNamesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceGetTableNamesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
     }
 
     fn describe_tables(&self, _fe: &TNetworkAddress, req: TDescribeTablesParams) -> Result<TDescribeTablesResult, FeError> {
-        self.recorded_call(
-            "describeTables",
-            |o| FrontendServiceDescribeTablesArgs { params: req }.write_to_out_protocol(o),
-            |i| FrontendServiceDescribeTablesResult::read_from_in_protocol(i),
-        )?
-        .result_value
-        .ok_or_else(no_value)
+        self.recorded_call("describeTables", |o| FrontendServiceDescribeTablesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceDescribeTablesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
     }
 
     fn list_table_status(&self, _fe: &TNetworkAddress, req: TGetTablesParams) -> Result<TListTableStatusResult, FeError> {
-        self.recorded_call(
-            "listTableStatus",
-            |o| FrontendServiceListTableStatusArgs { params: req }.write_to_out_protocol(o),
-            |i| FrontendServiceListTableStatusResult::read_from_in_protocol(i),
-        )?
+        self.recorded_call("listTableStatus", |o| FrontendServiceListTableStatusArgs { params: req }.write_to_out_protocol(o), |i| {
+            FrontendServiceListTableStatusResult::read_from_in_protocol(i)
+        })?
         .result_value
         .ok_or_else(no_value)
     }
 
     fn show_variables(&self, _fe: &TNetworkAddress, req: TShowVariableRequest) -> Result<TShowVariableResult, FeError> {
-        self.recorded_call(
-            "showVariables",
-            |o| FrontendServiceShowVariablesArgs { params: req }.write_to_out_protocol(o),
-            |i| FrontendServiceShowVariablesResult::read_from_in_protocol(i),
-        )?
-        .result_value
-        .ok_or_else(no_value)
+        self.recorded_call("showVariables", |o| FrontendServiceShowVariablesArgs { params: req }.write_to_out_protocol(o), |i| FrontendServiceShowVariablesResult::read_from_in_protocol(i))?
+            .result_value
+            .ok_or_else(no_value)
     }
 }
 
 fn no_value() -> FeError {
-    FeError::Call {
-        addr: "fake".into(),
-        msg: "the recorded reply has no result".into(),
-    }
+    FeError::Call { addr: "fake".into(), msg: "the recorded reply has no result".into() }
 }
 
 fn unscripted() -> FeError {
-    FeError::Call {
-        addr: "fake".into(),
-        msg: "no scripted answer".into(),
-    }
+    FeError::Call { addr: "fake".into(), msg: "no scripted answer".into() }
 }
 
 /// A [`FakeFe`] reachable over the network as the master FE's Thrift port: it answers
@@ -295,8 +254,8 @@ impl FakeFeServer {
 fn serve_fake_fe(fe: &FakeFe, stream: std::net::TcpStream) {
     use doris_thrift::gen::frontend_service::{FrontendServiceFinishTaskArgs, FrontendServiceReportArgs};
     use thrift::protocol::{
-        TBinaryInputProtocol, TBinaryOutputProtocol, TFieldIdentifier, TInputProtocol, TMessageIdentifier, TMessageType, TOutputProtocol,
-        TSerializable, TStructIdentifier, TType,
+        TBinaryInputProtocol, TBinaryOutputProtocol, TFieldIdentifier, TInputProtocol, TMessageIdentifier, TMessageType,
+        TOutputProtocol, TSerializable, TStructIdentifier, TType,
     };
     use thrift::transport::{TBufferedReadTransport, TBufferedWriteTransport};
 
@@ -306,12 +265,8 @@ fn serve_fake_fe(fe: &FakeFe, stream: std::net::TcpStream) {
     loop {
         let Ok(msg) = i.read_message_begin() else { return };
         let result = match msg.name.as_str() {
-            "report" => FrontendServiceReportArgs::read_from_in_protocol(&mut i)
-                .ok()
-                .map(|a| fe.report(a.request)),
-            "finishTask" => FrontendServiceFinishTaskArgs::read_from_in_protocol(&mut i)
-                .ok()
-                .map(|a| fe.finish_task(a.request)),
+            "report" => FrontendServiceReportArgs::read_from_in_protocol(&mut i).ok().map(|a| fe.report(a.request)),
+            "finishTask" => FrontendServiceFinishTaskArgs::read_from_in_protocol(&mut i).ok().map(|a| fe.finish_task(a.request)),
             _ => None,
         };
         let _ = i.read_message_end();

@@ -58,10 +58,7 @@ impl SinkOutcome {
 }
 
 fn status(code: TStatusCode, msg: Option<String>) -> TStatus {
-    TStatus {
-        status_code: code,
-        error_msgs: msg.map(|m| vec![m]),
-    }
+    TStatus { status_code: code, error_msgs: msg.map(|m| vec![m]) }
 }
 
 /// Bytes a row adds to the sink's input block (`Block::bytes`): each column's data, a 4-byte
@@ -135,13 +132,7 @@ impl TableSink {
     pub fn new(f: &WriteFragment, instance_ids: Vec<TUniqueId>) -> Result<TableSink, crate::ExecError> {
         let router = Router::new(f)?;
         let instances = Mutex::new(instance_ids.iter().map(|_| InstanceRows::default()).collect());
-        Ok(TableSink {
-            f: f.clone(),
-            router,
-            instance_ids,
-            instances,
-            cancelled: Mutex::new(None),
-        })
+        Ok(TableSink { f: f.clone(), router, instance_ids, instances, cancelled: Mutex::new(None) })
     }
 
     /// An instance's rows (destination column order; a row error is filtered), with whether
@@ -152,9 +143,7 @@ impl TableSink {
             return Err(crate::ExecError::Cancelled(why));
         }
         let mut all = self.instances.lock().unwrap_or_else(|e| e.into_inner());
-        let me = all
-            .get_mut(instance)
-            .ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
+        let me = all.get_mut(instance).ok_or_else(|| crate::ExecError::BadRequest(format!("a table sink without instance {instance}")))?;
         // the whole block reaches the sink before its rows are checked
         me.reached += rows.len() as i64;
         for values in rows.iter().flatten() {
@@ -221,12 +210,7 @@ impl TableSink {
             bytes: instances.iter().map(|i| i.bytes).sum(),
             first_error: None,
             error_log: None,
-            instances: self
-                .instance_ids
-                .iter()
-                .zip(&instances)
-                .map(|(id, i)| (id.clone(), i.reached, i.bytes))
-                .collect(),
+            instances: self.instance_ids.iter().zip(&instances).map(|(id, i)| (id.clone(), i.reached, i.bytes)).collect(),
         };
         // the first instance (in plan order) that logged errors names the load's log
         if let Some((n, rows)) = instances.iter().enumerate().find(|(_, i)| !i.errors.is_empty()) {
@@ -234,10 +218,7 @@ impl TableSink {
             out.first_error = Some(format!("{}. Src line: {}", e.msg, e.line));
             let id = &self.instance_ids[n];
             let (db, label) = if f.plan == crate::fragment::WritePlan::Stream {
-                (
-                    "insert".to_string(),
-                    format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64),
-                )
+                ("insert".to_string(), format!("stmt_{:x}-{:x}", f.query_id.hi as u64, f.query_id.lo as u64))
             } else {
                 // RuntimeState::init: db insert_stmt, the label print_id(fragment_instance_id)
                 ("insert_stmt".to_string(), format!("{:x}-{:x}", id.hi as u64, id.lo as u64))
@@ -398,23 +379,13 @@ fn commit_tablets(
                             .iter()
                             .map(|c| {
                                 let name = c.name.as_deref().unwrap_or_default();
-                                names
-                                    .iter()
-                                    .position(|n| *n == name)
-                                    .ok_or_else(|| format!("column {name} is not written"))
+                                names.iter().position(|n| *n == name).ok_or_else(|| format!("column {name} is not written"))
                             })
                             .collect::<Result<_, _>>()?;
                         let rows: Vec<Vec<Datum>> = rows.into_iter().map(|r| pick.iter().map(|i| r[*i].clone()).collect()).collect();
                         let id = mgr.next_rowset_id();
                         let dir = mgr.tablet_path(tablet).ok_or("no tablet path")?;
-                        Ok::<_, String>(Planned {
-                            partition: part.id,
-                            tablet,
-                            meta,
-                            dir,
-                            id,
-                            rows,
-                        })
+                        Ok::<_, String>(Planned { partition: part.id, tablet, meta, dir, id, rows })
                     })();
                     match res {
                         Ok(p) => planned.push(p),
@@ -436,11 +407,7 @@ fn commit_tablets(
         if let Err(e) = mgr.commit_txn(partition, txn, tablet, load_id, rs) {
             return fail(out, e.to_string());
         }
-        out.commit_infos.push(TTabletCommitInfo {
-            tablet_id: tablet,
-            backend_id: f.backend_id,
-            invalid_dict_cols: None,
-        });
+        out.commit_infos.push(TTabletCommitInfo { tablet_id: tablet, backend_id: f.backend_id, invalid_dict_cols: None });
     }
 }
 

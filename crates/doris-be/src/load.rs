@@ -92,19 +92,13 @@ fn now_ms() -> i64 {
 }
 
 fn pstatus(code: i32, msg: Option<String>) -> PStatus {
-    PStatus {
-        status_code: code,
-        error_msgs: msg.into_iter().collect(),
-    }
+    PStatus { status_code: code, error_msgs: msg.into_iter().collect() }
 }
 
 /// Where load error logs go: `<first data dir>/error_log`.
 pub(crate) fn error_dir(tablets: &Mutex<TabletManager>) -> PathBuf {
     let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
-    mgr.data_dirs()
-        .first()
-        .map(|d| d.root().join("error_log"))
-        .unwrap_or_else(|| PathBuf::from("error_log"))
+    mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
 }
 
 impl LoadService {
@@ -150,15 +144,11 @@ impl LoadService {
         let planned = decode_fragments(req).and_then(|list| {
             let params = list.params_list.unwrap_or_default();
             let [p] = params.as_slice() else {
-                return Err(ExecError::Unsupported {
-                    what: format!("a request of {} fragments", params.len()),
-                });
+                return Err(ExecError::Unsupported { what: format!("a request of {} fragments", params.len()) });
             };
             let f = plan_write(p)?;
             if f.plan != WritePlan::Values {
-                return Err(ExecError::Unsupported {
-                    what: "a file scan outside a stream load".into(),
-                });
+                return Err(ExecError::Unsupported { what: "a file scan outside a stream load".into() });
             }
             Ok(f)
         });
@@ -233,11 +223,7 @@ impl LoadService {
     /// Waits until no insert is running; false on timeout.
     pub fn wait_idle(&self, timeout: Duration) -> bool {
         let n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
-        let (_g, res) = self
-            .inner
-            .idle
-            .wait_timeout_while(n, timeout, |n| *n > 0)
-            .unwrap_or_else(|e| e.into_inner());
+        let (_g, res) = self.inner.idle.wait_timeout_while(n, timeout, |n| *n > 0).unwrap_or_else(|e| e.into_inner());
         !res.timed_out()
     }
 
@@ -377,9 +363,7 @@ impl Inner {
     }
 
     fn tracking_url(&self, o: &SinkOutcome) -> Option<String> {
-        o.error_log
-            .as_ref()
-            .map(|f| format!("http://{}:{}/api/_load_error_log?file={f}", self.master.localhost(), self.http_port))
+        o.error_log.as_ref().map(|f| format!("http://{}:{}/api/_load_error_log?file={f}", self.master.localhost(), self.http_port))
     }
 }
 
@@ -439,14 +423,7 @@ fn basic_auth(h: &str) -> Option<(String, String)> {
 
 fn uuid() -> String {
     let (a, b) = (random_u64(), random_u64());
-    format!(
-        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-        a >> 32,
-        (a >> 16) & 0xffff,
-        a & 0xfff | 0x4000,
-        (b >> 48) & 0x3fff | 0x8000,
-        b & 0xffff_ffff_ffff
-    )
+    format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}", a >> 32, (a >> 16) & 0xffff, a & 0xfff | 0x4000, (b >> 48) & 0x3fff | 0x8000, b & 0xffff_ffff_ffff)
 }
 
 impl<'a> StreamLoad<'a> {
@@ -462,10 +439,7 @@ impl<'a> StreamLoad<'a> {
             passwd,
             token,
             user_ip,
-            load_id: TUniqueId {
-                hi: random_u64() as i64,
-                lo: random_u64() as i64,
-            },
+            load_id: TUniqueId { hi: random_u64() as i64, lo: random_u64() as i64 },
             txn_id: -1,
             db_id: None,
             started: Instant::now(),
@@ -549,11 +523,7 @@ impl<'a> StreamLoad<'a> {
         };
         // _on_header: Content-Length against streaming_load_max_mb, before the transaction begins
         let max = self.inner.max_body_bytes.load(Ordering::Relaxed);
-        if let Some(len) = self
-            .header("content-length")
-            .and_then(|l| l.trim().parse::<u64>().ok())
-            .filter(|l| *l > max)
-        {
+        if let Some(len) = self.header("content-length").and_then(|l| l.trim().parse::<u64>().ok()).filter(|l| *l > max) {
             return self.fail(format!(
                 "[EXCEEDED_LIMIT]body size {len} bytes ({:.2} MiB) exceeds the limit of {max} bytes ({} MiB) set by BE's conf streaming_load_max_mb. Increase it if you are sure this load is reasonable",
                 len as f64 / MEBIBYTE as f64,
@@ -651,10 +621,7 @@ impl<'a> StreamLoad<'a> {
                 return self.rollback();
             }
         };
-        let planned = put
-            .pipeline_params
-            .ok_or_else(|| ExecError::BadRequest("no plan".into()))
-            .and_then(|p| plan_write(&p));
+        let planned = put.pipeline_params.ok_or_else(|| ExecError::BadRequest("no plan".into())).and_then(|p| plan_write(&p));
         let mut f: WriteFragment = match planned {
             Ok(f) => f,
             Err(e) => {
@@ -709,10 +676,7 @@ impl<'a> StreamLoad<'a> {
         self.error_url = self.inner.tracking_url(&outcome);
         if outcome.status.status_code != TStatusCode::OK {
             self.first_error = outcome.first_error.clone();
-            self.fail(format!(
-                "[INTERNAL_ERROR]{}",
-                outcome.status.error_msgs.clone().unwrap_or_default().join("; ")
-            ));
+            self.fail(format!("[INTERNAL_ERROR]{}", outcome.status.error_msgs.clone().unwrap_or_default().join("; ")));
             return self.rollback();
         }
         // StreamLoadExecutor: the filter ratio over the rows that were not unselected
@@ -792,15 +756,8 @@ impl<'a> StreamLoad<'a> {
                 mgr.data_dirs().first().map(|d| d.root().display().to_string()).unwrap_or_default()
             };
             let shard = self.inner.next_shard.fetch_add(1, Ordering::Relaxed) % MAX_SHARD_NUM;
-            let usec = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.subsec_micros());
-            format!(
-                "{root}/mini_download/{}/__shard_{shard}//{}.{}.{usec}",
-                self.req.db,
-                self.req.table,
-                doris_storage::timestamp()
-            )
+            let usec = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_micros());
+            format!("{root}/mini_download/{}/__shard_{shard}//{}.{}.{usec}", self.req.db, self.req.table, doris_storage::timestamp())
         });
         let (mut read_json_by_line, mut strip_outer_array) = (is_true("read_json_by_line"), is_true("strip_outer_array"));
         if h("read_json_by_line").is_none() && h("strip_outer_array").is_none() {
