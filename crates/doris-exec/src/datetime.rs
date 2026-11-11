@@ -541,6 +541,7 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         "str_to_date" => args.len() == 2 && args.iter().all(text) && is_date(to),
         _ if crate::datetime_round::is_function(name) => crate::datetime_round::supported(name, args, to),
         _ if crate::unixtime::is_function(name) => crate::unixtime::supported(name, args, to),
+        _ if crate::tz::is_function(name) => crate::tz::supported(args, to),
         _ => match Unit::parse(name) {
             Some((unit, _)) => {
                 let time_unit = matches!(unit, Unit::Hour | Unit::Minute | Unit::Second);
@@ -564,6 +565,7 @@ pub fn is_date_function(name: &str) -> bool {
     ) || Unit::parse(name).is_some()
         || crate::datetime_round::is_function(name)
         || crate::unixtime::is_function(name)
+        || crate::tz::is_function(name)
 }
 
 fn int(d: &Datum) -> i64 {
@@ -581,6 +583,9 @@ pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], cons
     }
     if crate::unixtime::is_function(name) {
         return crate::unixtime::eval(name, types, args, constant, rows);
+    }
+    if crate::tz::is_function(name) {
+        return crate::tz::eval(args, constant, rows);
     }
     let dt_of = |i: usize, d: &Datum| Dt::unpack(i128::from(int(d)), types[i].ptype == T::DATETIMEV2);
     let mut out = Vec::with_capacity(rows);
