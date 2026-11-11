@@ -566,7 +566,7 @@ fn regexp_evaluates_with_the_querys_options() {
     check_read(&e).expect("supported");
     let off = eval_column(&e, &block, &slots).expect_err("RE2 rejects lookbehind").to_string();
     assert!(off.contains("try setting enable_extended_regex=true"), "{off}");
-    let on = RegexOptions { extended: true, hyperscan_fallback: true };
+    let on = RegexOptions { extended: true, hyperscan_fallback: true, new_unix_timestamp: false };
     let (_, got) = with_regex_options(on, || eval_column(&e, &block, &slots)).expect("Boost runs it");
     assert_eq!(got, vec![Datum::Bool(true)]);
     let rlike = call("rlike", ty(T::BOOLEAN), vec![slot(1, v), string("^foo")]);

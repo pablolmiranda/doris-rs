@@ -95,7 +95,7 @@ pub fn is_leap(year: i64) -> bool {
     year % 4 == 0 && (year % 100 != 0 || (year % 400 == 0 && year != 0))
 }
 
-fn days_in_month(year: i64, month: i64) -> i64 {
+pub(crate) fn days_in_month(year: i64, month: i64) -> i64 {
     if month == 2 && is_leap(year) {
         29
     } else {
@@ -276,7 +276,7 @@ pub fn days_diff(a: Dt, b: Dt) -> i64 {
 }
 
 /// `mysql_week_mode` (`vdatetime_value.cpp:56-62`).
-fn mysql_week_mode(mode: i64) -> u8 {
+pub(crate) fn mysql_week_mode(mode: i64) -> u8 {
     let mut mode = (mode & 7) as u8;
     if mode & WEEK_MONDAY_FIRST == 0 {
         mode ^= WEEK_FIRST_WEEKDAY;
@@ -285,7 +285,7 @@ fn mysql_week_mode(mode: i64) -> u8 {
 }
 
 /// `calc_weekday` (`util/time_lut.cpp:98-100`).
-fn calc_weekday(daynr: i64, sunday_first: bool) -> i64 {
+pub(crate) fn calc_weekday(daynr: i64, sunday_first: bool) -> i64 {
     (daynr + 5 + i64::from(sunday_first)) % 7
 }
 
@@ -298,7 +298,7 @@ fn days_in_year(year: i64) -> i64 {
 }
 
 /// `calc_week` (`vdatetime_value.cpp:3056-3113`): the week and the year it belongs to.
-fn calc_week(t: Dt, mode: u8) -> (i64, i64) {
+pub(crate) fn calc_week(t: Dt, mode: u8) -> (i64, i64) {
     if t.year == 0 {
         return (0, 0);
     }
@@ -382,6 +382,31 @@ fn is_space(c: u8) -> bool {
 /// `str_to_date` (`function_other_types_to_date.cpp:73-243`, `from_date_format_str` at
 /// `vdatetime_value.cpp:1792-2258`) for `%Y %y %m %c %d %e %H %k %i %s %S %%`: None for a value
 /// that does not parse or is not a valid date; any other specifier is refused.
+const AB_MONTH_NAMES: [&str; 13] = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_NAMES: [&str; 13] = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/// `check_word` and `find_in_lib` (`vdatetime_value.cpp:965-1001`): the letters at the start of
+/// `s` against `lib`, any case; an exact name, else the one name they are a prefix of. The
+/// position in `lib` and the letters read.
+fn check_word(lib: &[&str], s: &[u8]) -> Option<(usize, usize)> {
+    let len = s.iter().take_while(|c| c.is_ascii_alphabetic()).count();
+    let word = &s[..len];
+    let mut found = None;
+    let mut count = 0;
+    for (pos, name) in lib.iter().enumerate() {
+        let name = name.as_bytes();
+        if word.len() > name.len() || !word.eq_ignore_ascii_case(&name[..word.len()]) {
+            continue;
+        }
+        if word.len() == name.len() {
+            return Some((pos, len));
+        }
+        count += 1;
+        found = Some(pos);
+    }
+    (count == 1).then(|| (found.expect("counted"), len))
+}
+
 pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option<Dt>, ExecError> {
     let format: &[u8] = match format {
         b"yyyyMMdd" => b"%Y%m%d",
@@ -393,7 +418,7 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     while let Some(c) = spec.next() {
         if *c == b'%' {
             match spec.next() {
-                Some(b'Y' | b'y' | b'm' | b'c' | b'd' | b'e' | b'H' | b'k' | b'i' | b's' | b'S' | b'%') | None => {}
+                Some(b'Y' | b'y' | b'm' | b'c' | b'b' | b'M' | b'd' | b'e' | b'H' | b'k' | b'i' | b's' | b'S' | b'%') | None => {}
                 Some(other) => {
                     return Err(ExecError::Unsupported {
                         what: format!("str_to_date with the format specifier %{}", *other as char),
@@ -431,6 +456,14 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
             let c = format[ptr + 1];
             ptr += 2;
             let rest = &value[val..];
+            if c == b'b' || c == b'M' {
+                let names: &[&str] = if c == b'b' { &AB_MONTH_NAMES } else { &MONTH_NAMES };
+                let Some((month, len)) = check_word(names, rest) else { return Ok(None) };
+                t.month = month as i64;
+                val += len;
+                used |= MONTH;
+                continue;
+            }
             let (field, max, part): (Option<&mut i64>, usize, u32) = match c {
                 b'Y' | b'y' => (Some(&mut t.year), if c == b'Y' { 4 } else { 2 }, YEAR),
                 b'm' | b'c' => (Some(&mut t.month), 2, MONTH),
@@ -507,6 +540,7 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         "days_diff" | "weeks_diff" => args.len() == 2 && args.iter().all(is_date) && to.ptype == T::BIGINT,
         "str_to_date" => args.len() == 2 && args.iter().all(text) && is_date(to),
         _ if crate::datetime_round::is_function(name) => crate::datetime_round::supported(name, args, to),
+        _ if crate::unixtime::is_function(name) => crate::unixtime::supported(name, args, to),
         _ => match Unit::parse(name) {
             Some((unit, _)) => {
                 let time_unit = matches!(unit, Unit::Hour | Unit::Minute | Unit::Second);
@@ -529,6 +563,7 @@ pub fn is_date_function(name: &str) -> bool {
         "year" | "month" | "dayofmonth" | "weekofyear" | "yearweek" | "days_diff" | "weeks_diff" | "str_to_date"
     ) || Unit::parse(name).is_some()
         || crate::datetime_round::is_function(name)
+        || crate::unixtime::is_function(name)
 }
 
 fn int(d: &Datum) -> i64 {
@@ -543,6 +578,9 @@ fn int(d: &Datum) -> i64 {
 pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], constant: &[bool], rows: usize) -> Result<Vec<Datum>, ExecError> {
     if crate::datetime_round::is_function(name) {
         return crate::datetime_round::eval(name, types, args, constant, rows);
+    }
+    if crate::unixtime::is_function(name) {
+        return crate::unixtime::eval(name, types, args, constant, rows);
     }
     let dt_of = |i: usize, d: &Datum| Dt::unpack(i128::from(int(d)), types[i].ptype == T::DATETIMEV2);
     let mut out = Vec::with_capacity(rows);

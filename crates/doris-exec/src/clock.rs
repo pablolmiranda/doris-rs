@@ -78,7 +78,7 @@ pub fn find_zone(name: &str) -> Option<QueryZone> {
     None
 }
 
-fn local(zone: &QueryZone, seconds: i64) -> Option<NaiveDateTime> {
+pub(crate) fn local(zone: &QueryZone, seconds: i64) -> Option<NaiveDateTime> {
     let utc = DateTime::from_timestamp(seconds, 0)?;
     Some(match zone {
         QueryZone::Offset(o) => utc.naive_utc() + Duration::seconds(i64::from(*o)),
@@ -88,7 +88,7 @@ fn local(zone: &QueryZone, seconds: i64) -> Option<NaiveDateTime> {
 
 /// The instant of a civil time in a zone (`cctz::convert(civil, zone)`): an ambiguous time takes
 /// its earlier instant, a skipped one the offset before the transition.
-fn instant(zone: &QueryZone, civil: NaiveDateTime) -> i64 {
+pub(crate) fn instant(zone: &QueryZone, civil: NaiveDateTime) -> i64 {
     match zone {
         QueryZone::Offset(o) => (civil - Duration::seconds(i64::from(*o))).and_utc().timestamp(),
         QueryZone::Named(tz) => match tz.from_local_datetime(&civil) {
