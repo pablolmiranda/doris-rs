@@ -76,7 +76,7 @@ impl Dt {
     }
 
     /// As `DateV2Value::to_string` prints it in an error: the fraction only when non-zero.
-    fn text(&self, datetime: bool) -> String {
+    pub(crate) fn text(&self, datetime: bool) -> String {
         let date = format!("{:04}-{:02}-{:02}", self.year, self.month, self.day);
         if !datetime {
             return date;
@@ -123,7 +123,7 @@ pub fn calc_daynr(year: i64, month: i64, day: i64) -> i64 {
 }
 
 /// `get_date_from_daynr` (`vdatetime_value.cpp:2404-2443`).
-fn date_from_daynr(daynr: i64) -> Option<(i64, i64, i64)> {
+pub(crate) fn date_from_daynr(daynr: i64) -> Option<(i64, i64, i64)> {
     if daynr <= 0 || daynr > DATE_MAX_DAYNR {
         return None;
     }
@@ -506,6 +506,7 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         "yearweek" => args.len() == 2 && is_date(&args[0]) && args[1].ptype == T::INT && to.ptype == T::INT,
         "days_diff" | "weeks_diff" => args.len() == 2 && args.iter().all(is_date) && to.ptype == T::BIGINT,
         "str_to_date" => args.len() == 2 && args.iter().all(text) && is_date(to),
+        _ if crate::datetime_round::is_function(name) => crate::datetime_round::supported(name, args, to),
         _ => match Unit::parse(name) {
             Some((unit, _)) => {
                 let time_unit = matches!(unit, Unit::Hour | Unit::Minute | Unit::Second);
@@ -527,6 +528,7 @@ pub fn is_date_function(name: &str) -> bool {
         name,
         "year" | "month" | "dayofmonth" | "weekofyear" | "yearweek" | "days_diff" | "weeks_diff" | "str_to_date"
     ) || Unit::parse(name).is_some()
+        || crate::datetime_round::is_function(name)
 }
 
 fn int(d: &Datum) -> i64 {
@@ -537,7 +539,11 @@ fn int(d: &Datum) -> i64 {
 }
 
 /// Evaluates date function `name`; a row with any NULL argument is NULL and never throws.
-pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows: usize) -> Result<Vec<Datum>, ExecError> {
+/// `constant` says which arguments are constant expressions (`is_col_constant`).
+pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], constant: &[bool], rows: usize) -> Result<Vec<Datum>, ExecError> {
+    if crate::datetime_round::is_function(name) {
+        return crate::datetime_round::eval(name, types, args, constant, rows);
+    }
     let dt_of = |i: usize, d: &Datum| Dt::unpack(i128::from(int(d)), types[i].ptype == T::DATETIMEV2);
     let mut out = Vec::with_capacity(rows);
     for r in 0..rows {

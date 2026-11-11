@@ -707,7 +707,7 @@ fn eval_at(
             let to = node_type(n)?;
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
-            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, &constant, rows)?;
             (to, out)
         }
         N::ARITHMETIC_EXPR => {
