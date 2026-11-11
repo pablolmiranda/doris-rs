@@ -156,7 +156,7 @@ impl WindowFn {
                     what: format!("{f} over a window"),
                 })
             }
-            f if crate::moments::arity(f).is_some() => {
+            f if crate::moments::arity(f).is_some() || crate::stats_agg::NOT_OVER_WINDOWS.contains(&f) => {
                 return Err(ExecError::Unsupported {
                     what: format!("{f} over a window"),
                 })

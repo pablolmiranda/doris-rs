@@ -25,7 +25,7 @@ const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 pub const AGGREGATES: &[&str] = &[
     "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
-    "percentile", "percentile_array",
+    "percentile", "percentile_array", "retention", "linear_histogram", "exponential_moving_average", "group_bit_and", "group_bit_or", "group_bit_xor",
 ];
 
 fn function_name(n: &TExprNode) -> Option<String> {
