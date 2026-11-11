@@ -25,6 +25,11 @@ const NAMES: &[&str] = &[
     "trim_in",
     "ltrim_in",
     "rtrim_in",
+    "url_encode",
+    "url_decode",
+    "top_level_domain",
+    "first_significant_subdomain",
+    "cut_to_first_significant_subdomain",
 ];
 
 /// Whether `name` is a function this module evaluates (for some signature).
@@ -40,7 +45,15 @@ fn is_text(t: &ColType) -> bool {
 pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     let all_text = |n: usize| args.len() == n && args.iter().all(is_text);
     match name {
-        "upper" | "ucase" | "hex" | "unhex" => all_text(1) && is_text(to),
+        "upper"
+        | "ucase"
+        | "hex"
+        | "unhex"
+        | "url_encode"
+        | "url_decode"
+        | "top_level_domain"
+        | "first_significant_subdomain"
+        | "cut_to_first_significant_subdomain" => all_text(1) && is_text(to),
         "replace" => all_text(3) && is_text(to),
         "find_in_set" => all_text(2) && to.ptype == T::INT,
         "crc32" => all_text(1) && to.ptype == T::BIGINT,
@@ -316,6 +329,11 @@ pub fn eval(name: &str, args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecE
         "crc32" => rows(args, n, |r| Ok(Datum::Int(i128::from(crc32fast::hash(bytes(r[0])))))),
         "hex" => rows(args, n, |r| text(hex(bytes(r[0])))),
         "unhex" => rows(args, n, |r| text(unhex(bytes(r[0])))),
+        "url_encode" => rows(args, n, |r| text(crate::url::url_encode(bytes(r[0])))),
+        "url_decode" => rows(args, n, |r| crate::url::url_decode(bytes(r[0])).map(Datum::Bytes)),
+        "top_level_domain" => rows(args, n, |r| text(crate::url::top_level_domain(bytes(r[0])))),
+        "first_significant_subdomain" => rows(args, n, |r| text(crate::url::first_significant_subdomain(bytes(r[0])))),
+        "cut_to_first_significant_subdomain" => rows(args, n, |r| text(crate::url::cut_to_first_significant_subdomain(bytes(r[0])))),
         "lpad" | "rpad" => rows(args, n, |r| Ok(pad(bytes(r[0]), int(r[1]), bytes(r[2]), name == "lpad"))),
         "trim_in" | "ltrim_in" | "rtrim_in" => rows(args, n, |r| {
             text(trim_in(bytes(r[0]), r.get(1).map(|d| bytes(d)), name != "rtrim_in", name != "ltrim_in"))

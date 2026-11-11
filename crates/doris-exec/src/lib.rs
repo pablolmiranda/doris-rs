@@ -40,6 +40,7 @@ pub mod sink;
 pub mod strfn;
 pub mod strings;
 pub mod table_function;
+pub mod url;
 pub mod value;
 
 #[derive(Debug, thiserror::Error)]
