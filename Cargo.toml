@@ -38,6 +38,7 @@ lz4_flex = "0.14"
 snap = "1"
 rustix = { version = "1", features = ["fs"] }
 ruzstd = "0.9"
+core-math = "1.4"
 crc32fast = "1"
 thrift = "0.25"
 flate2 = "1"

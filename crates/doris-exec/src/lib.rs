@@ -22,6 +22,7 @@ pub mod funnel;
 pub mod geo;
 pub mod hash_join;
 pub mod hll;
+pub mod math;
 pub mod moments;
 pub mod nested_loop;
 pub mod partition_sort;

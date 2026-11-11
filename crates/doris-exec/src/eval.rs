@@ -57,6 +57,12 @@ fn interval_function(f: &str) -> bool {
     crate::datetime::is_date_function(f) && (f.ends_with("_add") || f.ends_with("_sub"))
 }
 
+/// A call `math::supported` accepts, by its name and signature.
+fn math_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::math::supported(&name, &args, &to)
+}
+
 /// A call `datetime::supported` accepts, by its name and signature.
 fn date_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -241,6 +247,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
+                Some(f) if crate::math::is_math_function(f) => math_call(n),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -539,6 +546,9 @@ fn eval_at(
                     if let Some(r) = number_to_bool(d, &from, &to) {
                         return Ok(r);
                     }
+                    if let Some(r) = date_to_number(d, &from, &to) {
+                        return Ok(r);
+                    }
                     // a FLOAT as text is the float's own shortest text, not its double's
                     if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
                         return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
@@ -657,6 +667,11 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
             (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::math::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::geo::is_geo_function(&f)) => {
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
@@ -970,6 +985,27 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A DATEV2 or DATETIMEV2 cast to a number: `YYYYMMDD` or `YYYYMMDDhhmmss`, its `to_int64()`
+/// (`cast_to_basic_number_common.h:358-362`).
+fn date_to_number(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
+    let datetime = match from.ptype {
+        T::DATEV2 => false,
+        T::DATETIMEV2 => true,
+        _ => return None,
+    };
+    let Datum::Int(v) = d else { return None };
+    let t = crate::datetime::Dt::unpack(*v, datetime);
+    let mut n = (t.year * 100 + t.month) * 100 + t.day;
+    if datetime {
+        n = ((n * 100 + t.hour) * 100 + t.minute) * 100 + t.second;
+    }
+    Some(match to.ptype {
+        T::DOUBLE => Datum::Double(n as f64),
+        T::BIGINT | T::LARGEINT => Datum::Int(i128::from(n)),
+        _ => return None,
+    })
 }
 
 /// A number cast to BOOLEAN, as `cast_to_boolean.h` does it: true unless the value is zero (for a
