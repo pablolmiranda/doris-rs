@@ -255,8 +255,15 @@ fn a_stopped_wait_returns_none() {
     let mgr = s.mgr();
     let a = s.insert(0);
     let q = mgr.join(&a, s.checked(&a)).unwrap();
-    let t = Instant::now();
-    assert!(q.wait(|| t.elapsed() > Duration::from_millis(100)).is_none());
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (q2, stop2) = (Arc::clone(&q), Arc::clone(&stop));
+    let stopper = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        stop2.store(true, std::sync::atomic::Ordering::SeqCst);
+        q2.wake();
+    });
+    assert!(q.wait(|| stop.load(std::sync::atomic::Ordering::SeqCst)).is_none());
+    stopper.join().unwrap();
 }
 
 // INSERT … VALUES through the load service
@@ -374,7 +381,9 @@ fn a_filtered_group_commit_load_over_the_ratio_fails() {
     let st = reports[0].status.clone().unwrap();
     assert_eq!(st.status_code, TStatusCode::DATA_QUALITY_ERROR, "{st:?}");
     assert!(st.error_msgs.unwrap()[0].starts_with("too many filtered rows"));
-    assert!(s.puts().is_empty() || s.commits().is_empty());
+    // as C++, the load joined a queue first: its report names it; none of its rows went in
+    assert_eq!(reports[0].label, s.puts()[0].label);
+    assert!(s.commits().iter().all(|c| c.receive_bytes == Some(0)));
 }
 
 fn encode(p: doris_thrift::gen::palo_internal_service::TPipelineFragmentParams) -> Vec<u8> {
@@ -552,4 +561,146 @@ fn ended_queues_are_forgotten() {
         assert!(Instant::now() < end, "still {} tables", mgr.tables_held());
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+// review fixes: the load service
+
+impl Setup {
+    fn cancel(&self) -> doris_proto::doris::PCancelPlanFragmentRequest {
+        self.seq
+            .iter()
+            .find_map(|m| if let Msg::Cancel(c) = m { Some(c.clone()) } else { None })
+            .unwrap()
+    }
+}
+
+fn no_tablets(s: &Setup) -> Setup {
+    let tmp = tempfile::tempdir().unwrap();
+    let none = TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap();
+    Setup {
+        seq: s.seq.clone(),
+        tmp,
+        tablets: Arc::new(Mutex::new(none)),
+        fe: s.fe.clone(),
+        master: s.master.clone(),
+    }
+}
+
+/// Review Focus 1: a sync load cancelled while its queue commits reports CANCELLED once and
+/// does not wait for the commit; the commit still happens.
+#[test]
+fn a_sync_load_cancelled_during_the_commit_reports_once() {
+    let s = setup_for(TIMEOUT, |r| r.group_commit_interval_ms = Some(50));
+    s.fe.hold_commits(true);
+    let svc = s.service();
+    svc.exec_plan_fragment(&s.exec(0));
+    until("the commit", || !s.commits().is_empty());
+    svc.cancel_plan_fragment(&s.cancel());
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    let reports = s.reports();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].status.as_ref().unwrap().status_code, TStatusCode::CANCELLED);
+    s.fe.hold_commits(false);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(s.reports().len(), 1);
+    assert_eq!(s.commits().len(), 1);
+}
+
+/// A cancel ends a sync wait at once, not at the next poll.
+#[test]
+fn a_cancel_ends_the_wait_at_once() {
+    for _ in 0..5 {
+        let s = setup_for(TIMEOUT, |_| {});
+        let svc = s.service();
+        svc.exec_plan_fragment(&s.exec(0));
+        until("the put", || !s.puts().is_empty());
+        std::thread::sleep(Duration::from_millis(30));
+        let t = Instant::now();
+        svc.cancel_plan_fragment(&s.cancel());
+        until("the report", || !s.reports().is_empty());
+        assert!(t.elapsed() < Duration::from_millis(20), "{:?}", t.elapsed());
+    }
+}
+
+/// A cancel that comes right after the fragment's reply is not lost.
+#[test]
+fn a_cancel_right_after_the_reply_is_kept() {
+    for _ in 0..10 {
+        let s = setup_for(TIMEOUT, |_| {});
+        let svc = s.service();
+        svc.exec_plan_fragment(&s.exec(0));
+        svc.cancel_plan_fragment(&s.cancel());
+        assert!(svc.wait_idle(Duration::from_secs(3)), "the sync load waits for its 300 s queue");
+        assert_eq!(s.reports()[0].status.as_ref().unwrap().status_code, TStatusCode::CANCELLED);
+    }
+}
+
+/// Review Focus 3: a sync load whose queue's write fails reports it; an async load already
+/// reported OK.
+#[test]
+fn a_failed_queue_write_through_the_service() {
+    let s = no_tablets(&setup_for(TIMEOUT, |r| r.group_commit_interval_ms = Some(50)));
+    let svc = s.service();
+    svc.exec_plan_fragment(&s.exec(0));
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    let r = s.reports().remove(0);
+    let st = r.status.unwrap();
+    assert_eq!(st.status_code, TStatusCode::CANCELLED);
+    assert!(st.error_msgs.unwrap()[0].starts_with(&format!("cancel group_commit, label={}", r.label.unwrap())));
+
+    let s = no_tablets(&setup_for(INTERVAL, |r| r.group_commit_interval_ms = Some(50)));
+    let svc = s.service();
+    svc.exec_plan_fragment(&s.exec(0));
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    assert_eq!(s.reports()[0].status.as_ref().unwrap().status_code, TStatusCode::OK);
+    until("the rollback", || s.fe.load_calls().iter().any(|c| matches!(c, LoadCall::Rollback(_))));
+}
+
+#[test]
+fn a_refused_put_fails_the_insert() {
+    let s = setup(|r| {
+        r.status = TStatus {
+            status_code: TStatusCode::ANALYSIS_ERROR,
+            error_msgs: Some(vec!["no table".into()]),
+        }
+    });
+    let svc = s.service();
+    svc.exec_plan_fragment(&s.exec(0));
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    let r = s.reports().remove(0);
+    let st = r.status.unwrap();
+    assert_ne!(st.status_code, TStatusCode::OK);
+    assert!(st.error_msgs.unwrap()[0].contains("no table"));
+    assert_eq!(r.label, None);
+}
+
+/// Two rows of the timeout suite's insert, the first with a NULL id (INT NOT NULL).
+fn one_bad_row(s: &Setup, ratio: f64) -> PExecPlanFragmentRequest {
+    let mut req = s.exec(0);
+    let mut p = Msg::params(&req);
+    let frag = p.fragment.as_mut().unwrap();
+    let union = frag.plan.as_mut().unwrap().nodes[0].union_node.as_mut().unwrap();
+    let mut bad = union.const_expr_lists[0].clone();
+    bad[0] = doris_fixtures::build::null(doris_fixtures::build::ty(doris_thrift::gen::types::TPrimitiveType::INT));
+    union.const_expr_lists.insert(0, bad);
+    frag.output_sink.as_mut().unwrap().olap_table_sink.as_mut().unwrap().max_filter_ratio = Some(thrift::OrderedFloat(ratio));
+    req.request = Some(encode(p));
+    req
+}
+
+/// Review Focus 5: a filtered row under the ratio is counted and logged, and only the good row
+/// is queued.
+#[test]
+fn a_filtered_row_under_the_ratio_is_counted_not_queued() {
+    let s = setup_for(TIMEOUT, |r| r.group_commit_interval_ms = Some(50));
+    let svc = s.service();
+    svc.exec_plan_fragment(&one_bad_row(&s, 0.6));
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    let r = s.reports().remove(0);
+    assert_eq!(r.status.as_ref().unwrap().status_code, TStatusCode::OK);
+    let c = r.load_counters.unwrap();
+    assert_eq!((c["dpp.norm.ALL"].as_str(), c["dpp.abnorm.ALL"].as_str()), ("1", "1"));
+    assert!(r.tracking_url.is_some());
+    let f = plan_write(&Msg::params(&s.exec(0))).unwrap();
+    assert_eq!(s.commits()[0].receive_bytes, Some(s.checked(&f).bytes()));
 }

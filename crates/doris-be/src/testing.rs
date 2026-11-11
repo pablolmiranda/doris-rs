@@ -50,6 +50,9 @@ pub struct FakeFe {
     puts: Mutex<std::collections::VecDeque<TStreamLoadPutResult>>,
     /// Answers to the next `loadTxnCommit` calls, in order, before the script's.
     commits: Mutex<std::collections::VecDeque<TLoadTxnCommitResult>>,
+    /// While true, `loadTxnCommit` calls are recorded, then held.
+    commits_held: Mutex<bool>,
+    commits_released: Condvar,
     finishes: Mutex<Vec<TFinishTaskRequest>>,
     reports: Mutex<Vec<TReportRequest>>,
     attempts: AtomicUsize,
@@ -106,6 +109,12 @@ impl FakeFe {
     /// Answers the next `loadTxnCommit` calls with these, in order; then the script's answer.
     pub fn queue_commits(&self, commits: Vec<TLoadTxnCommitResult>) {
         self.commits.lock().unwrap().extend(commits);
+    }
+
+    /// Holds `loadTxnCommit` calls (after recording them) until released.
+    pub fn hold_commits(&self, hold: bool) {
+        *self.commits_held.lock().unwrap() = hold;
+        self.commits_released.notify_all();
     }
 
     pub fn script(&self, script: LoadScript) {
@@ -185,6 +194,7 @@ impl FeClient for FakeFe {
 
     fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError> {
         self.load(LoadCall::Commit(req));
+        drop(self.commits_released.wait_while(self.commits_held.lock().unwrap(), |h| *h).unwrap());
         if let Some(r) = self.commits.lock().unwrap().pop_front() {
             return Ok(r);
         }

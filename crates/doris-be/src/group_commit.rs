@@ -114,8 +114,8 @@ impl Queue {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).finished.clone()
     }
 
-    /// Waits for the internal load to end (a sync load), or until `stop` says to stop waiting
-    /// (checked every 50 ms); None when stopped first.
+    /// Waits for the internal load to end (a sync load), or until `stop` says to stop waiting.
+    /// `stop` is checked under the queue's lock: whoever makes it true then calls `wake`.
     pub fn wait(&self, stop: impl Fn() -> bool) -> Option<TStatus> {
         let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
         loop {
@@ -125,12 +125,14 @@ impl Queue {
             if stop() {
                 return None;
             }
-            s = self
-                .changed
-                .wait_timeout(s, Duration::from_millis(50))
-                .unwrap_or_else(|e| e.into_inner())
-                .0;
+            s = self.changed.wait(s).unwrap_or_else(|e| e.into_inner());
         }
+    }
+
+    /// Wakes the loads waiting on the queue, to check their `stop` again.
+    pub fn wake(&self) {
+        drop(self.state.lock().unwrap_or_else(|e| e.into_inner()));
+        self.changed.notify_all();
     }
 
     /// `add_load_id` and `add_block` at once: the rows join if the queue is still open (under

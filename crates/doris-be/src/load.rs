@@ -50,8 +50,36 @@ pub struct StreamLoadRequest {
     pub client_ip: String,
 }
 
-/// Where a cancel of a waiting sync load leaves its status.
-type CancelSlot = Arc<Mutex<Option<PStatus>>>;
+/// A sync group commit load, registered before its fragment is answered: a cancel leaves the
+/// status to end with here, and wakes the load if it already waits on a queue.
+#[derive(Default)]
+struct SyncWait {
+    cancelled: Mutex<Option<TStatus>>,
+    queue: Mutex<Option<Arc<Queue>>>,
+}
+
+impl SyncWait {
+    fn cancel(&self, status: TStatus) {
+        *self.cancelled.lock().unwrap_or_else(|e| e.into_inner()) = Some(status);
+        let queue = self.queue.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(q) = queue {
+            q.wake();
+        }
+    }
+
+    fn cancelled(&self) -> Option<TStatus> {
+        self.cancelled.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Waits on `queue` for the load's outcome: its internal load's, or the cancel's.
+    fn wait(&self, queue: &Arc<Queue>) -> TStatus {
+        *self.queue.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(queue));
+        match queue.wait(|| self.cancelled().is_some()) {
+            Some(st) => st,
+            None => self.cancelled().unwrap_or(TStatus { status_code: TStatusCode::CANCELLED, error_msgs: None }),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct LoadService {
@@ -63,7 +91,7 @@ struct Inner {
     group_commit: GroupCommitMgr,
     /// Sync group-commit loads waiting for their queue, by query id: set to the cancel's
     /// status when the FE cancels one.
-    sync_waits: Mutex<HashMap<(i64, i64), CancelSlot>>,
+    sync_waits: Mutex<HashMap<(i64, i64), Arc<SyncWait>>>,
     fe: Arc<dyn FeClient>,
     master: MasterInfo,
     http_port: u16,
@@ -161,13 +189,20 @@ impl LoadService {
             Ok(r) => r,
             Err(e) => return refuse(NOT_IMPLEMENTED_ERROR, e.to_string()),
         };
+        // a sync group commit load can be cancelled from the moment it is answered
+        let key = (f.query_id.hi, f.query_id.lo);
+        let sync = (f.group_commit == Some(TGroupCommitMode::SYNC_MODE)).then(|| {
+            let w = Arc::new(SyncWait::default());
+            self.inner.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).insert(key, Arc::clone(&w));
+            w
+        });
         *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
         let inner = Arc::clone(&self.inner);
         let spawned = std::thread::Builder::new().name("load-insert".into()).spawn(move || {
             // a panic in the sink still reaches the FE as a failed fragment, not a timeout
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 if f.group_commit.is_some() {
-                    return f.in_context(|| inner.group_commit_insert(&f, rows));
+                    return f.in_context(|| inner.group_commit_insert(&f, rows, sync.as_deref()));
                 }
                 let outcome = f.in_context(|| run_sink(&f, rows, &inner.tablets, &inner.error_dir));
                 let url = inner.tracking_url(&outcome);
@@ -181,10 +216,12 @@ impl LoadService {
                     .unwrap_or_default();
                 exec_status(&f, &SinkOutcome::failed(format!("the write panicked: {what}")), None)
             });
+            inner.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
             inner.report(&f, params);
             inner.done();
         });
         if let Err(e) = spawned {
+            self.inner.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
             self.inner.done();
             return refuse(INTERNAL_ERROR, format!("cannot start the write: {e}"));
         }
@@ -210,11 +247,14 @@ impl LoadService {
                 .get(&(q.hi, q.lo))
                 .cloned();
             if let Some(w) = wait {
-                let status = req
-                    .cancel_status
-                    .clone()
-                    .unwrap_or_else(|| pstatus(TStatusCode::CANCELLED.0, Some("cancelled".into())));
-                *w.lock().unwrap_or_else(|e| e.into_inner()) = Some(status);
+                let c = req.cancel_status.clone().unwrap_or_else(|| pstatus(TStatusCode::CANCELLED.0, Some("cancelled".into())));
+                // the fragment's cancel reason, as its report words it
+                let code = TStatusCode(c.status_code);
+                let msg = c.error_msgs.first().cloned().unwrap_or_default();
+                w.cancel(TStatus {
+                    status_code: code,
+                    error_msgs: Some(vec![format!("({})[{}]PStatus: {msg}", self.inner.master.localhost(), crate::status::code_name(code))]),
+                });
             }
         }
         PCancelPlanFragmentResult { status: pstatus(OK, None) }
@@ -267,13 +307,13 @@ impl Inner {
 
     /// A GROUP_COMMIT_BLOCK_SINK (`GroupCommitBlockSinkOperatorX`) fed one block: the rows are
     /// checked and join a queue of the table. An async load ends there; a sync load waits for the
-    /// queue's internal load to end, or for `cancelled` to give the status to end with. The
-    /// outcome's status is the load's; the queue is the one it joined, if any.
+    /// queue's internal load to end, or for a cancel (`sync`). The outcome's status is the
+    /// load's; the queue is the one it joined, if any.
     fn group_commit_rows(
         &self,
         f: &WriteFragment,
         rows: Vec<Result<Vec<doris_exec::value::Value>, doris_exec::RowError>>,
-        cancelled: &dyn Fn() -> Option<TStatus>,
+        sync: Option<&SyncWait>,
     ) -> (SinkOutcome, Option<Arc<Queue>>) {
         let sink = match TableSink::new(f, vec![f.instance_id.clone()]) {
             Ok(s) => s,
@@ -286,17 +326,18 @@ impl Inner {
             };
             return (sink.finish(&self.tablets, &self.error_dir, Some(failure)), None);
         }
-        let (mut outcome, checked) = sink.check(&self.error_dir);
-        // sink_impl's wind_up: too many filtered rows fail the load before it joins a queue
+        let (mut outcome, mut checked) = sink.check(&self.error_dir);
+        // sink_impl's wind_up: too many filtered rows fail the load; it has joined a queue (at
+        // its first block), but adds no rows to it
         let ratio = f.sink.max_filter_ratio.map_or(0.0, |r| r.0);
         let selected = outcome.loaded + outcome.filtered;
-        if selected > 0 && outcome.filtered as f64 / selected as f64 > ratio {
-            let msg = format!("too many filtered rows, {}", outcome.first_error.clone().unwrap_or_default());
-            outcome.status = TStatus {
-                status_code: TStatusCode::DATA_QUALITY_ERROR,
-                error_msgs: Some(vec![msg]),
-            };
-            return (outcome, None);
+        let too_many = selected > 0 && outcome.filtered as f64 / selected as f64 > ratio;
+        if too_many {
+            let empty = TableSink::new(f, vec![f.instance_id.clone()]).map(|s| s.check(&self.error_dir).1);
+            match empty {
+                Ok(e) => checked = e,
+                Err(e) => return (SinkOutcome::failed(e.to_string()), None),
+            }
         }
         let queue = match self.group_commit.join(f, checked) {
             Ok(q) => q,
@@ -308,13 +349,15 @@ impl Inner {
                 return (outcome, None);
             }
         };
+        if too_many {
+            let msg = format!("too many filtered rows, {}", outcome.first_error.clone().unwrap_or_default());
+            outcome.status = TStatus { status_code: TStatusCode::DATA_QUALITY_ERROR, error_msgs: Some(vec![msg]) };
+            return (outcome, Some(queue));
+        }
         if f.group_commit == Some(TGroupCommitMode::SYNC_MODE) {
-            outcome.status = match queue.wait(|| cancelled().is_some()) {
-                Some(st) => st,
-                None => cancelled().unwrap_or(TStatus {
-                    status_code: TStatusCode::CANCELLED,
-                    error_msgs: None,
-                }),
+            outcome.status = match sync {
+                Some(w) => w.wait(&queue),
+                None => SyncWait::default().wait(&queue),
             };
         }
         (outcome, Some(queue))
@@ -327,26 +370,9 @@ impl Inner {
         &self,
         f: &WriteFragment,
         rows: Vec<Result<Vec<doris_exec::value::Value>, doris_exec::RowError>>,
+        sync: Option<&SyncWait>,
     ) -> TReportExecStatusParams {
-        let key = (f.query_id.hi, f.query_id.lo);
-        let cancel: CancelSlot = Arc::default();
-        self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).insert(key, Arc::clone(&cancel));
-        let cancelled = || {
-            // the fragment's cancel reason, as its report words it
-            let c = cancel.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
-            let code = TStatusCode(c.status_code);
-            let msg = c.error_msgs.first().cloned().unwrap_or_default();
-            Some(TStatus {
-                status_code: code,
-                error_msgs: Some(vec![format!(
-                    "({})[{}]PStatus: {msg}",
-                    self.master.localhost(),
-                    crate::status::code_name(code)
-                )]),
-            })
-        };
-        let (outcome, queue) = self.group_commit_rows(f, rows, &cancelled);
-        self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
+        let (outcome, queue) = self.group_commit_rows(f, rows, sync);
         let url = self.tracking_url(&outcome);
         let mut params = exec_status(f, &outcome, url);
         if let Some(q) = queue {
@@ -649,7 +675,7 @@ impl<'a> StreamLoad<'a> {
             }
         };
         if self.group_commit.is_some() {
-            let (outcome, queue) = f.in_context(|| self.inner.group_commit_rows(&f, rows, &|| None));
+            let (outcome, queue) = f.in_context(|| self.inner.group_commit_rows(&f, rows, None));
             self.times[3] = t.elapsed().as_millis();
             if let Some(q) = queue {
                 self.txn_id = q.txn_id();
