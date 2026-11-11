@@ -52,6 +52,11 @@ fn bit_call(n: &TExprNode) -> bool {
     crate::bits::supported(&name, &args, &to)
 }
 
+/// A date add/sub function: the only ones the FE sends as a COMPUTE_FUNCTION_CALL.
+fn interval_function(f: &str) -> bool {
+    crate::datetime::is_date_function(f) && (f.ends_with("_add") || f.ends_with("_sub"))
+}
+
 /// A call `datetime::supported` accepts, by its name and signature.
 fn date_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -146,7 +151,7 @@ fn assert_true_call(nodes: &[TExprNode], i: usize) -> bool {
 
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
-        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
+        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
             format!("function {f}")
         }
         _ => format!("expression {}", node_name(n)),
@@ -163,6 +168,7 @@ pub fn node_name(n: &TExprNode) -> String {
         (N::IN_PRED, "IN_PRED"),
         (N::ARITHMETIC_EXPR, "ARITHMETIC_EXPR"),
         (N::FUNCTION_CALL, "FUNCTION_CALL"),
+        (N::COMPUTE_FUNCTION_CALL, "COMPUTE_FUNCTION_CALL"),
         (N::LIKE_PRED, "LIKE_PRED"),
         (N::IS_NULL_PRED, "IS_NULL_PRED"),
     ];
@@ -237,6 +243,9 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 _ => false,
             },
+            // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
+            // its `fn` names, ignoring the node type and opcode
+            N::COMPUTE_FUNCTION_CALL => function_name(n).is_some_and(|f| interval_function(&f)) && date_call(n),
             N::AGG_EXPR => {
                 aggregates && AGGREGATES.contains(&function_name(n).unwrap_or_default().as_str())
             }
@@ -287,7 +296,7 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
             N::INT_LITERAL | N::LARGE_INT_LITERAL | N::STRING_LITERAL | N::BOOL_LITERAL | N::FLOAT_LITERAL | N::DECIMAL_LITERAL | N::DATE_LITERAL | N::NULL_LITERAL
         )
     };
-    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
+    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
     let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
     // a regexp's constant pattern is compiled at open
     for (i, n) in e.nodes.iter().enumerate() {
@@ -653,7 +662,7 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::geo::eval(&function_name(n).unwrap_or_default(), &args, rows))
         }
-        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
+        N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
             let to = node_type(n)?;
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
