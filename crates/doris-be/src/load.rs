@@ -519,7 +519,20 @@ impl<'a> StreamLoad<'a> {
         if !["sync_mode", "async_mode", "off_mode"].iter().any(|m| mode.eq_ignore_ascii_case(m)) {
             return Err("[INVALID_ARGUMENT]group_commit can only be [async_mode, sync_mode, off_mode]".into());
         }
-        if mode.eq_ignore_ascii_case("off_mode") || !self.can_group_commit() {
+        if mode.eq_ignore_ascii_case("off_mode") {
+            return Ok(None);
+        }
+        // _can_group_commit: the Content-Length is read with std::stoll
+        if let Some(len) = self.header("content-length") {
+            match stoll(&len) {
+                None => return Err(format!("[INVALID_ARGUMENT]invalid HTTP header CONTENT_LENGTH={len}: stoll")),
+                Some(n) if n < 0 => {
+                    return Err(format!("[INVALID_ARGUMENT]This stream load content length <0 ({n}), please check your content length."))
+                }
+                Some(_) => {}
+            }
+        }
+        if !self.can_group_commit() {
             return Ok(None);
         }
         // a chunked body forgets the label
@@ -655,6 +668,12 @@ impl<'a> StreamLoad<'a> {
                 return self.rollback();
             }
         };
+        // the header and the plan must agree on group commit
+        if self.group_commit.is_some() != f.group_commit.is_some() {
+            let what = if self.group_commit.is_some() { "a group commit load planned without a GROUP_COMMIT_BLOCK_SINK" } else { "a GROUP_COMMIT_BLOCK_SINK for a load that is not a group commit" };
+            self.fail(format!("[NOT_IMPLEMENTED_ERROR]doris-rs does not support {what}"));
+            return self.rollback();
+        }
         // StreamLoadAction: enable_insert_strict follows the load's strict mode
         f.insert_strict = self.header("strict_mode").is_some_and(|v| v.eq_ignore_ascii_case("true"));
         // the stream load plan names no backend: commit infos carry this BE's id
@@ -1016,6 +1035,20 @@ fn parse_format(format: &str, compress: &str) -> Option<(TFileFormatType, TFileC
         _ => return None,
     };
     Some((format_type, compress_type))
+}
+
+/// `std::stoll`: leading whitespace, a sign, the digits (anything after ignored); None when
+/// there are no digits or the value does not fit.
+fn stoll(input: &str) -> Option<i64> {
+    let t = input.trim_start_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let (neg, rest) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let n: i128 = digits.parse().ok()?;
+    i64::try_from(if neg { -n } else { n }).ok()
 }
 
 /// `safe_stoi`: `std::stoi` (leading whitespace, a sign, the digits, anything after ignored),

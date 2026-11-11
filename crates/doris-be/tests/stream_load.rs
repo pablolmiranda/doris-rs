@@ -547,6 +547,50 @@ mod group_commit {
         assert!(r.fe.load_calls().is_empty());
     }
 
+    /// The header asked for group commit but the FE planned an ordinary table sink: refused by
+    /// name, not loaded into a queue.
+    #[test]
+    fn a_group_commit_load_planned_without_its_sink_is_refused() {
+        let r = recorded();
+        let seq = sequence(LARGE_DATA);
+        let h = seq.iter().position(|m| matches!(m, Msg::HttpRequest { .. })).unwrap();
+        let mut reply = seq[h..].iter().find_map(|m| if let Msg::PutReply(r) = m { Some(r.clone()) } else { None }).unwrap();
+        let sink = reply.pipeline_params.as_mut().unwrap().fragment.as_mut().unwrap().output_sink.as_mut().unwrap();
+        sink.type_ = doris_thrift::gen::data_sinks::TDataSinkType::OLAP_TABLE_SINK;
+        sink.olap_table_sink.as_mut().unwrap().group_commit_mode = None;
+        // the recorded replies were queued by `recorded`: start over with this one
+        let fe = Arc::new(FakeFe::default());
+        fe.queue_puts(vec![reply]);
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = LoadService::new(Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap())), fe.clone(), MasterInfo::new("127.0.0.1"), 8040);
+        let got = svc.stream_load(StreamLoadRequest { db: r.put.db.clone(), table: r.put.tbl.clone(), headers: r.headers.clone(), body: Ok(r.body.clone()), client_ip: "127.0.0.1".into() });
+        assert!(got.contains("\"Status\": \"Fail\""), "{got}");
+        assert!(got.contains("GROUP_COMMIT_BLOCK_SINK"), "{got}");
+        assert_eq!(fe.load_calls().len(), 1, "{:?}", fe.load_calls());
+    }
+
+    /// `_can_group_commit`: an empty header is no header; a Content-Length that is not a
+    /// number, or is negative, fails.
+    #[test]
+    fn group_commit_header_edges() {
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("group_commit".into(), "".into());
+        let _ = r.load(h);
+        assert!(matches!(r.fe.load_calls().first(), Some(LoadCall::Begin(_))), "{:?}", r.fe.load_calls());
+
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("content-length".into(), "abc".into());
+        let got = r.load(h);
+        assert!(got.contains("[INVALID_ARGUMENT]invalid HTTP header CONTENT_LENGTH=abc: stoll"), "{got}");
+        let mut h = r.headers.clone();
+        h.insert("content-length".into(), "-5".into());
+        let got = r.load(h);
+        assert!(got.contains("[INVALID_ARGUMENT]This stream load content length <0 (-5), please check your content length."), "{got}");
+        assert!(r.fe.load_calls().is_empty());
+    }
+
     #[test]
     fn off_mode_loads_as_before() {
         let r = recorded();
