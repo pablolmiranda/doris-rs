@@ -37,6 +37,7 @@ pub mod row_text;
 pub mod schema_scan;
 pub mod set_op;
 pub mod sink;
+pub mod strfn;
 pub mod strings;
 pub mod table_function;
 pub mod value;

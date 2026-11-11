@@ -57,6 +57,12 @@ fn interval_function(f: &str) -> bool {
     crate::datetime::is_date_function(f) && (f.ends_with("_add") || f.ends_with("_sub"))
 }
 
+/// A call `strfn::supported` accepts, by its name and signature.
+fn strfn_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::strfn::supported(&name, &args, &to)
+}
+
 /// A call `math::supported` accepts, by its name and signature.
 fn math_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -253,6 +259,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 Some(f) if crate::math::is_math_function(f) => math_call(n),
+                Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -672,6 +679,10 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
             (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::strfn::is_string_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();

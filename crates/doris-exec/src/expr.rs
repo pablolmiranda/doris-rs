@@ -28,7 +28,7 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
             | TExprNodeType::SLOT_REF => true,
             TExprNodeType::CAST_EXPR => ColType::from_type_desc("", &n.type_, true).is_some_and(|c| c.writable()),
             TExprNodeType::FUNCTION_CALL => {
-                matches!(function_name(n).as_deref(), Some("substring" | "concat" | "now" | "current_date" | "curdate"))
+                matches!(function_name(n).as_deref(), Some("substring" | "concat" | "now" | "current_date" | "curdate")) || string_function(n)
             }
             _ => false,
         };
@@ -44,6 +44,38 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
         }
     }
     Ok(())
+}
+
+/// A text-to-text call of `strfn` (`unhex`, `char`, …) whose signature it evaluates.
+fn string_function(n: &TExprNode) -> bool {
+    let Some(f) = n.fn_.as_ref() else { return false };
+    let name = f.name.function_name.to_ascii_lowercase();
+    let args: Option<Vec<ColType>> = f.arg_types.iter().map(|t| ColType::from_type_desc("", t, true)).collect();
+    let to = ColType::from_type_desc("", &n.type_, true);
+    let text = |t: &ColType| matches!(t.ptype, TPrimitiveType::CHAR | TPrimitiveType::VARCHAR | TPrimitiveType::STRING);
+    match (args, to) {
+        (Some(args), Some(to)) => crate::strfn::is_string_function(&name) && text(&to) && crate::strfn::supported(&name, &args, &to),
+        _ => false,
+    }
+}
+
+/// A `strfn` call on one row's values.
+fn string_call(name: &str, children: Vec<Value>) -> Result<Value, RowError> {
+    use doris_segment::writer::Datum;
+    let datum = |v: Value| match v {
+        Value::Null => Ok(Datum::Null),
+        Value::Int(i) => Ok(Datum::Int(i)),
+        Value::Str(b) => Ok(Datum::Bytes(b)),
+        other => Err(RowError::new(format!("{name} of {other:?}"))),
+    };
+    let cols: Vec<Vec<Datum>> = children.into_iter().map(|v| datum(v).map(|d| vec![d])).collect::<Result<_, _>>()?;
+    let args: Vec<&[Datum]> = cols.iter().map(Vec::as_slice).collect();
+    let out = crate::strfn::eval(name, &args, 1).map_err(|e| RowError::new(e.to_string()))?;
+    Ok(match out.into_iter().next() {
+        Some(Datum::Bytes(b)) => Value::Str(b),
+        Some(Datum::Int(i)) => Value::Int(i),
+        _ => Value::Null,
+    })
 }
 
 fn function_name(n: &TExprNode) -> Option<String> {
@@ -92,6 +124,7 @@ fn eval_at(nodes: &[TExprNode], pos: &mut usize, slots: &Slots) -> Result<Value,
         }
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("substring") => substring(&children),
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("concat") => concat(&children),
+        TExprNodeType::FUNCTION_CALL if string_function(n) => string_call(&function_name(n).unwrap_or_default(), children)?,
         TExprNodeType::FUNCTION_CALL if matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate")) => {
             let f = function_name(n).unwrap_or_default();
             let clock = crate::clock::current().ok_or_else(|| RowError::new(format!("{f}() without the query's clock")))?;
