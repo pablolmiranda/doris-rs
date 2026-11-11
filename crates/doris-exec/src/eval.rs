@@ -25,6 +25,7 @@ const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 pub const AGGREGATES: &[&str] = &[
     "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
+    "percentile", "percentile_array",
 ];
 
 fn function_name(n: &TExprNode) -> Option<String> {
@@ -254,6 +255,10 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
+                // `element_at(ARRAY<T>, INT) -> T` (function_array_element.h:293-330)
+                Some("element_at") => signature(n).is_some_and(|(a, to)| {
+                    a.len() == 2 && a[0].element().is_some_and(|el| el.ptype == to.ptype && el.scale == to.scale) && a[1].ptype == T::INT
+                }),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
@@ -373,7 +378,9 @@ pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
     match parent(nodes, i) {
         None => true,
-        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str())),
+        // an aggregate's argument (percentile_array's levels), `element_at`'s array
+        Some(p) if nodes[p].node_type == N::AGG_EXPR => true,
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || f == "element_at"),
     }
 }
 
@@ -708,6 +715,24 @@ fn eval_at(
             (to, out)
         }
         N::FUNCTION_CALL => match function_name(n).as_deref() {
+            // 1-based; negative from the end; 0, out of range or a NULL array is NULL
+            Some("element_at") => {
+                let to = node_type(n)?;
+                let [(_, arrays), (_, idx)] = <[_; 2]>::try_from(kids).map_err(|_| bad("element_at needs two arguments"))?;
+                let out = arrays
+                    .iter()
+                    .zip(&idx)
+                    .map(|(a, i)| match (a, i) {
+                        (Datum::Array(v), Datum::Int(i)) => {
+                            let len = v.len() as i128;
+                            let at = if *i > 0 && *i <= len { Some(*i - 1) } else if *i < 0 && -*i <= len { Some(len + *i) } else { None };
+                            at.map_or(Datum::Null, |k| v[k as usize].clone())
+                        }
+                        _ => Datum::Null,
+                    })
+                    .collect();
+                (to, out)
+            }
             Some("abs") => {
                 let to = node_type(n)?;
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;

@@ -95,7 +95,10 @@ impl ColType {
     pub fn supported_array(&self) -> bool {
         use TPrimitiveType as T;
         self.element().is_some_and(|e| {
-            matches!(e.ptype, T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::CHAR | T::VARCHAR | T::STRING)
+            matches!(
+                e.ptype,
+                T::BOOLEAN | T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::FLOAT | T::DOUBLE | T::CHAR | T::VARCHAR | T::STRING
+            )
         })
     }
 

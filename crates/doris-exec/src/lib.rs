@@ -33,6 +33,7 @@ pub mod repeat;
 pub mod round;
 pub mod route;
 pub mod sort;
+pub mod stats_agg;
 pub mod row_text;
 pub mod schema_scan;
 pub mod set_op;

@@ -348,6 +348,8 @@ enum State {
     /// kurt, skew, regr_*, corr, corr_welford, covar, covar_samp, avg_weighted; `accepted` as
     /// for `Funnel`
     Moments { m: crate::moments::Moments, accepted: bool },
+    /// batch 3's aggregates (`stats_agg`); `accepted` as for `Funnel`
+    Stats { s: crate::stats_agg::Stats, accepted: bool },
 }
 
 /// The bytes `ndv` hashes for a value: a fixed-width type's in-memory value, little-endian
@@ -492,6 +494,10 @@ impl State {
             }
             "window_funnel_v2" => return Err(ExecError::Unsupported { what: "window_funnel_v2 over a timestamp other than DATETIMEV2".into() }),
             "group_concat" => return Err(ExecError::Unsupported { what: "group_concat with ORDER BY".into() }),
+            name if crate::stats_agg::NAMES.contains(&name) => match crate::stats_agg::Stats::new(name, &f.param_types) {
+                Some(s) => State::Stats { s, accepted: false },
+                None => return Err(ExecError::Unsupported { what: format!("function {name}") }),
+            },
             name if crate::moments::arity(name).is_some() => {
                 let doubles = f.param_types.len() == crate::moments::arity(name).unwrap_or(0) && f.param_types.iter().all(|t| t.ptype == T::DOUBLE);
                 match crate::moments::Moments::new(name) {
@@ -570,6 +576,12 @@ impl State {
                     *mean += r;
                     *m2 += (*count as f64 * delta) * r;
                     *count += 1;
+                }
+            }
+            State::Stats { s, accepted } => {
+                let row: Vec<&Datum> = args.iter().map(|(_, d)| *d).collect();
+                if s.add(&row)? {
+                    *accepted = true;
                 }
             }
             State::Moments { m, accepted } => {
@@ -679,6 +691,12 @@ impl State {
                 }
             }
             (State::Ndv(a), State::Ndv(b)) => a.merge(b),
+            (State::Stats { s, accepted }, State::Stats { s: r, accepted: b }) => {
+                if *b {
+                    s.merge(r);
+                    *accepted = true;
+                }
+            }
             (State::Moments { m, accepted }, State::Moments { m: r, accepted: b }) => {
                 if *b {
                     m.merge(r);
@@ -751,6 +769,7 @@ impl State {
             },
             State::Ndv(h) => Datum::Int(h.estimate().into()),
             State::Moments { m, accepted } => m.finish(*accepted).map_or(Datum::Null, Datum::Double),
+            State::Stats { s, accepted } => s.finish(*accepted, ret),
             State::Funnel { accepted: false, .. } if ret.nullable => Datum::Null,
             State::Funnel { f, .. } => Datum::Int(f.get()?.into()),
             State::GroupConcat { data, inited, .. } => match inited {
@@ -829,6 +848,11 @@ impl State {
                     out.extend(t.to_le_bytes());
                     out.push(*e);
                 }
+            }
+            State::Stats { s, accepted } => {
+                out.push(11);
+                out.push(u8::from(*accepted));
+                s.encode(&mut out);
             }
             State::Moments { m, accepted } => {
                 out.push(10);
@@ -922,6 +946,12 @@ impl State {
                 let (m, used) = crate::moments::Moments::decode(r.0).ok_or_else(|| ExecError::Internal("a moments state is cut short".into()))?;
                 r.take(used)?;
                 State::Moments { m, accepted }
+            }
+            11 => {
+                let accepted = r.u8()? == 1;
+                let (s, used) = crate::stats_agg::Stats::decode(r.0).ok_or_else(|| ExecError::Internal("a batch 3 aggregate state is cut short".into()))?;
+                r.take(used)?;
+                State::Stats { s, accepted }
             }
             t => return Err(ExecError::Internal(format!("unknown partial aggregate state {t}"))),
         })

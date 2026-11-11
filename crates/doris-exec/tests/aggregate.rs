@@ -219,9 +219,9 @@ fn sum_overflow_is_an_error() {
 #[test]
 fn an_unknown_aggregate_is_refused() {
     let int = ty(T::INT);
-    let e = aggregate("percentile", ty(T::DOUBLE), vec![int.clone()], false, vec![slot(1, int)]);
-    let err = AggSpec::from_expr(&e).expect_err("percentile is not supported").to_string();
-    assert!(err.contains("function percentile"), "{err}");
+    let e = aggregate("percentile_approx", ty(T::DOUBLE), vec![int.clone()], false, vec![slot(1, int)]);
+    let err = AggSpec::from_expr(&e).expect_err("percentile_approx is not supported").to_string();
+    assert!(err.contains("function percentile_approx"), "{err}");
 }
 
 #[test]
