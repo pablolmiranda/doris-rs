@@ -127,6 +127,8 @@ fn subtree_len(nodes: &[TExprNode], i: usize) -> usize {
 }
 
 /// `round(x[, d])` of a DOUBLE or a DECIMAL32/64/128I into the same type, `d` an INT constant.
+/// `round`/`truncate`/`floor`/`ceil(x[, d])` on DOUBLE or a decimal. `d` may be a column
+/// (`apply_vec_vec`, round.h:519-670) only for `truncate`, the one the corpus sends so.
 fn round_call(nodes: &[TExprNode], i: usize) -> bool {
     let n = &nodes[i];
     let Some((args, to)) = signature(n) else { return false };
@@ -140,8 +142,11 @@ fn round_call(nodes: &[TExprNode], i: usize) -> bool {
         2 => {
             let start = i + 1 + subtree_len(nodes, i + 1);
             // a node list shorter than its num_children claim is malformed: not accepted
+            let column_ok = function_name(n).as_deref() == Some("truncate");
             args[1].ptype == T::INT
-                && nodes.get(start..start + subtree_len(nodes, start)).is_some_and(|d| d.iter().all(|k| k.node_type != N::SLOT_REF))
+                && nodes
+                    .get(start..start + subtree_len(nodes, start))
+                    .is_some_and(|d| column_ok || d.iter().all(|k| k.node_type != N::SLOT_REF))
         }
         _ => false,
     };
@@ -239,7 +244,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
-                Some("round") => round_call(&e.nodes, i),
+                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
@@ -715,7 +720,37 @@ fn eval_at(
                 };
                 (to, out)
             }
-            Some("round") => {
+            Some(name) if crate::round::Mode::of(name).is_some() && !constant.get(1).copied().unwrap_or(true) => {
+                // a column scale: each row's own, checked on every row first (round.h:519-534)
+                let to = node_type(n)?;
+                let mode = crate::round::Mode::of(name).unwrap_or(crate::round::Mode::Round);
+                let (tx, x) = kids.first().ok_or_else(|| bad("truncate without its argument"))?;
+                let (_, ds) = kids.get(1).ok_or_else(|| bad("truncate without its scale"))?;
+                for d in ds {
+                    if let Datum::Int(d) = d {
+                        if *d > i128::from(i16::MAX) || *d < i128::from(i16::MIN) {
+                            return Err(ExecError::Coded {
+                                code: -218,
+                                name: "E-218",
+                                msg: format!("Scale argument for function is out of bound: {d}"),
+                            });
+                        }
+                    }
+                }
+                let out = x
+                    .iter()
+                    .zip(ds)
+                    .map(|(v, d)| match (v, d) {
+                        (Datum::Null, _) | (_, Datum::Null) => Datum::Null,
+                        (Datum::Double(f), Datum::Int(d)) => Datum::Double(crate::round::round_double_mode(*f, *d as i32, mode)),
+                        (Datum::Int(r), Datum::Int(d)) => Datum::Int(crate::round::round_decimal_mode(*r, tx.scale, *d as i32, to.scale, mode)),
+                        (other, _) => other.clone(),
+                    })
+                    .collect();
+                (to, out)
+            }
+            Some(name) if crate::round::Mode::of(name).is_some() => {
+                let mode = crate::round::Mode::of(name).unwrap_or(crate::round::Mode::Round);
                 let to = node_type(n)?;
                 let (tx, x) = kids.first().ok_or_else(|| bad("round without its argument"))?;
                 let d = match kids.get(1).map(|(_, d)| d.first()) {
@@ -731,7 +766,7 @@ fn eval_at(
                         return Err(ExecError::Coded {
                             code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
                             name: "INVALID_ARGUMENT",
-                            msg: format!("Scale argument for function round is out of bound: {d}"),
+                            msg: format!("Scale argument for function {name} is out of bound: {d}"),
                         })
                     }
                     Some(d) => {
@@ -739,8 +774,8 @@ fn eval_at(
                         let out = x
                             .iter()
                             .map(|v| match v {
-                                Datum::Double(f) => Datum::Double(crate::round::round_double(*f, d)),
-                                Datum::Int(r) => Datum::Int(crate::round::round_decimal(*r, tx.scale, d, to.scale)),
+                                Datum::Double(f) => Datum::Double(crate::round::round_double_mode(*f, d, mode)),
+                                Datum::Int(r) => Datum::Int(crate::round::round_decimal_mode(*r, tx.scale, d, to.scale, mode)),
                                 other => other.clone(),
                             })
                             .collect();
