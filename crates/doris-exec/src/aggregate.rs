@@ -75,8 +75,16 @@ impl AggSpec {
             at = end;
         }
         if !merge {
-            for a in &args {
+            for (k, a) in args.iter().enumerate() {
                 check_read(a)?;
+                // only percentile_array's levels carry an array into an aggregate: arrays have no
+                // order or hash here, so min/max/count of one would be wrong
+                let array = a.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true)).is_some_and(|t| t.ptype == T::ARRAY);
+                if array && !(function == "percentile_array" && k == 1) {
+                    return Err(ExecError::Unsupported {
+                        what: format!("an ARRAY value as an operand (function {function})"),
+                    });
+                }
             }
         }
         Ok(AggSpec {

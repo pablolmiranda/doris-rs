@@ -161,11 +161,15 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Resul
             Ok(Datum::Int(i128::from((a % b).wrapping_add(b) % b)))
         }),
         "least" | "greatest" => {
-            let t = types.first().cloned();
+            // `Compare::less`: NaN the greatest, -0.0 equal to 0.0 (accurate_comparison.h)
+            let t = types
+                .first()
+                .cloned()
+                .ok_or_else(|| ExecError::BadRequest(format!("{name} without arguments")))?;
             rows(args, n, |r| {
                 let mut best = r[0];
                 for d in &r[1..] {
-                    let ord = compare(d, best, t.as_ref());
+                    let ord = crate::eval::compare(d, &t, best, &t).unwrap_or(std::cmp::Ordering::Equal);
                     let better = if name == "least" { ord.is_lt() } else { ord.is_gt() };
                     if better {
                         best = d;
@@ -182,17 +186,18 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Resul
     }
 }
 
-fn compare(a: &Datum, b: &Datum, _t: Option<&ColType>) -> std::cmp::Ordering {
-    match (a, b) {
-        (Datum::Int(x), Datum::Int(y)) => x.cmp(y),
-        (Datum::Bytes(x), Datum::Bytes(y)) => x.cmp(y),
-        _ => num(a).partial_cmp(&num(b)).unwrap_or(std::cmp::Ordering::Equal),
-    }
-}
-
-/// `width_bucket(x, min, max, n)` (function_width_bucket.cpp:63-122): `n` is row 0's.
+/// `width_bucket(x, min, max, n)` (function_width_bucket.cpp:63-122): `n` is row 0's; integers
+/// are subtracted in their own type (BIGINT wrapping) and divided as doubles. A NULL argument
+/// nulls its row; a NULL count everywhere (a NULL constant) nulls every row.
 fn width_bucket(types: &[ColType], args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecError> {
-    let buckets = args.get(3).and_then(|c| c.first()).map_or(0, int);
+    let counts = args.get(3).copied().unwrap_or_default();
+    if n == 0 {
+        return Ok(vec![]);
+    }
+    if counts.iter().all(|d| matches!(d, Datum::Null)) {
+        return Ok(vec![Datum::Null; n]);
+    }
+    let buckets = counts.first().map_or(0, int);
     if buckets <= 0 {
         return Err(ExecError::Coded {
             code: TStatusCode::INTERNAL_ERROR.0,
@@ -200,22 +205,34 @@ fn width_bucket(types: &[ColType], args: &[&[Datum]], n: usize) -> Result<Vec<Da
             msg: format!("The desired number({buckets}) of buckets must be a positive integer value."),
         });
     }
+    let bigint = types.first().is_some_and(|t| t.ptype == T::BIGINT);
     let integer = types.first().is_some_and(is_int);
-    rows(&args[..3], n, |r| {
-        let (x, lo, hi) = (num(r[0]), num(r[1]), num(r[2]));
-        let empty = if integer {
-            (int(r[2]) - int(r[1])) / buckets == 0
+    let sub = |a: i128, b: i128| if bigint { i128::from((a as i64).wrapping_sub(b as i64)) } else { a - b };
+    rows(args, n, |r| {
+        let bucket = if integer {
+            let (x, lo, hi) = (int(r[0]), int(r[1]), int(r[2]));
+            let range = sub(hi, lo);
+            if x < lo {
+                0
+            } else if x >= hi {
+                buckets + 1
+            } else if range / buckets == 0 {
+                0
+            } else {
+                (1.0 + sub(x, lo) as f64 / (range as f64 / (1.0 * buckets as f64))) as i64 as i128
+            }
         } else {
-            (hi - lo) / buckets as f64 == 0.0
+            let (x, lo, hi) = (num(r[0]), num(r[1]), num(r[2]));
+            if x < lo {
+                0
+            } else if x >= hi {
+                buckets + 1
+            } else if (hi - lo) / buckets as f64 == 0.0 {
+                0
+            } else {
+                (1.0 + (x - lo) / ((hi - lo) / (1.0 * buckets as f64))) as i64 as i128
+            }
         };
-        Ok(Datum::Int(if x < lo {
-            0
-        } else if x >= hi {
-            buckets + 1
-        } else if empty {
-            0
-        } else {
-            (1.0 + (x - lo) / ((hi - lo) / (1.0 * buckets as f64))) as i64 as i128
-        }))
+        Ok(Datum::Int(bucket))
     })
 }

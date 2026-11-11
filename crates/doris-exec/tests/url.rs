@@ -72,3 +72,11 @@ fn domain_functions_use_the_tld_table() {
     assert_eq!(text("first_significant_subdomain", "http://me@mail.yandex.ru/"), "yandex");
     assert_eq!(text("cut_to_first_significant_subdomain", "www.example.com."), "");
 }
+
+#[test]
+fn url_decode_0x_prefix_fails() {
+    // num_get takes the 0x prefix, then finds no digit
+    for bad in ["%0x", "%0X"] {
+        assert!(matches!(eval("url_decode", bad), Err(ExecError::Coded { .. })), "{bad}");
+    }
+}

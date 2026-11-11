@@ -172,3 +172,40 @@ fn string_functions_in_insert_values() {
     expr::check(&e).unwrap();
     assert_eq!(expr::eval(&e, &Default::default()).unwrap(), Value::Str(b"a\n".to_vec()));
 }
+
+#[test]
+fn find_in_set_never_tests_an_empty_last_token() {
+    let f = |a: &str, b: &str| one_row(call("find_in_set", ty(T::INT), vec![s(a), s(b)]));
+    assert_eq!(f("", "a,"), Datum::Int(0));
+    assert_eq!(f("", ",a"), Datum::Int(1));
+    assert_eq!(f("a", "a,"), Datum::Int(1));
+    assert_eq!(f("", ""), Datum::Int(1));
+}
+
+#[test]
+fn nullif_treats_nan_as_equal() {
+    let d = || ty(T::DOUBLE);
+    let nan = || doris_fixtures::build::float(f64::NAN, d());
+    assert_eq!(one_row(call("nullif", d(), vec![nan(), nan()])), Datum::Null);
+}
+
+#[test]
+fn pad_past_the_string_limit_errors() {
+    match eval(call("lpad", vc(), vec![s("a"), i32_(2_000_000_000), s("中")])) {
+        Err(ExecError::Coded { code, name, msg }) => {
+            assert_eq!((code, name), (-3113, "E-3113"));
+            assert_eq!(
+                msg,
+                "string column length is too large: total_length=6000000001, element_number=0, rows=0"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A write-path failure would only filter its row, where C++ fails the statement: refused there.
+#[test]
+fn failing_string_functions_are_refused_in_insert_values() {
+    assert!(doris_exec::expr::check(&call("url_decode", vc(), vec![s("%GG")])).is_err());
+    assert!(doris_exec::expr::check(&call("parse_data_size", ty(T::LARGEINT), vec![s("x")])).is_err());
+}

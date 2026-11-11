@@ -183,3 +183,47 @@ fn abs_of_decimal_keeps_its_type() {
         Datum::Int(1500000)
     );
 }
+
+#[test]
+fn greatest_orders_nan_last() {
+    let n = || dbl(f64::NAN);
+    let Datum::Double(v) = one_row(call("greatest", d(), vec![dbl(1.0), n()])) else {
+        panic!()
+    };
+    assert!(v.is_nan());
+    assert_eq!(one_row(call("least", d(), vec![n(), dbl(1.0)])), Datum::Double(1.0));
+}
+
+#[test]
+fn width_bucket_subtracts_integers_exactly() {
+    let b = |v: i64| int(v, ty(T::BIGINT));
+    let base: i64 = 1 << 53;
+    // (x - min) is 1 in int64; through doubles it would be 2
+    let e = call(
+        "width_bucket",
+        ty(T::BIGINT),
+        vec![b(base + 3), b(base + 2), b(base + 6), int(4, ty(T::TINYINT))],
+    );
+    assert_eq!(one_row(e), Datum::Int(2));
+}
+
+#[test]
+fn width_bucket_null_and_empty_inputs() {
+    use doris_fixtures::build::slot;
+    let t = || ty(T::INT);
+    // a constant NULL bucket count is NULL on every row, not an error
+    let e = call("width_bucket", ty(T::BIGINT), vec![int(1, t()), int(0, t()), int(5, t()), null(t())]);
+    assert_eq!(one_row(e), Datum::Null);
+    // a NULL count on a later row nulls that row; no rows give no rows
+    let e = call("width_bucket", ty(T::BIGINT), vec![int(1, t()), int(0, t()), int(5, t()), slot(1, t())]);
+    let block = |rows: Vec<Vec<Datum>>| Block {
+        types: vec![doris_exec::value::ColType::from_type_desc("n", &t(), true).unwrap()],
+        rows,
+    };
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    check_read(&e).unwrap();
+    let (_, v) = eval_column(&e, &block(vec![vec![Datum::Int(5)], vec![Datum::Null]]), &slots).unwrap();
+    assert_eq!(v, vec![Datum::Int(2), Datum::Null]);
+    let (_, v) = eval_column(&e, &block(vec![]), &slots).unwrap();
+    assert!(v.is_empty());
+}

@@ -179,7 +179,21 @@ fn find_in_set(needle: &[u8], list: &[u8]) -> i128 {
     if needle.contains(&b',') {
         return 0;
     }
-    list.split(|b| *b == b',').position(|p| p == needle).map_or(0, |i| i as i128 + 1)
+    // a do-while that stops when the next token would start at the end: an empty last token
+    // (after a trailing comma) is never tested
+    let mut start = 0;
+    let mut index = 1;
+    loop {
+        let end = list[start..].iter().position(|b| *b == b',').map_or(list.len(), |p| start + p);
+        if &list[start..end] == needle {
+            return index;
+        }
+        start = end + 1;
+        index += 1;
+        if start >= list.len() {
+            return 0;
+        }
+    }
 }
 
 /// `char(charset, n…)` (misc.cpp:602-783): each number's big-endian bytes without leading zeros;
@@ -200,10 +214,32 @@ fn char_of(nums: &[&Datum]) -> Datum {
 }
 
 /// `lpad`/`rpad` (function_string_concat.h:757-826), in characters.
-fn pad(s: &[u8], len: i128, p: &[u8], left: bool) -> Datum {
+/// The C++ string column's limit (`ColumnString::check_chars_length`, column_string.h:68-77).
+const MAX_STRING_SIZE: usize = 0xffff_ffff;
+
+/// `lpad`/`rpad` of row `row`, whose column already holds `written` bytes.
+fn pad(s: &[u8], len: i128, p: &[u8], left: bool, row: usize, written: usize) -> Result<Datum, ExecError> {
     if len < 0 {
-        return Datum::Null;
+        return Ok(Datum::Null);
     }
+    // the reservation C++ checks before padding (function_string_concat.h:788-798)
+    let count = char_starts(s).len() - 1;
+    let pad_chars = chars(p).len();
+    if count < len as usize && pad_chars > 0 {
+        let pad_times = (len as usize - count) / pad_chars;
+        let total = written + s.len() + (pad_times + 1) * p.len();
+        if total > MAX_STRING_SIZE {
+            return Err(ExecError::Coded {
+                code: -3113,
+                name: "E-3113",
+                msg: format!("string column length is too large: total_length={total}, element_number={row}, rows=0"),
+            });
+        }
+    }
+    Ok(pad_row(s, len, p, left))
+}
+
+fn pad_row(s: &[u8], len: i128, p: &[u8], left: bool) -> Datum {
     let len = len as usize;
     let starts = char_starts(s);
     let count = starts.len() - 1;
@@ -319,8 +355,8 @@ fn trim_in(s: &[u8], set: Option<&[u8]>, left: bool, right: bool) -> Vec<u8> {
     cs[a..b].concat()
 }
 
-/// Evaluates string function `name`.
-pub fn eval(name: &str, args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecError> {
+/// Evaluates string function `name`; `types` are the arguments' types.
+pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecError> {
     let text = |v: Vec<u8>| Ok(Datum::Bytes(v));
     match name {
         "upper" | "ucase" => rows(args, n, |r| text(upper(bytes(r[0])))),
@@ -334,7 +370,16 @@ pub fn eval(name: &str, args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecE
         "top_level_domain" => rows(args, n, |r| text(crate::url::top_level_domain(bytes(r[0])))),
         "first_significant_subdomain" => rows(args, n, |r| text(crate::url::first_significant_subdomain(bytes(r[0])))),
         "cut_to_first_significant_subdomain" => rows(args, n, |r| text(crate::url::cut_to_first_significant_subdomain(bytes(r[0])))),
-        "lpad" | "rpad" => rows(args, n, |r| Ok(pad(bytes(r[0]), int(r[1]), bytes(r[2]), name == "lpad"))),
+        "lpad" | "rpad" => {
+            let mut written = 0;
+            let mut row = 0;
+            rows(args, n, |r| {
+                let out = pad(bytes(r[0]), int(r[1]), bytes(r[2]), name == "lpad", row, written)?;
+                written += bytes(&out).len();
+                row += 1;
+                Ok(out)
+            })
+        }
         "trim_in" | "ltrim_in" | "rtrim_in" => rows(args, n, |r| {
             text(trim_in(bytes(r[0]), r.get(1).map(|d| bytes(d)), name != "rtrim_in", name != "ltrim_in"))
         }),
@@ -349,8 +394,13 @@ pub fn eval(name: &str, args: &[&[Datum]], n: usize) -> Result<Vec<Datum>, ExecE
         "nullif" => Ok((0..n)
             .map(|r| {
                 let (a, b) = (&args[0][r], &args[1][r]);
-                // `a = b` is NULL when either is, and NULL is not true
-                if *a != Datum::Null && *b != Datum::Null && a == b {
+                // `a = b` (the `eq` function: NaN equals NaN) is NULL when either is, and NULL
+                // is not true
+                let equal = match (types.first(), types.get(1)) {
+                    (Some(ta), Some(tb)) => crate::eval::compare(a, ta, b, tb) == Some(std::cmp::Ordering::Equal),
+                    _ => false,
+                };
+                if *a != Datum::Null && *b != Datum::Null && equal {
                     Datum::Null
                 } else {
                     a.clone()

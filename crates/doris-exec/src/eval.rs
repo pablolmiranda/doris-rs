@@ -378,8 +378,10 @@ pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
     match parent(nodes, i) {
         None => true,
-        // an aggregate's argument (percentile_array's levels), `element_at`'s array
-        Some(p) if nodes[p].node_type == N::AGG_EXPR => true,
+        // percentile_array's levels (its second argument), `element_at`'s array
+        Some(p) if nodes[p].node_type == N::AGG_EXPR => {
+            function_name(&nodes[p]).as_deref() == Some("percentile_array") && i != p + 1
+        }
         Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || f == "element_at"),
     }
 }
@@ -688,8 +690,9 @@ fn eval_at(
             (to, out)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::strfn::is_string_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
-            (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &args, rows)?)
+            (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();

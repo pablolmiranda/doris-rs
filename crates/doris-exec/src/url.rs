@@ -51,6 +51,10 @@ fn read_hex(two: &[u8]) -> Option<i32> {
         }
         _ => false,
     };
+    // num_get takes a `0x` prefix under std::hex; two bytes leave no digit after it
+    if two[i..].starts_with(b"0x") || two[i..].starts_with(b"0X") {
+        return None;
+    }
     let digits: Vec<u32> = two[i..].iter().map_while(|c| (*c as char).to_digit(16)).collect();
     if digits.is_empty() {
         return None;

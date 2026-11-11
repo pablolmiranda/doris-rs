@@ -201,3 +201,49 @@ fn percentile_over_a_window() {
     // re-finalized after each row: [3], [3,1], [3,1,2]
     assert_eq!(out, vec![Datum::Double(3.0), Datum::Double(2.0), Datum::Double(2.0)]);
 }
+
+// review fixes
+
+/// Only percentile_array's levels carry an array into an aggregate: `max` of one would keep the
+/// first row's array, as arrays have no order here.
+#[test]
+fn an_array_argument_of_another_aggregate_is_refused() {
+    use doris_fixtures::build::string;
+    let vc = scalar(T::VARCHAR, 65533, 0, 0);
+    let arr = array_of(vc.clone());
+    let split = call("split_by_string", arr.clone(), vec![string("a,b"), string(",")]);
+    let e = aggregate("max", arr.clone(), vec![arr], false, vec![split]);
+    let err = AggSpec::from_expr(&e).unwrap_err().to_string();
+    assert!(err.contains("ARRAY"), "{err}");
+    assert!(doris_exec::eval::check_nodes(&e, true).is_err());
+    // percentile_array's own levels still are
+    let ok = aggregate(
+        "percentile_array",
+        array_of(d()),
+        vec![ty(T::INT), array_of(d())],
+        false,
+        vec![slot(1, ty(T::INT)), levels(&[0.5])],
+    );
+    doris_exec::eval::check_nodes(&ok, true).unwrap();
+}
+
+#[test]
+fn percentile_of_a_decimal_is_refused() {
+    let dec = scalar(T::DECIMAL64, -1, 10, 2);
+    let e = aggregate("percentile", d(), vec![dec.clone(), d()], false, vec![slot(1, dec), float(0.5, d())]);
+    let a = Aggregation {
+        group_by: vec![],
+        functions: vec![AggSpec::from_expr(&e).unwrap()],
+        finalize: true,
+    };
+    assert!(a.run(&input(&scalar(T::DECIMAL64, -1, 10, 2), &[Datum::Int(150)])).is_err());
+}
+
+#[test]
+fn a_nan_level_is_accepted() {
+    // check_quantile is `q < 0 || q > 1`, which NaN passes
+    let Datum::Double(v) = one_phase("percentile", &ty(T::INT), &[f64::NAN], &ints(&[1, 2])).unwrap() else {
+        panic!()
+    };
+    assert!(v.is_nan());
+}

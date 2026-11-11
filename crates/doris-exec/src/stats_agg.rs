@@ -78,9 +78,11 @@ fn number(d: &Datum) -> Option<f64> {
     }
 }
 
-/// `check_quantile` (percentile_util.h:37-43).
+/// `check_quantile` (percentile_util.h:37-43). Not `!(0.0..=1.0).contains(&q)`, which refuses NaN.
+#[allow(clippy::manual_range_contains)]
 fn check_quantile(q: f64) -> Result<f64, ExecError> {
-    if !(0.0..=1.0).contains(&q) {
+    // `q < 0 || q > 1`: NaN passes
+    if q < 0.0 || q > 1.0 {
         return Err(invalid(format!("quantile in func percentile should in [0, 1], but real data is:{q:.6}")));
     }
     Ok(q)
@@ -106,11 +108,17 @@ impl Stats {
         let int = |t: &ColType| matches!(t.ptype, T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT);
         let double = |t: &ColType| t.ptype == T::DOUBLE;
         Some(match name {
-            "percentile" | "percentile_array" => Stats::Percentile {
-                levels: None,
-                values: Vec::new(),
-                array: name == "percentile_array",
-            },
+            "percentile" | "percentile_array"
+                if params.len() == 2
+                    && (int(&params[0]) || matches!(params[0].ptype, T::FLOAT | T::DOUBLE))
+                    && (double(&params[1]) || params[1].element().is_some_and(|e| e.ptype == T::DOUBLE)) =>
+            {
+                Stats::Percentile {
+                    levels: None,
+                    values: Vec::new(),
+                    array: name == "percentile_array",
+                }
+            }
             "retention" if (1..=32).contains(&params.len()) && params.iter().all(|t| t.ptype == T::BOOLEAN) => {
                 Stats::Retention { events: 0, n: params.len() }
             }
