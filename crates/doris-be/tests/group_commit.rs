@@ -388,3 +388,96 @@ fn encode(p: doris_thrift::gen::palo_internal_service::TPipelineFragmentParams) 
         .unwrap();
     buf
 }
+
+// review fixes
+
+/// Put replies for many queues, each with its own transaction (the recorded reply's plan).
+fn many_puts(s: &Setup, n: i64, interval_ms: i64) -> Vec<TStreamLoadPutResult> {
+    let base = s
+        .seq
+        .iter()
+        .find_map(|m| if let Msg::PutReply(r) = m { Some(r.clone()) } else { None })
+        .unwrap();
+    (0..n)
+        .map(|i| {
+            let mut r = base.clone();
+            r.group_commit_interval_ms = Some(interval_ms);
+            let sink = r
+                .pipeline_params
+                .as_mut()
+                .unwrap()
+                .fragment
+                .as_mut()
+                .unwrap()
+                .output_sink
+                .as_mut()
+                .unwrap();
+            sink.olap_table_sink.as_mut().unwrap().txn_id = 20_000 + i;
+            r
+        })
+        .collect()
+}
+
+/// Loads joining while queues expire: every row a load joined with is committed (none lands in
+/// a queue its committer already drained).
+#[test]
+fn rows_joining_as_a_queue_expires_are_committed() {
+    let s = setup(|_| {});
+    s.fe.queue_puts(many_puts(&s, 400, 1));
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    let per_row = s.checked(&f).bytes();
+    let queues = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                for _ in 0..25 {
+                    let q = mgr.join(&f, s.checked(&f)).unwrap();
+                    queues.lock().unwrap().push(q);
+                }
+            });
+        }
+    });
+    for q in queues.into_inner().unwrap() {
+        assert_eq!(q.wait(|| false).unwrap().status_code, TStatusCode::OK);
+    }
+    let committed: i64 = s.commits().iter().map(|c| c.receive_bytes.unwrap()).sum();
+    assert_eq!(committed, 200 * per_row);
+}
+
+/// A load that chose a queue which then expired and committed: its rows go to a new queue,
+/// not into the drained one.
+#[test]
+fn a_load_held_past_its_queues_commit_joins_another() {
+    let s = setup(|_| {});
+    s.fe.queue_puts(many_puts(&s, 3, 20));
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    let first = mgr.join(&f, s.checked(&f)).unwrap();
+    // the next load stops after choosing the open queue until it has committed
+    let held = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let q = Arc::clone(&first);
+    let once = Arc::clone(&held);
+    mgr.set_join_hook_for_tests(move || {
+        if !once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            q.wait(|| false);
+        }
+    });
+    let second = mgr.join(&f, s.checked(&f)).unwrap();
+    assert!(held.load(std::sync::atomic::Ordering::SeqCst));
+    assert_ne!(second.txn_id(), first.txn_id());
+    assert_eq!(second.wait(|| false).unwrap().status_code, TStatusCode::OK);
+    let committed: i64 = s.commits().iter().map(|c| c.receive_bytes.unwrap()).sum();
+    assert_eq!(committed, 2 * s.checked(&f).bytes());
+}
+
+/// A queue whose interval is 0 still takes the load that started it.
+#[test]
+fn a_zero_interval_queue_commits_its_first_load() {
+    let s = setup(|r| r.group_commit_interval_ms = Some(0));
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    let q = mgr.join(&f, s.checked(&f)).unwrap();
+    assert_eq!(q.wait(|| false).unwrap().status_code, TStatusCode::OK);
+    assert_eq!(s.commits()[0].receive_bytes, Some(s.checked(&f).bytes()));
+}

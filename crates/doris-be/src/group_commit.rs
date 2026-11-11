@@ -38,7 +38,11 @@ struct Inner {
     /// Each table's open queues. A table's lock is held while a queue is created, so two loads
     /// never start two queues for one table at once.
     tables: Mutex<HashMap<i64, Arc<TableQueues>>>,
+    /// Tests only: runs after a load chose a queue, before it adds its rows.
+    join_hook: Mutex<Option<JoinHook>>,
 }
+
+type JoinHook = Arc<dyn Fn() + Send + Sync>;
 
 /// A table's open queues.
 type TableQueues = Mutex<Vec<Arc<Queue>>>;
@@ -124,6 +128,26 @@ impl Queue {
         }
     }
 
+    /// `add_load_id` and `add_block` at once: the rows join if the queue is still open (under
+    /// the same lock as the committer's check), and `rows` is emptied; false if it closed.
+    /// A new queue (`first`) takes the load that started it whatever its interval.
+    fn try_add(&self, rows: &mut Option<Checked>, first: bool) -> bool {
+        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if !first && !self.open(&mut s) {
+            return false;
+        }
+        if let Some(r) = rows.take() {
+            s.bytes += r.bytes();
+            s.rows.push(r);
+        }
+        if s.bytes >= self.data_bytes {
+            s.need_commit = true;
+        }
+        drop(s);
+        self.changed.notify_all();
+        true
+    }
+
     /// Whether a load may still join: not full, not past its interval, not ended.
     fn open(&self, s: &mut State) -> bool {
         if self.start.elapsed() >= self.interval {
@@ -141,6 +165,7 @@ impl GroupCommitMgr {
                 fe,
                 master,
                 tables: Mutex::new(HashMap::new()),
+                join_hook: Mutex::new(None),
             }),
         }
     }
@@ -153,35 +178,46 @@ impl GroupCommitMgr {
         let schema_version = f.sink.base_schema_version.unwrap_or(0);
         let index_size = f.sink.schema.indexes.len();
         let table = Arc::clone(self.inner.tables.lock().unwrap_or_else(|e| e.into_inner()).entry(table_id).or_default());
-        let mut queues = table.lock().unwrap_or_else(|e| e.into_inner());
-        queues.retain(|q| q.state.lock().unwrap_or_else(|e| e.into_inner()).finished.is_none());
-        let found = queues.iter().find(|q| {
-            q.schema_version == schema_version && q.index_size == index_size && q.open(&mut q.state.lock().unwrap_or_else(|e| e.into_inner()))
-        });
-        let queue = match found {
-            Some(q) => Arc::clone(q),
-            None => {
+        let mut rows = Some(rows);
+        loop {
+            let mut queues = table.lock().unwrap_or_else(|e| e.into_inner());
+            queues.retain(|q| q.state.lock().unwrap_or_else(|e| e.into_inner()).finished.is_none());
+            let found = queues
+                .iter()
+                .find(|q| {
+                    q.schema_version == schema_version && q.index_size == index_size && q.open(&mut q.state.lock().unwrap_or_else(|e| e.into_inner()))
+                })
+                .cloned();
+            let Some(queue) = found else {
                 let q = Arc::new(self.create(table_id, schema_version, index_size)?);
-                queues.push(Arc::clone(&q));
+                // the rows are in before the committer can run, and the queue is listed only
+                // once it has a committer
+                q.try_add(&mut rows, true);
                 let inner = Arc::clone(&self.inner);
                 let committer = Arc::clone(&q);
                 std::thread::Builder::new()
                     .name("group-commit".into())
                     .spawn(move || inner.commit_when_due(&committer))
                     .map_err(|e| format!("cannot start the group commit: {e}"))?;
-                q
+                queues.push(Arc::clone(&q));
+                return Ok(q);
+            };
+            drop(queues);
+            let hook = self.inner.join_hook.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Some(h) = hook {
+                h();
             }
-        };
-        {
-            let mut s = queue.state.lock().unwrap_or_else(|e| e.into_inner());
-            s.bytes += rows.bytes();
-            s.rows.push(rows);
-            if s.bytes >= queue.data_bytes {
-                s.need_commit = true;
+            // the queue may have closed since it was chosen: then choose again
+            if queue.try_add(&mut rows, false) {
+                return Ok(queue);
             }
         }
-        queue.changed.notify_all();
-        Ok(queue)
+    }
+
+    /// Tests only: `hook` runs each time a load has chosen its queue, before it adds its rows.
+    #[doc(hidden)]
+    pub fn set_join_hook_for_tests(&self, hook: impl Fn() + Send + Sync + 'static) {
+        *self.inner.join_hook.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(hook));
     }
 
     /// `_create_group_commit_load`: the FE plans an internal load reading the table's queue.
