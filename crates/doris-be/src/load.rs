@@ -26,7 +26,7 @@ use doris_thrift::gen::types::{TFileType, TMergeType, TUniqueId};
 use thrift::OrderedFloat;
 
 use crate::fe_client::FeClient;
-use crate::group_commit::GroupCommitMgr;
+use crate::group_commit::{GroupCommitMgr, Queue};
 use crate::master::MasterInfo;
 
 /// `config::thrift_rpc_timeout_ms` and `txn_commit_rpc_timeout_ms`.
@@ -279,29 +279,28 @@ impl Inner {
         }
     }
 
-    /// A GROUP_COMMIT_BLOCK_SINK (`GroupCommitBlockSinkOperatorX`): the rows are checked and
-    /// join a queue of the table; an async load reports at once with the queue's label and
-    /// transaction, a sync load once the queue's internal load ends (or the FE cancels it).
-    fn group_commit_insert(
+    /// A GROUP_COMMIT_BLOCK_SINK (`GroupCommitBlockSinkOperatorX`) fed one block: the rows are
+    /// checked and join a queue of the table. An async load ends there; a sync load waits for the
+    /// queue's internal load to end, or for `cancelled` to give the status to end with. The
+    /// outcome's status is the load's; the queue is the one it joined, if any.
+    fn group_commit_rows(
         &self,
         f: &WriteFragment,
         rows: Vec<Result<Vec<doris_exec::value::Value>, doris_exec::RowError>>,
-    ) -> TReportExecStatusParams {
+        cancelled: &dyn Fn() -> Option<TStatus>,
+    ) -> (SinkOutcome, Option<Arc<Queue>>) {
         let sink = match TableSink::new(f, vec![f.instance_id.clone()]) {
             Ok(s) => s,
-            Err(e) => return exec_status(f, &SinkOutcome::failed(e.to_string()), None),
+            Err(e) => return (SinkOutcome::failed(e.to_string()), None),
         };
         if let Err(e) = sink.push(0, rows, &f.input_nullable()) {
             let failure = TStatus {
                 status_code: TStatusCode::CANCELLED,
                 error_msgs: Some(vec![e.to_string()]),
             };
-            let outcome = sink.finish(&self.tablets, &self.error_dir, Some(failure));
-            let url = self.tracking_url(&outcome);
-            return exec_status(f, &outcome, url);
+            return (sink.finish(&self.tablets, &self.error_dir, Some(failure)), None);
         }
         let (mut outcome, checked) = sink.check(&self.error_dir);
-        let url = self.tracking_url(&outcome);
         // sink_impl's wind_up: too many filtered rows fail the load before it joins a queue
         let ratio = f.sink.max_filter_ratio.map_or(0.0, |r| r.0);
         let selected = outcome.loaded + outcome.filtered;
@@ -311,7 +310,7 @@ impl Inner {
                 status_code: TStatusCode::DATA_QUALITY_ERROR,
                 error_msgs: Some(vec![msg]),
             };
-            return exec_status(f, &outcome, url);
+            return (outcome, None);
         }
         let queue = match self.group_commit.join(f, checked) {
             Ok(q) => q,
@@ -320,36 +319,54 @@ impl Inner {
                     status_code: TStatusCode::INTERNAL_ERROR,
                     error_msgs: Some(vec![msg]),
                 };
-                return exec_status(f, &outcome, url);
+                return (outcome, None);
             }
         };
         if f.group_commit == Some(TGroupCommitMode::SYNC_MODE) {
-            let key = (f.query_id.hi, f.query_id.lo);
-            let cancel: CancelSlot = Arc::default();
-            self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).insert(key, Arc::clone(&cancel));
-            let ended = queue.wait(|| cancel.lock().unwrap_or_else(|e| e.into_inner()).is_some());
-            self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
-            outcome.status = match ended {
+            outcome.status = match queue.wait(|| cancelled().is_some()) {
                 Some(st) => st,
-                None => {
-                    // the fragment's cancel reason, as its report words it
-                    let c = cancel.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
-                    let code = TStatusCode(c.status_code);
-                    let msg = c.error_msgs.first().cloned().unwrap_or_default();
-                    TStatus {
-                        status_code: code,
-                        error_msgs: Some(vec![format!(
-                            "({})[{}]PStatus: {msg}",
-                            self.master.localhost(),
-                            crate::status::code_name(code)
-                        )]),
-                    }
-                }
+                None => cancelled().unwrap_or(TStatus {
+                    status_code: TStatusCode::CANCELLED,
+                    error_msgs: None,
+                }),
             };
         }
+        (outcome, Some(queue))
+    }
+
+    /// An `INSERT … VALUES` into a GROUP_COMMIT_BLOCK_SINK: an async load reports at once with
+    /// the queue's label and transaction, a sync load once the queue's internal load ends or the
+    /// FE cancels the fragment.
+    fn group_commit_insert(
+        &self,
+        f: &WriteFragment,
+        rows: Vec<Result<Vec<doris_exec::value::Value>, doris_exec::RowError>>,
+    ) -> TReportExecStatusParams {
+        let key = (f.query_id.hi, f.query_id.lo);
+        let cancel: CancelSlot = Arc::default();
+        self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).insert(key, Arc::clone(&cancel));
+        let cancelled = || {
+            // the fragment's cancel reason, as its report words it
+            let c = cancel.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
+            let code = TStatusCode(c.status_code);
+            let msg = c.error_msgs.first().cloned().unwrap_or_default();
+            Some(TStatus {
+                status_code: code,
+                error_msgs: Some(vec![format!(
+                    "({})[{}]PStatus: {msg}",
+                    self.master.localhost(),
+                    crate::status::code_name(code)
+                )]),
+            })
+        };
+        let (outcome, queue) = self.group_commit_rows(f, rows, &cancelled);
+        self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
+        let url = self.tracking_url(&outcome);
         let mut params = exec_status(f, &outcome, url);
-        params.txn_id = Some(queue.txn_id());
-        params.label = Some(queue.label().to_string());
+        if let Some(q) = queue {
+            params.txn_id = Some(q.txn_id());
+            params.label = Some(q.label().to_string());
+        }
         params
     }
 
@@ -389,6 +406,8 @@ struct StreamLoad<'a> {
     error_url: Option<String>,
     first_error: Option<String>,
     times: [u128; 6],
+    /// The `group_commit` header's mode when the load goes through group commit.
+    group_commit: Option<String>,
 }
 
 /// `Basic <base64(user:passwd)>`.
@@ -460,6 +479,7 @@ impl<'a> StreamLoad<'a> {
             error_url: None,
             first_error: None,
             times: [0; 6],
+            group_commit: None,
             req,
         }
     }
@@ -492,7 +512,34 @@ impl<'a> StreamLoad<'a> {
         }
     }
 
+    /// `StreamLoadAction::_handle_group_commit`: the `group_commit` header's mode when the load
+    /// goes through group commit (not `off_mode`, and `_can_group_commit`).
+    fn group_commit_mode(&self) -> Result<Option<String>, String> {
+        let Some(mode) = self.header("group_commit") else { return Ok(None) };
+        if !["sync_mode", "async_mode", "off_mode"].iter().any(|m| mode.eq_ignore_ascii_case(m)) {
+            return Err("[INVALID_ARGUMENT]group_commit can only be [async_mode, sync_mode, off_mode]".into());
+        }
+        if mode.eq_ignore_ascii_case("off_mode") || !self.can_group_commit() {
+            return Ok(None);
+        }
+        // a chunked body forgets the label
+        let chunked = self.header("transfer-encoding").is_some_and(|t| t.contains("chunked"));
+        if self.header("label").is_some() && !chunked {
+            return Err("[INVALID_ARGUMENT]label and group_commit can't be set at the same time".into());
+        }
+        Ok(Some(mode))
+    }
+
     fn run(&mut self) {
+        match self.group_commit_mode() {
+            Ok(Some(mode)) => {
+                // the queue's label is the load's
+                self.label = String::new();
+                self.group_commit = Some(mode);
+            }
+            Ok(None) => {}
+            Err(msg) => return self.fail(msg),
+        }
         let fmt = self.header("format").unwrap_or_else(|| "csv".into()).to_ascii_lowercase();
         // StreamLoadAction::_on_header: a header-carrying CSV is read as CSV
         let read_as = if self.header_type().is_empty() { fmt.as_str() } else { "csv" };
@@ -523,6 +570,15 @@ impl<'a> StreamLoad<'a> {
             Err(msg) => return self.fail(msg),
         };
         let fe = Arc::clone(&self.inner.fe);
+        // a group commit load has no transaction of its own: the queue's internal load does
+        if self.group_commit.is_none() && !self.begin(fe.as_ref(), timeout) {
+            return;
+        }
+        self.put_and_load(fe.as_ref(), format, compress, timeout, max);
+    }
+
+    /// `loadTxnBegin`; false when the load failed (and was rolled back if it began).
+    fn begin(&mut self, fe: &dyn FeClient, timeout: Option<i32>) -> bool {
         let t = Instant::now();
         let begin = TLoadTxnBeginRequest {
             cluster: None,
@@ -547,19 +603,33 @@ impl<'a> StreamLoad<'a> {
         self.times[0] = t.elapsed().as_millis();
         let begun = match begun {
             Ok(r) if r.status.status_code == TStatusCode::OK => r,
-            Ok(r) => return self.fail(fe_message(&r.status)),
-            Err(e) => return self.fail(format!("[INTERNAL_ERROR]{e}")),
+            Ok(r) => {
+                self.fail(fe_message(&r.status));
+                return false;
+            }
+            Err(e) => {
+                self.fail(format!("[INTERNAL_ERROR]{e}"));
+                return false;
+            }
         };
         self.txn_id = begun.txn_id.unwrap_or(-1);
         self.db_id = begun.db_id;
+        // a table's own group commit mode (no group_commit header) is not done yet
         if begun
             .table_group_commit_mode
             .as_deref()
             .is_some_and(|m| m.contains("async") || m.contains("sync"))
         {
-            self.fail("[NOT_IMPLEMENTED_ERROR]doris-rs does not support group commit yet".into());
-            return self.rollback();
+            self.fail("[NOT_IMPLEMENTED_ERROR]doris-rs does not support a table's own group commit mode yet".into());
+            self.rollback();
+            return false;
         }
+        true
+    }
+
+    /// `streamLoadPut`, then the body through the planned fragment: committed as the load's
+    /// transaction, or queued for group commit.
+    fn put_and_load(&mut self, fe: &dyn FeClient, format: TFileFormatType, compress: TFileCompressType, timeout: Option<i32>, max: u64) {
         let t = Instant::now();
         let request = match self.put_request(format, compress, timeout) {
             Ok(r) => r,
@@ -611,6 +681,25 @@ impl<'a> StreamLoad<'a> {
                 return self.rollback();
             }
         };
+        if self.group_commit.is_some() {
+            let (outcome, queue) = f.in_context(|| self.inner.group_commit_rows(&f, rows, &|| None));
+            self.times[3] = t.elapsed().as_millis();
+            if let Some(q) = queue {
+                self.txn_id = q.txn_id();
+                self.label = q.label().to_string();
+            }
+            self.total = outcome.loaded + outcome.filtered + outcome.unselected;
+            self.loaded = outcome.loaded;
+            self.filtered = outcome.filtered;
+            self.unselected = outcome.unselected;
+            self.error_url = self.inner.tracking_url(&outcome);
+            if outcome.status.status_code != TStatusCode::OK {
+                self.first_error = outcome.first_error.clone();
+                let msg = outcome.status.error_msgs.clone().unwrap_or_default().join("; ");
+                self.fail(format!("[{}]{msg}", crate::status::code_name(outcome.status.status_code)));
+            }
+            return;
+        }
         let outcome = f.in_context(|| run_sink(&f, rows, &self.inner.tablets, &self.inner.error_dir));
         self.times[3] = t.elapsed().as_millis();
         self.total = outcome.loaded + outcome.filtered + outcome.unselected;
@@ -774,7 +863,7 @@ impl<'a> StreamLoad<'a> {
             memtable_on_sink_node: h("memtable_on_sink_node").map(|v| v.eq_ignore_ascii_case("true")),
             group_commit: None,
             stream_per_node: None,
-            group_commit_mode: None,
+            group_commit_mode: self.group_commit.clone(),
             unique_key_update_mode: None,
             partial_update_new_key_policy: None,
             empty_field_as_null: h("empty_field_as_null").map(|v| v.eq_ignore_ascii_case("true")),
@@ -784,8 +873,11 @@ impl<'a> StreamLoad<'a> {
         })
     }
 
-    /// `StreamLoadExecutor::rollback_txn`.
+    /// `StreamLoadExecutor::rollback_txn`; nothing for a group commit load, which began none.
     fn rollback(&mut self) {
+        if self.group_commit.is_some() {
+            return;
+        }
         let req = TLoadTxnRollbackRequest {
             cluster: None,
             user: self.user.clone(),
@@ -824,7 +916,16 @@ impl<'a> StreamLoad<'a> {
             ("TxnId", self.txn_id.to_string()),
             ("Label", s(&self.label)),
             ("Comment", s(&self.header("comment").unwrap_or_default())),
-            ("TwoPhaseCommit", s("false")),
+        ];
+        match &self.group_commit {
+            None => fields.push(("TwoPhaseCommit", s("false"))),
+            Some(mode) => {
+                fields.push(("GroupCommit", "true".into()));
+                fields.push(("GroupCommitMode", s(mode)));
+                fields.push(("LoadId", s(&format!("{:016x}-{:016x}", self.load_id.hi as u64, self.load_id.lo as u64))));
+            }
+        }
+        fields.extend([
             ("Status", s(self.status_word())),
             ("Message", s(self.status.as_deref().unwrap_or("OK"))),
             ("NumberTotalRows", self.total.to_string()),
@@ -833,13 +934,20 @@ impl<'a> StreamLoad<'a> {
             ("NumberUnselectedRows", self.unselected.to_string()),
             ("LoadBytes", self.req.body.as_ref().map_or(0, Vec::len).to_string()),
             ("LoadTimeMs", self.started.elapsed().as_millis().to_string()),
-            ("BeginTxnTimeMs", self.times[0].to_string()),
+        ]);
+        let gc = self.group_commit.is_some();
+        if !gc {
+            fields.push(("BeginTxnTimeMs", self.times[0].to_string()));
+        }
+        fields.extend([
             ("StreamLoadPutTimeMs", self.times[1].to_string()),
             ("ReadDataTimeMs", self.times[2].to_string()),
             ("WriteDataTimeMs", self.times[3].to_string()),
             ("ReceiveDataTimeMs", self.times[4].to_string()),
-            ("CommitAndPublishTimeMs", self.times[5].to_string()),
-        ];
+        ]);
+        if !gc {
+            fields.push(("CommitAndPublishTimeMs", self.times[5].to_string()));
+        }
         if let Some(u) = &self.error_url {
             fields.push(("ErrorURL", s(u)));
         }

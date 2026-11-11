@@ -65,6 +65,26 @@ fn split_http(raw: &[u8]) -> (String, Vec<u8>) {
     (String::from_utf8_lossy(&raw[..at]).into_owned(), raw[at..].to_vec())
 }
 
+/// An HTTP reply's body, past any `100 Continue`, gunzipped when the reply says so.
+fn response_body(raw: &[u8]) -> String {
+    let mut rest = raw;
+    loop {
+        let (head, body) = split_http(rest);
+        if head.starts_with("HTTP/1.1 100") {
+            rest = &rest[head.len()..];
+            continue;
+        }
+        let body = if head.to_ascii_lowercase().contains("content-encoding: gzip") {
+            let mut out = Vec::new();
+            std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(body.as_slice()), &mut out).expect("gzip body");
+            out
+        } else {
+            body
+        };
+        return String::from_utf8_lossy(&body).into_owned();
+    }
+}
+
 /// Every recorded message of a suite, in capture order.
 pub fn sequence(suite: &str) -> Vec<Msg> {
     let dir = group_commit_dir().join(suite);
@@ -102,7 +122,7 @@ pub fn sequence(suite: &str) -> Vec<Msg> {
                         .collect();
                     Msg::HttpRequest { headers, body }
                 }
-                "http_response" => Msg::HttpResponse(String::from_utf8_lossy(&split_http(&b).1).into_owned()),
+                "http_response" => Msg::HttpResponse(response_body(&b)),
                 other => panic!("{}: unknown kind {other}", p.display()),
             }
         })
