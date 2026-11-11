@@ -11,18 +11,22 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use doris_exec::file_scan::stream_rows;
 use doris_exec::fragment::{decode_fragments, plan_write, WriteFragment, WritePlan};
-use doris_exec::sink::{exec_status, run_sink, SinkOutcome};
+use doris_exec::sink::{exec_status, run_sink, SinkOutcome, TableSink};
 use doris_exec::ExecError;
 use doris_proto::doris::{PCancelPlanFragmentRequest, PCancelPlanFragmentResult, PExecPlanFragmentRequest, PExecPlanFragmentResult, PStatus};
 use doris_storage::TabletManager;
 use doris_thrift::gen::backend_service::TStreamLoadRecord;
+use doris_thrift::gen::data_sinks::TGroupCommitMode;
+use doris_thrift::gen::frontend_service::TReportExecStatusParams;
 use doris_thrift::gen::frontend_service::{TLoadTxnBeginRequest, TLoadTxnCommitRequest, TLoadTxnRollbackRequest, TStreamLoadPutRequest};
 use doris_thrift::gen::plan_nodes::{TFileCompressType, TFileFormatType};
+use doris_thrift::gen::status::TStatus;
 use doris_thrift::gen::status::TStatusCode;
 use doris_thrift::gen::types::{TFileType, TMergeType, TUniqueId};
 use thrift::OrderedFloat;
 
 use crate::fe_client::FeClient;
+use crate::group_commit::GroupCommitMgr;
 use crate::master::MasterInfo;
 
 /// `config::thrift_rpc_timeout_ms` and `txn_commit_rpc_timeout_ms`.
@@ -46,6 +50,9 @@ pub struct StreamLoadRequest {
     pub client_ip: String,
 }
 
+/// Where a cancel of a waiting sync load leaves its status.
+type CancelSlot = Arc<Mutex<Option<PStatus>>>;
+
 #[derive(Clone)]
 pub struct LoadService {
     inner: Arc<Inner>,
@@ -53,6 +60,10 @@ pub struct LoadService {
 
 struct Inner {
     tablets: Arc<Mutex<TabletManager>>,
+    group_commit: GroupCommitMgr,
+    /// Sync group-commit loads waiting for their queue, by query id: set to the cancel's
+    /// status when the FE cancels one.
+    sync_waits: Mutex<HashMap<(i64, i64), CancelSlot>>,
     fe: Arc<dyn FeClient>,
     master: MasterInfo,
     http_port: u16,
@@ -81,20 +92,38 @@ fn now_ms() -> i64 {
 }
 
 fn pstatus(code: i32, msg: Option<String>) -> PStatus {
-    PStatus { status_code: code, error_msgs: msg.into_iter().collect() }
+    PStatus {
+        status_code: code,
+        error_msgs: msg.into_iter().collect(),
+    }
 }
 
 /// Where load error logs go: `<first data dir>/error_log`.
 pub(crate) fn error_dir(tablets: &Mutex<TabletManager>) -> PathBuf {
     let mgr = tablets.lock().unwrap_or_else(|e| e.into_inner());
-    mgr.data_dirs().first().map(|d| d.root().join("error_log")).unwrap_or_else(|| PathBuf::from("error_log"))
+    mgr.data_dirs()
+        .first()
+        .map(|d| d.root().join("error_log"))
+        .unwrap_or_else(|| PathBuf::from("error_log"))
 }
 
 impl LoadService {
     pub fn new(tablets: Arc<Mutex<TabletManager>>, fe: Arc<dyn FeClient>, master: MasterInfo, http_port: u16) -> LoadService {
         let error_dir = error_dir(&tablets);
         LoadService {
-            inner: Arc::new(Inner { tablets, fe, master, http_port, error_dir, running: Mutex::new(0), idle: Condvar::new(), max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE), next_shard: AtomicU64::new(0) }),
+            inner: Arc::new(Inner {
+                group_commit: GroupCommitMgr::new(Arc::clone(&tablets), Arc::clone(&fe), master.clone()),
+                sync_waits: Mutex::new(HashMap::new()),
+                tablets,
+                fe,
+                master,
+                http_port,
+                error_dir,
+                running: Mutex::new(0),
+                idle: Condvar::new(),
+                max_body_bytes: AtomicU64::new(102_400 * MEBIBYTE),
+                next_shard: AtomicU64::new(0),
+            }),
         }
     }
 
@@ -121,11 +150,15 @@ impl LoadService {
         let planned = decode_fragments(req).and_then(|list| {
             let params = list.params_list.unwrap_or_default();
             let [p] = params.as_slice() else {
-                return Err(ExecError::Unsupported { what: format!("a request of {} fragments", params.len()) });
+                return Err(ExecError::Unsupported {
+                    what: format!("a request of {} fragments", params.len()),
+                });
             };
             let f = plan_write(p)?;
             if f.plan != WritePlan::Values {
-                return Err(ExecError::Unsupported { what: "a file scan outside a stream load".into() });
+                return Err(ExecError::Unsupported {
+                    what: "a file scan outside a stream load".into(),
+                });
             }
             Ok(f)
         });
@@ -140,29 +173,27 @@ impl LoadService {
         };
         *self.inner.running.lock().unwrap_or_else(|e| e.into_inner()) += 1;
         let inner = Arc::clone(&self.inner);
-        let spawned = std::thread::Builder::new()
-            .name("load-insert".into())
-            .spawn(move || {
-                // a panic in the sink still reaches the FE as a failed fragment, not a timeout
-                let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let outcome = f.in_context(|| run_sink(&f, rows, &inner.tablets, &inner.error_dir));
-                    let url = inner.tracking_url(&outcome);
-                    (outcome, url)
-                }));
-                let (outcome, url) = ran.unwrap_or_else(|p| {
-                    let what = p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
-                    (SinkOutcome::failed(format!("the write panicked: {what}")), None)
-                });
-                let params = exec_status(&f, &outcome, url);
-                let coord = f.coord.clone().or_else(|| inner.master.fe_address());
-                if let Some(coord) = coord {
-                    // _coordinator_callback: one retry on a transport error
-                    if inner.fe.report_exec_status(&coord, params.clone()).is_err() {
-                        let _ = inner.fe.report_exec_status(&coord, params);
-                    }
+        let spawned = std::thread::Builder::new().name("load-insert".into()).spawn(move || {
+            // a panic in the sink still reaches the FE as a failed fragment, not a timeout
+            let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if f.group_commit.is_some() {
+                    return f.in_context(|| inner.group_commit_insert(&f, rows));
                 }
-                inner.done();
+                let outcome = f.in_context(|| run_sink(&f, rows, &inner.tablets, &inner.error_dir));
+                let url = inner.tracking_url(&outcome);
+                exec_status(&f, &outcome, url)
+            }));
+            let params = ran.unwrap_or_else(|p| {
+                let what = p
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| p.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                exec_status(&f, &SinkOutcome::failed(format!("the write panicked: {what}")), None)
             });
+            inner.report(&f, params);
+            inner.done();
+        });
         if let Err(e) = spawned {
             self.inner.done();
             return refuse(INTERNAL_ERROR, format!("cannot start the write: {e}"));
@@ -175,16 +206,38 @@ impl LoadService {
         }
     }
 
-    /// `PInternalService::cancel_plan_fragment`: a write runs to its end; FINISHED, the FE's
-    /// usual reason after a commit, is a no-op.
-    pub fn cancel_plan_fragment(&self, _req: &PCancelPlanFragmentRequest) -> PCancelPlanFragmentResult {
+    /// `PInternalService::cancel_plan_fragment`: a write runs to its end, except a sync group
+    /// commit load waiting for its queue, which stops waiting and reports the cancel. FINISHED,
+    /// the FE's usual reason after a load, is a no-op.
+    pub fn cancel_plan_fragment(&self, req: &PCancelPlanFragmentRequest) -> PCancelPlanFragmentResult {
+        let finished = req.cancel_status.as_ref().is_some_and(|s| s.status_code == TStatusCode::FINISHED.0);
+        if let (Some(q), false) = (&req.query_id, finished) {
+            let wait = self
+                .inner
+                .sync_waits
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&(q.hi, q.lo))
+                .cloned();
+            if let Some(w) = wait {
+                let status = req
+                    .cancel_status
+                    .clone()
+                    .unwrap_or_else(|| pstatus(TStatusCode::CANCELLED.0, Some("cancelled".into())));
+                *w.lock().unwrap_or_else(|e| e.into_inner()) = Some(status);
+            }
+        }
         PCancelPlanFragmentResult { status: pstatus(OK, None) }
     }
 
     /// Waits until no insert is running; false on timeout.
     pub fn wait_idle(&self, timeout: Duration) -> bool {
         let n = self.inner.running.lock().unwrap_or_else(|e| e.into_inner());
-        let (_g, res) = self.inner.idle.wait_timeout_while(n, timeout, |n| *n > 0).unwrap_or_else(|e| e.into_inner());
+        let (_g, res) = self
+            .inner
+            .idle
+            .wait_timeout_while(n, timeout, |n| *n > 0)
+            .unwrap_or_else(|e| e.into_inner());
         !res.timed_out()
     }
 
@@ -216,6 +269,90 @@ impl LoadService {
 }
 
 impl Inner {
+    /// `_coordinator_callback`: the fragment's report, with one retry on a transport error.
+    fn report(&self, f: &WriteFragment, params: TReportExecStatusParams) {
+        let coord = f.coord.clone().or_else(|| self.master.fe_address());
+        if let Some(coord) = coord {
+            if self.fe.report_exec_status(&coord, params.clone()).is_err() {
+                let _ = self.fe.report_exec_status(&coord, params);
+            }
+        }
+    }
+
+    /// A GROUP_COMMIT_BLOCK_SINK (`GroupCommitBlockSinkOperatorX`): the rows are checked and
+    /// join a queue of the table; an async load reports at once with the queue's label and
+    /// transaction, a sync load once the queue's internal load ends (or the FE cancels it).
+    fn group_commit_insert(
+        &self,
+        f: &WriteFragment,
+        rows: Vec<Result<Vec<doris_exec::value::Value>, doris_exec::RowError>>,
+    ) -> TReportExecStatusParams {
+        let sink = match TableSink::new(f, vec![f.instance_id.clone()]) {
+            Ok(s) => s,
+            Err(e) => return exec_status(f, &SinkOutcome::failed(e.to_string()), None),
+        };
+        if let Err(e) = sink.push(0, rows, &f.input_nullable()) {
+            let failure = TStatus {
+                status_code: TStatusCode::CANCELLED,
+                error_msgs: Some(vec![e.to_string()]),
+            };
+            let outcome = sink.finish(&self.tablets, &self.error_dir, Some(failure));
+            let url = self.tracking_url(&outcome);
+            return exec_status(f, &outcome, url);
+        }
+        let (mut outcome, checked) = sink.check(&self.error_dir);
+        let url = self.tracking_url(&outcome);
+        // sink_impl's wind_up: too many filtered rows fail the load before it joins a queue
+        let ratio = f.sink.max_filter_ratio.map_or(0.0, |r| r.0);
+        let selected = outcome.loaded + outcome.filtered;
+        if selected > 0 && outcome.filtered as f64 / selected as f64 > ratio {
+            let msg = format!("too many filtered rows, {}", outcome.first_error.clone().unwrap_or_default());
+            outcome.status = TStatus {
+                status_code: TStatusCode::DATA_QUALITY_ERROR,
+                error_msgs: Some(vec![msg]),
+            };
+            return exec_status(f, &outcome, url);
+        }
+        let queue = match self.group_commit.join(f, checked) {
+            Ok(q) => q,
+            Err(msg) => {
+                outcome.status = TStatus {
+                    status_code: TStatusCode::INTERNAL_ERROR,
+                    error_msgs: Some(vec![msg]),
+                };
+                return exec_status(f, &outcome, url);
+            }
+        };
+        if f.group_commit == Some(TGroupCommitMode::SYNC_MODE) {
+            let key = (f.query_id.hi, f.query_id.lo);
+            let cancel: CancelSlot = Arc::default();
+            self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).insert(key, Arc::clone(&cancel));
+            let ended = queue.wait(|| cancel.lock().unwrap_or_else(|e| e.into_inner()).is_some());
+            self.sync_waits.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
+            outcome.status = match ended {
+                Some(st) => st,
+                None => {
+                    // the fragment's cancel reason, as its report words it
+                    let c = cancel.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
+                    let code = TStatusCode(c.status_code);
+                    let msg = c.error_msgs.first().cloned().unwrap_or_default();
+                    TStatus {
+                        status_code: code,
+                        error_msgs: Some(vec![format!(
+                            "({})[{}]PStatus: {msg}",
+                            self.master.localhost(),
+                            crate::status::code_name(code)
+                        )]),
+                    }
+                }
+            };
+        }
+        let mut params = exec_status(f, &outcome, url);
+        params.txn_id = Some(queue.txn_id());
+        params.label = Some(queue.label().to_string());
+        params
+    }
+
     fn done(&self) {
         let mut n = self.running.lock().unwrap_or_else(|e| e.into_inner());
         *n -= 1;
@@ -223,7 +360,9 @@ impl Inner {
     }
 
     fn tracking_url(&self, o: &SinkOutcome) -> Option<String> {
-        o.error_log.as_ref().map(|f| format!("http://{}:{}/api/_load_error_log?file={f}", self.master.localhost(), self.http_port))
+        o.error_log
+            .as_ref()
+            .map(|f| format!("http://{}:{}/api/_load_error_log?file={f}", self.master.localhost(), self.http_port))
     }
 }
 
@@ -281,7 +420,14 @@ fn basic_auth(h: &str) -> Option<(String, String)> {
 
 fn uuid() -> String {
     let (a, b) = (random_u64(), random_u64());
-    format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}", a >> 32, (a >> 16) & 0xffff, a & 0xfff | 0x4000, (b >> 48) & 0x3fff | 0x8000, b & 0xffff_ffff_ffff)
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        a >> 32,
+        (a >> 16) & 0xffff,
+        a & 0xfff | 0x4000,
+        (b >> 48) & 0x3fff | 0x8000,
+        b & 0xffff_ffff_ffff
+    )
 }
 
 impl<'a> StreamLoad<'a> {
@@ -297,7 +443,10 @@ impl<'a> StreamLoad<'a> {
             passwd,
             token,
             user_ip,
-            load_id: TUniqueId { hi: random_u64() as i64, lo: random_u64() as i64 },
+            load_id: TUniqueId {
+                hi: random_u64() as i64,
+                lo: random_u64() as i64,
+            },
             txn_id: -1,
             db_id: None,
             started: Instant::now(),
@@ -353,7 +502,11 @@ impl<'a> StreamLoad<'a> {
         };
         // _on_header: Content-Length against streaming_load_max_mb, before the transaction begins
         let max = self.inner.max_body_bytes.load(Ordering::Relaxed);
-        if let Some(len) = self.header("content-length").and_then(|l| l.trim().parse::<u64>().ok()).filter(|l| *l > max) {
+        if let Some(len) = self
+            .header("content-length")
+            .and_then(|l| l.trim().parse::<u64>().ok())
+            .filter(|l| *l > max)
+        {
             return self.fail(format!(
                 "[EXCEEDED_LIMIT]body size {len} bytes ({:.2} MiB) exceeds the limit of {max} bytes ({} MiB) set by BE's conf streaming_load_max_mb. Increase it if you are sure this load is reasonable",
                 len as f64 / MEBIBYTE as f64,
@@ -399,7 +552,11 @@ impl<'a> StreamLoad<'a> {
         };
         self.txn_id = begun.txn_id.unwrap_or(-1);
         self.db_id = begun.db_id;
-        if begun.table_group_commit_mode.as_deref().is_some_and(|m| m.contains("async") || m.contains("sync")) {
+        if begun
+            .table_group_commit_mode
+            .as_deref()
+            .is_some_and(|m| m.contains("async") || m.contains("sync"))
+        {
             self.fail("[NOT_IMPLEMENTED_ERROR]doris-rs does not support group commit yet".into());
             return self.rollback();
         }
@@ -424,7 +581,10 @@ impl<'a> StreamLoad<'a> {
                 return self.rollback();
             }
         };
-        let planned = put.pipeline_params.ok_or_else(|| ExecError::BadRequest("no plan".into())).and_then(|p| plan_write(&p));
+        let planned = put
+            .pipeline_params
+            .ok_or_else(|| ExecError::BadRequest("no plan".into()))
+            .and_then(|p| plan_write(&p));
         let mut f: WriteFragment = match planned {
             Ok(f) => f,
             Err(e) => {
@@ -460,7 +620,10 @@ impl<'a> StreamLoad<'a> {
         self.error_url = self.inner.tracking_url(&outcome);
         if outcome.status.status_code != TStatusCode::OK {
             self.first_error = outcome.first_error.clone();
-            self.fail(format!("[INTERNAL_ERROR]{}", outcome.status.error_msgs.clone().unwrap_or_default().join("; ")));
+            self.fail(format!(
+                "[INTERNAL_ERROR]{}",
+                outcome.status.error_msgs.clone().unwrap_or_default().join("; ")
+            ));
             return self.rollback();
         }
         // StreamLoadExecutor: the filter ratio over the rows that were not unselected
@@ -540,8 +703,15 @@ impl<'a> StreamLoad<'a> {
                 mgr.data_dirs().first().map(|d| d.root().display().to_string()).unwrap_or_default()
             };
             let shard = self.inner.next_shard.fetch_add(1, Ordering::Relaxed) % MAX_SHARD_NUM;
-            let usec = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_micros());
-            format!("{root}/mini_download/{}/__shard_{shard}//{}.{}.{usec}", self.req.db, self.req.table, doris_storage::timestamp())
+            let usec = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_micros());
+            format!(
+                "{root}/mini_download/{}/__shard_{shard}//{}.{}.{usec}",
+                self.req.db,
+                self.req.table,
+                doris_storage::timestamp()
+            )
         });
         let (mut read_json_by_line, mut strip_outer_array) = (is_true("read_json_by_line"), is_true("strip_outer_array"));
         if h("read_json_by_line").is_none() && h("strip_outer_array").is_none() {

@@ -5,12 +5,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use doris_be::group_commit::GroupCommitMgr;
+use doris_be::load::LoadService;
 use doris_be::master::MasterInfo;
 use doris_be::testing::{FakeFe, LoadCall, LoadScript};
 use doris_exec::fragment::{plan_write, WriteFragment};
 use doris_exec::sink::{Checked, TableSink};
-use doris_fixtures::group_commit::{sequence, Msg, INTERVAL};
+use doris_fixtures::group_commit::{sequence, Msg, INTERVAL, TIMEOUT};
+use doris_proto::doris::PExecPlanFragmentRequest;
 use doris_storage::{DataDir, TabletManager, TabletOptions};
+use doris_thrift::gen::frontend_service::TReportExecStatusParams;
 use doris_thrift::gen::frontend_service::{
     TLoadTxnCommitRequest, TLoadTxnCommitResult, TLoadTxnRollbackResult, TStreamLoadPutRequest, TStreamLoadPutResult,
 };
@@ -36,7 +39,12 @@ fn ok() -> TStatus {
 
 /// The interval suite's tablets, and an FE answering its put with the recorded reply (`edit`ed).
 pub fn setup(edit: impl FnOnce(&mut TStreamLoadPutResult)) -> Setup {
-    let seq = sequence(INTERVAL);
+    setup_for(INTERVAL, edit)
+}
+
+/// A suite's tablets, and an FE answering its first put with the recorded reply (`edit`ed).
+pub fn setup_for(suite: &str, edit: impl FnOnce(&mut TStreamLoadPutResult)) -> Setup {
+    let seq = sequence(suite);
     let tmp = tempfile::tempdir().unwrap();
     let mut mgr = TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap();
     for m in &seq {
@@ -249,4 +257,134 @@ fn a_stopped_wait_returns_none() {
     let q = mgr.join(&a, s.checked(&a)).unwrap();
     let t = Instant::now();
     assert!(q.wait(|| t.elapsed() > Duration::from_millis(100)).is_none());
+}
+
+// INSERT … VALUES through the load service
+
+impl Setup {
+    fn service(&self) -> LoadService {
+        LoadService::new(self.tablets.clone(), self.fe.clone(), self.master.clone(), 8040)
+    }
+
+    fn exec(&self, n: usize) -> PExecPlanFragmentRequest {
+        self.seq
+            .iter()
+            .filter_map(|m| if let Msg::Exec(r) = m { Some(r.clone()) } else { None })
+            .nth(n)
+            .unwrap()
+    }
+
+    /// The recorded final report of the `n`th insert.
+    fn recorded_report(&self, n: usize) -> TReportExecStatusParams {
+        let q = Msg::params(&self.exec(n)).query_id;
+        self.seq
+            .iter()
+            .find_map(|m| match m {
+                Msg::Report(r) if r.done == Some(true) && r.query_id.as_ref() == Some(&q) => Some(r.clone()),
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    fn reports(&self) -> Vec<TReportExecStatusParams> {
+        self.fe
+            .load_calls()
+            .into_iter()
+            .filter_map(|c| if let LoadCall::ExecStatus(_, r) = c { Some(r) } else { None })
+            .collect()
+    }
+}
+
+#[test]
+fn async_insert_reports_the_queue() {
+    let s = setup(|_| {});
+    let svc = s.service();
+    assert_eq!(svc.exec_plan_fragment(&s.exec(0)).status.status_code, 0);
+    assert!(svc.wait_idle(Duration::from_secs(10)));
+    let reports = s.reports();
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    let mut got = reports[0].clone();
+    assert_eq!(got.label, s.puts()[0].label);
+    let want = s.recorded_report(0);
+    got.label = want.label.clone();
+    assert_eq!(got, want);
+    // not committed yet: the queue's interval is 5 s
+    assert!(s.commits().is_empty());
+}
+
+#[test]
+fn sync_insert_waits_and_cancel_reports_cancelled() {
+    let s = setup_for(TIMEOUT, |_| {});
+    let svc = s.service();
+    assert_eq!(svc.exec_plan_fragment(&s.exec(0)).status.status_code, 0);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(s.reports().is_empty(), "a sync load reports once its queue commits");
+    let cancel = s
+        .seq
+        .iter()
+        .find_map(|m| if let Msg::Cancel(c) = m { Some(c.clone()) } else { None })
+        .unwrap();
+    assert_eq!(svc.cancel_plan_fragment(&cancel).status.status_code, 0);
+    assert!(svc.wait_idle(Duration::from_secs(5)));
+    let reports = s.reports();
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    let mut got = reports[0].clone();
+    let want = s.recorded_report(0);
+    got.label = want.label.clone();
+    assert_eq!(got, want);
+}
+
+#[test]
+fn sync_insert_reports_after_commit() {
+    let s = setup_for(TIMEOUT, |r| r.group_commit_interval_ms = Some(50));
+    let svc = s.service();
+    assert_eq!(svc.exec_plan_fragment(&s.exec(0)).status.status_code, 0);
+    assert!(svc.wait_idle(Duration::from_secs(10)));
+    let calls = s.fe.load_calls();
+    let commit = calls.iter().position(|c| matches!(c, LoadCall::Commit(_))).expect("a commit");
+    let report = calls.iter().position(|c| matches!(c, LoadCall::ExecStatus(..))).expect("a report");
+    assert!(commit < report, "{calls:?}");
+    let LoadCall::ExecStatus(_, r) = &calls[report] else { unreachable!() };
+    assert_eq!(r.status.as_ref().unwrap().status_code, TStatusCode::OK);
+    assert_eq!(r.txn_id, Some(8996));
+}
+
+#[test]
+fn wait_idle_ignores_open_queues() {
+    let s = setup_for(INTERVAL, |r| r.group_commit_interval_ms = Some(300_000));
+    let svc = s.service();
+    svc.exec_plan_fragment(&s.exec(0));
+    assert!(svc.wait_idle(Duration::from_secs(2)));
+    assert_eq!(s.reports().len(), 1);
+}
+
+#[test]
+fn a_filtered_group_commit_load_over_the_ratio_fails() {
+    let s = setup_for(TIMEOUT, |_| {});
+    let mut req = s.exec(0);
+    // the row's id (INT NOT NULL) becomes NULL
+    let mut p = Msg::params(&req);
+    let union = p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0].union_node.as_mut().unwrap();
+    union.const_expr_lists[0][0] = doris_fixtures::build::null(doris_fixtures::build::ty(doris_thrift::gen::types::TPrimitiveType::INT));
+    req.request = Some(encode(p));
+    let svc = s.service();
+    svc.exec_plan_fragment(&req);
+    assert!(svc.wait_idle(Duration::from_secs(10)));
+    let reports = s.reports();
+    let st = reports[0].status.clone().unwrap();
+    assert_eq!(st.status_code, TStatusCode::DATA_QUALITY_ERROR, "{st:?}");
+    assert!(st.error_msgs.unwrap()[0].starts_with("too many filtered rows"));
+    assert!(s.puts().is_empty() || s.commits().is_empty());
+}
+
+fn encode(p: doris_thrift::gen::palo_internal_service::TPipelineFragmentParams) -> Vec<u8> {
+    use thrift::protocol::TSerializable;
+    let list = doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList {
+        params_list: Some(vec![p]),
+        ..Default::default()
+    };
+    let mut buf = Vec::new();
+    list.write_to_out_protocol(&mut thrift::protocol::TCompactOutputProtocol::new(&mut buf))
+        .unwrap();
+    buf
 }
