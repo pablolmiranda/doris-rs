@@ -188,6 +188,21 @@ C++ sets its marks by output row. `ndv` matches C++'s HLL, checked against a Pyt
 `hll.cpp`. Run `m6-s7b1-full-2` does not count: DNS for the reference data host failed in its
 first minute, and 14 data loads failed.
 
+After Milestone 6 story 7 batch 2 (whole families: geo `st_point`/`st_astext`; lateral views
+through TABLE_FUNCTION_NODE with `explode`, `explode_numbers`, array literals and
+`split_by_string`; the moment aggregates `regr_slope`, `regr_intercept`, `corr`, `corr_welford`,
+`covar`, `covar_samp`, `kurt`, `skew` and `avg_weighted`, plus `non_nullable`; 22 date functions;
+9 bit functions; run `m6-s7b2-full-2`, 2026-11-10): 620 eligible suites, all passing both gates;
+669 Epic 1 suites pass the out gate (502 of those that reach the BE) and 552 the strict gate
+(472). The ratchets gain 42 suites in each gate. `agg_with_distinct_project` leaves the strict
+ratchet: its rows arrive in instance order, and doris-rs gives either order from run to run.
+The supplement now blocks `test_regr_slope` too (`result:cpp_instance_order`): four
+single-tablet instances merge their partial states in arrival order, and the double's last bit
+depends on that order. Constant expressions now fail at prepare, as C++ opens them, so a bad
+constant regexp pattern fails `exec_plan_fragment` rather than the first fetch. Run
+`m6-s7b2-full-1` ran the binary from before the final review and found one bug: a number cast
+to BOOLEAN gave NULL for anything but 0 and 1.
+
 The older directory-level gate also works against any target:
 
 ```
