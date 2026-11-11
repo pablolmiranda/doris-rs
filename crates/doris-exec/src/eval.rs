@@ -64,6 +64,12 @@ fn strfn_call(n: &TExprNode) -> bool {
     crate::strfn::supported(&name, &args, &to)
 }
 
+/// A call `codec::supported` accepts, by its name and signature.
+fn codec_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::codec::supported(&name, &args, &to)
+}
+
 /// A call `math::supported` accepts, by its name and signature.
 fn math_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -265,6 +271,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 Some(f) if crate::math::is_math_function(f) => math_call(n),
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
+                Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -693,6 +700,11 @@ fn eval_at(
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::codec::is_codec_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::codec::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();

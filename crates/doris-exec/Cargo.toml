@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 crc32fast = { workspace = true }
 # correctly rounded transcendentals: glibc's results on every recorded input
 core-math = { workspace = true }
+twox-hash = { workspace = true }
 # compress_type GZ (pure Rust backend)
 flate2 = { workspace = true }
 # numbers keep their text (a JSON load's 1.79769e+309 is a field, not a parse error)

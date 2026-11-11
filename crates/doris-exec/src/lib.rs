@@ -8,6 +8,7 @@ pub mod arith;
 pub mod bits;
 pub mod block;
 pub mod clock;
+pub mod codec;
 pub mod columnar;
 pub mod cond;
 pub mod datagen;
