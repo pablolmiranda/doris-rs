@@ -27,6 +27,7 @@ pub mod hash_join;
 pub mod hll;
 pub mod math;
 pub mod moments;
+pub mod numfmt;
 pub mod nested_loop;
 pub mod partition_sort;
 pub mod pipeline;

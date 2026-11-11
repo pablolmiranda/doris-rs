@@ -58,7 +58,8 @@ fn string_function(n: &TExprNode) -> bool {
     let text = |t: &ColType| matches!(t.ptype, TPrimitiveType::CHAR | TPrimitiveType::VARCHAR | TPrimitiveType::STRING);
     match (args, to) {
         // a failing call would only filter its row on this path, where C++ fails the statement
-        (Some(_), Some(_)) if matches!(name.as_str(), "url_decode" | "parse_data_size") => false,
+        // money_format and format_round take numbers, which this bridge does not carry
+        (Some(_), Some(_)) if matches!(name.as_str(), "url_decode" | "parse_data_size" | "money_format" | "format_round") => false,
         (Some(args), Some(to)) => crate::strfn::is_string_function(&name) && text(&to) && crate::strfn::supported(&name, &args, &to),
         _ => false,
     }
