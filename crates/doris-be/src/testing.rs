@@ -48,6 +48,8 @@ pub struct FakeFe {
     script: Mutex<LoadScript>,
     /// Answers to the next `streamLoadPut` calls, in order, before the script's.
     puts: Mutex<std::collections::VecDeque<TStreamLoadPutResult>>,
+    /// Answers to the next `loadTxnCommit` calls, in order, before the script's.
+    commits: Mutex<std::collections::VecDeque<TLoadTxnCommitResult>>,
     finishes: Mutex<Vec<TFinishTaskRequest>>,
     reports: Mutex<Vec<TReportRequest>>,
     attempts: AtomicUsize,
@@ -99,6 +101,11 @@ impl FakeFe {
     /// Answers the next `streamLoadPut` calls with these, in order; then the script's answer.
     pub fn queue_puts(&self, puts: Vec<TStreamLoadPutResult>) {
         self.puts.lock().unwrap().extend(puts);
+    }
+
+    /// Answers the next `loadTxnCommit` calls with these, in order; then the script's answer.
+    pub fn queue_commits(&self, commits: Vec<TLoadTxnCommitResult>) {
+        self.commits.lock().unwrap().extend(commits);
     }
 
     pub fn script(&self, script: LoadScript) {
@@ -178,6 +185,9 @@ impl FeClient for FakeFe {
 
     fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError> {
         self.load(LoadCall::Commit(req));
+        if let Some(r) = self.commits.lock().unwrap().pop_front() {
+            return Ok(r);
+        }
         self.script.lock().unwrap().commit.clone().ok_or_else(unscripted)
     }
 

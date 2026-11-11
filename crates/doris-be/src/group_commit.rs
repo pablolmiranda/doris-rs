@@ -23,6 +23,9 @@ use thrift::OrderedFloat;
 use crate::fe_client::FeClient;
 use crate::master::MasterInfo;
 
+/// `config::mow_stream_load_commit_retry_times`: `loadTxnCommit` calls at most.
+const COMMIT_ATTEMPTS: usize = 5;
+
 /// `config::txn_commit_rpc_timeout_ms`.
 const COMMIT_RPC_TIMEOUT_MS: i64 = 180_000;
 
@@ -51,6 +54,8 @@ type TableQueues = Mutex<Vec<Arc<Queue>>>;
 pub struct Queue {
     label: String,
     txn_id: i64,
+    /// The table id its loads name: its key in `tables`.
+    key: i64,
     db_id: Option<i64>,
     table_id: i64,
     schema_version: i64,
@@ -214,6 +219,12 @@ impl GroupCommitMgr {
         }
     }
 
+    /// Tables with an open (or committing) queue.
+    pub fn tables_held(&self) -> usize {
+        let tables: Vec<Arc<TableQueues>> = self.inner.tables.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
+        tables.iter().filter(|t| !t.lock().unwrap_or_else(|e| e.into_inner()).is_empty()).count()
+    }
+
     /// Tests only: `hook` runs each time a load has chosen its queue, before it adds its rows.
     #[doc(hidden)]
     pub fn set_join_hook_for_tests(&self, hook: impl Fn() + Send + Sync + 'static) {
@@ -310,6 +321,7 @@ impl GroupCommitMgr {
         Ok(Queue {
             label,
             txn_id: internal.sink.txn_id,
+            key: table_id,
             db_id: reply.db_id,
             table_id: reply.table_id.unwrap_or(table_id),
             schema_version,
@@ -373,10 +385,17 @@ impl Inner {
                 backend_id: self.master.backend_id(),
                 cert_based_auth: None,
             };
-            match self.fe.load_txn_commit(req) {
-                Ok(r) => r.status,
-                Err(e) => status(TStatusCode::INTERNAL_ERROR, Some(format!("commit_success_and_rpc_error: {e}"))),
+            // retried on a transport error or DELETE_BITMAP_LOCK_ERROR; any other answer ends it.
+            // The FE's answer is not the loads' outcome: C++ leaves a failed commit to the WAL
+            // replay, and its sync loads see only the write's status.
+            for _ in 0..COMMIT_ATTEMPTS {
+                match self.fe.load_txn_commit(req.clone()) {
+                    Ok(r) if r.status.status_code == TStatusCode::DELETE_BITMAP_LOCK_ERROR => {}
+                    Ok(_) => break,
+                    Err(_) => {}
+                }
             }
+            written.status
         } else {
             let reason = written.status.error_msgs.clone().unwrap_or_default().join("; ");
             let req = TLoadTxnRollbackRequest {
@@ -397,9 +416,20 @@ impl Inner {
                 label: None,
             };
             let _ = self.fe.load_txn_rollback(req);
-            written.status
+            // LoadBlockQueue::cancel
+            let msg = format!(
+                "cancel group_commit, label={}, status=[{}]{reason}",
+                q.label,
+                crate::status::code_name(written.status.status_code)
+            );
+            status(TStatusCode::CANCELLED, Some(msg))
         };
         q.state.lock().unwrap_or_else(|e| e.into_inner()).finished = Some(outcome);
         q.changed.notify_all();
+        // the ended queue (and its plan) leaves its table's list; the table's entry stays, empty
+        let table = self.tables.lock().unwrap_or_else(|e| e.into_inner()).get(&q.key).cloned();
+        if let Some(t) = table {
+            t.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| !std::ptr::eq(Arc::as_ptr(x), q));
+        }
     }
 }

@@ -481,3 +481,75 @@ fn a_zero_interval_queue_commits_its_first_load() {
     assert_eq!(q.wait(|| false).unwrap().status_code, TStatusCode::OK);
     assert_eq!(s.commits()[0].receive_bytes, Some(s.checked(&f).bytes()));
 }
+
+fn commit_result(code: TStatusCode, msg: &str) -> TLoadTxnCommitResult {
+    TLoadTxnCommitResult {
+        status: TStatus {
+            status_code: code,
+            error_msgs: Some(vec![msg.into()]),
+        },
+    }
+}
+
+/// `_finish_group_commit_load`: a sync load sees the write's status only; a refused commit is
+/// left to the FE (C++ recovers it from the WAL).
+#[test]
+fn a_refused_commit_still_ends_the_queue_ok() {
+    let s = setup(|r| r.group_commit_data_bytes = Some(1));
+    s.fe.queue_commits(vec![commit_result(TStatusCode::ANALYSIS_ERROR, "no such txn")]);
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    let q = mgr.join(&f, s.checked(&f)).unwrap();
+    assert_eq!(q.wait(|| false).unwrap().status_code, TStatusCode::OK);
+    assert_eq!(s.commits().len(), 1);
+}
+
+/// The commit is retried on DELETE_BITMAP_LOCK_ERROR, up to `mow_stream_load_commit_retry_times`
+/// (5) calls in all.
+#[test]
+fn a_delete_bitmap_lock_error_is_retried() {
+    let s = setup(|r| r.group_commit_data_bytes = Some(1));
+    let lock = || commit_result(TStatusCode::DELETE_BITMAP_LOCK_ERROR, "locked");
+    s.fe.queue_commits(vec![lock(), lock()]);
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    mgr.join(&f, s.checked(&f)).unwrap().wait(|| false).unwrap();
+    assert_eq!(s.commits().len(), 3);
+
+    let s = setup(|r| r.group_commit_data_bytes = Some(1));
+    s.fe.queue_commits((0..7).map(|_| lock()).collect());
+    let mgr = s.mgr();
+    mgr.join(&f, s.checked(&f)).unwrap().wait(|| false).unwrap();
+    assert_eq!(s.commits().len(), 5);
+}
+
+/// A failed write cancels the queue: its sync loads see CANCELLED naming the label.
+#[test]
+fn a_failed_write_cancels_the_queue_naming_its_label() {
+    let s = setup(|r| r.group_commit_data_bytes = Some(1));
+    let empty = tempfile::tempdir().unwrap();
+    let none = TabletManager::open(vec![DataDir::open(empty.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap();
+    let mgr = GroupCommitMgr::new(Arc::new(Mutex::new(none)), s.fe.clone(), s.master.clone());
+    let f = s.insert(0);
+    let q = mgr.join(&f, s.checked(&f)).unwrap();
+    let st = q.wait(|| false).unwrap();
+    assert_eq!(st.status_code, TStatusCode::CANCELLED);
+    let msg = st.error_msgs.unwrap().remove(0);
+    let want = format!("cancel group_commit, label={}, status=[INTERNAL_ERROR]tablet error: ", q.label());
+    assert!(msg.starts_with(&want), "{msg}");
+}
+
+/// A table whose queues all ended is forgotten (no entry kept per table ever loaded).
+#[test]
+fn ended_queues_are_forgotten() {
+    let s = setup(|r| r.group_commit_data_bytes = Some(1));
+    let mgr = s.mgr();
+    let f = s.insert(0);
+    let q = mgr.join(&f, s.checked(&f)).unwrap();
+    q.wait(|| false).unwrap();
+    let end = Instant::now() + Duration::from_secs(5);
+    while mgr.tables_held() != 0 {
+        assert!(Instant::now() < end, "still {} tables", mgr.tables_held());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
