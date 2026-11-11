@@ -135,3 +135,34 @@ fn hashes_match_reference() {
         Datum::Null
     );
 }
+
+// review fixes
+
+/// A LARGEINT literal (the 128-bit values do not fit an INT_LITERAL).
+fn large(v: i128) -> TExpr {
+    let mut e = int(0, ty(T::LARGEINT));
+    e.nodes[0].node_type = doris_thrift::gen::exprs::TExprNodeType::LARGE_INT_LITERAL;
+    e.nodes[0].int_literal = None;
+    e.nodes[0].large_int_literal = Some(doris_thrift::gen::exprs::TLargeIntLiteral::new(v.to_string()));
+    e
+}
+
+/// Each type's longest string and the empty string come back as they went in.
+#[test]
+fn the_longest_and_empty_strings_round_trip() {
+    for (name, t, n) in [
+        ("encode_as_smallint", T::SMALLINT, 1),
+        ("encode_as_int", T::INT, 3),
+        ("encode_as_bigint", T::BIGINT, 7),
+        ("encode_as_largeint", T::LARGEINT, 15),
+    ] {
+        for s in ["", &"z".repeat(n)] {
+            let Datum::Int(v) = encode(name, t, s).unwrap() else { panic!() };
+            let lit = if t == T::LARGEINT { large(v) } else { int(v as i64, ty(t)) };
+            let back = eval(call("decode_as_varchar", vc(65533), vec![lit])).unwrap();
+            assert_eq!(back, Datum::Bytes(s.as_bytes().to_vec()), "{name} {s:?}");
+        }
+        // one byte more fails
+        assert!(encode(name, t, &"z".repeat(n + 1)).is_err(), "{name}");
+    }
+}

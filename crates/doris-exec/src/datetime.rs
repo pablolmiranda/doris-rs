@@ -407,13 +407,8 @@ fn check_word(lib: &[&str], s: &[u8]) -> Option<(usize, usize)> {
     (count == 1).then(|| (found.expect("counted"), len))
 }
 
-pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option<Dt>, ExecError> {
-    let format: &[u8] = match format {
-        b"yyyyMMdd" => b"%Y%m%d",
-        b"yyyy-MM-dd" => b"%Y-%m-%d",
-        b"yyyy-MM-dd HH:mm:ss" => b"%Y-%m-%d %H:%i:%s",
-        f => f,
-    };
+/// Refuses a `str_to_date` format with a specifier this port does not parse.
+pub fn check_format(format: &[u8]) -> Result<(), ExecError> {
     let mut spec = format.iter();
     while let Some(c) = spec.next() {
         if *c == b'%' {
@@ -427,6 +422,17 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
             }
         }
     }
+    Ok(())
+}
+
+pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option<Dt>, ExecError> {
+    let format: &[u8] = match format {
+        b"yyyyMMdd" => b"%Y%m%d",
+        b"yyyy-MM-dd" => b"%Y-%m-%d",
+        b"yyyy-MM-dd HH:mm:ss" => b"%Y-%m-%d %H:%i:%s",
+        f => f,
+    };
+    check_format(format)?;
     if value.is_empty() {
         return Ok(None);
     }

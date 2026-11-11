@@ -107,3 +107,26 @@ fn convert_tz_over_a_column_zone() {
     let got = eval_column(&e, &block, &slots).unwrap().1;
     assert_eq!(got, vec![at("2024-04-18 23:20:00", 0), Datum::Null, at("2024-04-19 07:20:00", 0)]);
 }
+
+// review fixes
+
+/// `open` checks for a NULL constant zone before looking any up; it looks constant zones up
+/// only when both are constant.
+#[test]
+fn constant_zones_are_checked_as_cpp_opens_them() {
+    let e = call(
+        "convert_tz",
+        dt(0),
+        vec![date("2021-01-01 00:00:00", dt(0)), string("Mars/Olympus"), null(vc())],
+    );
+    assert_eq!(eval(e).unwrap(), Datum::Null);
+    // one constant zone, every row NULL: no lookup, no error
+    let c = |t: TTypeDesc| ColType::from_type_desc("", &t, true).unwrap();
+    let block = Block {
+        types: vec![c(dt(0)), c(vc())],
+        rows: vec![vec![Datum::Null, Datum::Bytes(b"UTC".to_vec())]],
+    };
+    let slots = SlotMap([(1, 0), (2, 1)].into_iter().collect());
+    let e = call("convert_tz", dt(0), vec![slot(1, dt(0)), string("Mars/Olympus"), slot(2, vc())]);
+    assert_eq!(eval_column(&e, &block, &slots).unwrap().1, vec![Datum::Null]);
+}

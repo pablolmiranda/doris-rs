@@ -838,6 +838,9 @@ const COMPARED_UNORDERED: &[&str] = &[
     "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
     "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
     "nereids_p0.aggregate.agg_window_project.agg_window_project",
+    // a sort on an encoded key (compressed materialize) below the result, no ORDER BY on the
+    // query (M6 s7 batch 5)
+    "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode",
     // a subquery's ORDER BY … OFFSET under a join
     "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
     // QUALIFY's window sort, with no ORDER BY on the query

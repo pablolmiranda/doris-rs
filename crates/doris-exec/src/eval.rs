@@ -337,6 +337,13 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
                 crate::regexp::check_constant_pattern(p.value.as_bytes(), crate::regexp::options())?;
             }
         }
+        // a constant parse format with a specifier the port lacks is refused now, not per row
+        if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("str_to_date" | "unix_timestamp")) && n.num_children == 2 {
+            let format = i + 1 + subtree_len(&e.nodes, i + 1);
+            if let Some(f) = e.nodes.get(format).filter(|f| f.node_type == N::STRING_LITERAL).and_then(|f| f.string_literal.as_ref()) {
+                crate::datetime::check_format(f.value.as_bytes())?;
+            }
+        }
     }
     let mut i = 0;
     while i < e.nodes.len() {

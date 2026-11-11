@@ -319,7 +319,9 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
             }
         }
         // a constant default origin is the period form, in the error too
-        let default_origin = origin_at.is_some_and(|o| constant[o] && args[o].first().is_some_and(|d| *d != Datum::Null && dt(d) == FIRST_DAY));
+        // (`vector_const_const`: only when the period is constant too)
+        let default_origin = period_at.is_some_and(|p| constant[p])
+            && origin_at.is_some_and(|o| constant[o] && args[o].first().is_some_and(|d| *d != Datum::Null && dt(d) == FIRST_DAY));
         return (0..rows)
             .map(|r| {
                 if null(r) {

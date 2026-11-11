@@ -78,6 +78,28 @@ pub fn find_zone(name: &str) -> Option<QueryZone> {
     None
 }
 
+/// The offset from UTC at instant `seconds`.
+pub(crate) fn offset_at(zone: &QueryZone, seconds: i64) -> i64 {
+    match zone {
+        QueryZone::Offset(o) => i64::from(*o),
+        QueryZone::Named(tz) => DateTime::from_timestamp(seconds, 0).map_or(0, |u| i64::from(tz.offset_from_utc_datetime(&u.naive_utc()).fix().local_minus_utc())),
+    }
+}
+
+/// chrono-tz applies no daylight saving after 2099, where cctz goes on applying the zone's last
+/// rule: a civil time past 2099 in a zone that still changes its offset in 2099 is refused,
+/// naming `what`.
+pub(crate) fn refuse_past_2099(zone: &QueryZone, year: i64, what: &str) -> Result<(), crate::ExecError> {
+    if year <= 2099 {
+        return Ok(());
+    }
+    let at = |m: u32| chrono::NaiveDate::from_ymd_opt(2099, m, 1).and_then(|d| d.and_hms_opt(0, 0, 0)).map_or(0, |c| c.and_utc().timestamp());
+    if offset_at(zone, at(1)) != offset_at(zone, at(7)) {
+        return Err(crate::ExecError::Unsupported { what: format!("{what} past 2099 in a zone with daylight saving time") });
+    }
+    Ok(())
+}
+
 pub(crate) fn local(zone: &QueryZone, seconds: i64) -> Option<NaiveDateTime> {
     let utc = DateTime::from_timestamp(seconds, 0)?;
     Some(match zone {

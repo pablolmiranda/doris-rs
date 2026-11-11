@@ -299,3 +299,45 @@ fn interval_string_adds() {
         Datum::Null
     );
 }
+
+// review fixes
+
+/// A NULL constant period (or origin) makes every row NULL.
+#[test]
+fn a_null_constant_period_is_null() {
+    assert_eq!(
+        round("hour_floor", 0, vec![lit("2020-01-01 10:00:00", 0), null(ty(T::INT))]).unwrap(),
+        Datum::Null
+    );
+    assert_eq!(
+        round(
+            "hour_floor",
+            0,
+            vec![lit("2020-01-01 10:00:00", 0), null(ty(T::INT)), lit("2020-01-01 00:00:00", 0)]
+        )
+        .unwrap(),
+        Datum::Null
+    );
+    assert_eq!(
+        round("hour_floor", 0, vec![lit("2020-01-01 10:00:00", 0), int(2, ty(T::INT)), null(dt(0))]).unwrap(),
+        Datum::Null
+    );
+}
+
+/// With a column period, a constant default origin still shows in the error (only the
+/// all-constant form drops it).
+#[test]
+fn a_column_period_error_shows_the_default_origin() {
+    let (block, slots) = column_block();
+    let mut zero = block.clone();
+    zero.rows[0][1] = Datum::Int(0);
+    let e = call(
+        "hour_floor",
+        dt(0),
+        vec![slot(1, dt(0)), slot(2, ty(T::INT)), lit("0001-01-01 00:00:00", 0)],
+    );
+    match eval_column(&e, &zero, &slots) {
+        Err(ExecError::Coded { msg, .. }) => assert_eq!(msg, "Operation hour_floor of 2020-02-02 13:09:20, 0, 0001-01-01 00:00:00 out of range"),
+        other => panic!("{other:?}"),
+    }
+}

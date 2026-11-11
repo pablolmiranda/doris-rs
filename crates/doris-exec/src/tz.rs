@@ -3,7 +3,7 @@
 //! zone does (`clock::find_zone`, tzdata from chrono-tz). chrono-tz stops applying daylight
 //! saving after 2099, where cctz goes on to 9999: a conversion past 2099 in a zone that keeps
 //! daylight saving is refused.
-use chrono::{DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Timelike};
+use chrono::{Datelike, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use doris_segment::writer::Datum;
 use doris_thrift::gen::types::TPrimitiveType as T;
 
@@ -29,26 +29,6 @@ fn zone(name: &[u8]) -> Result<QueryZone, ExecError> {
         name: "INVALID_ARGUMENT",
         msg: format!("Operation convert_tz invalid timezone: {name}"),
     })
-}
-
-/// The offset from UTC at instant `seconds`.
-fn offset_at(zone: &QueryZone, seconds: i64) -> i64 {
-    match zone {
-        QueryZone::Offset(o) => i64::from(*o),
-        QueryZone::Named(tz) => {
-            DateTime::from_timestamp(seconds, 0).map_or(0, |u| i64::from(tz.offset_from_utc_datetime(&u.naive_utc()).fix().local_minus_utc()))
-        }
-    }
-}
-
-/// Whether the zone still changes its offset within `year` (daylight saving).
-fn has_dst(zone: &QueryZone, year: i32) -> bool {
-    let at = |m: u32| {
-        NaiveDate::from_ymd_opt(year, m, 1)
-            .and_then(|d| d.and_hms_opt(0, 0, 0))
-            .map_or(0, |c| c.and_utc().timestamp())
-    };
-    offset_at(zone, at(1)) != offset_at(zone, at(7))
 }
 
 /// `cctz::time_zone::name()`, as the error prints it.
@@ -80,13 +60,13 @@ fn instant(zone: &QueryZone, c: NaiveDateTime) -> (i64, bool) {
         LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => (t.timestamp(), false),
         LocalResult::None => {
             let local = c.and_utc().timestamp();
-            let before = offset_at(zone, local - 86_400);
-            let after = offset_at(zone, local + 86_400);
+            let before = crate::clock::offset_at(zone, local - 86_400);
+            let after = crate::clock::offset_at(zone, local + 86_400);
             // the transition is in (local - after, local - before]: the first second at `after`
             let (mut lo, mut hi) = (local - after + 1, local - before);
             while lo < hi {
                 let mid = lo + (hi - lo) / 2;
-                if offset_at(zone, mid) == after {
+                if crate::clock::offset_at(zone, mid) == after {
                     hi = mid;
                 } else {
                     lo = mid + 1;
@@ -106,13 +86,8 @@ fn convert(t: Dt, from: &QueryZone, to: &QueryZone) -> Result<Option<Dt>, ExecEr
     let c = civil(&t).ok_or_else(|| ExecError::BadRequest("convert_tz of an invalid datetime".into()))?;
     let (seconds, skipped) = instant(from, c);
     let local = crate::clock::local(to, seconds).ok_or_else(|| ExecError::BadRequest("convert_tz out of the clock's range".into()))?;
-    for (z, year) in [(from, t.year as i32), (to, local.year())] {
-        if year > 2099 && has_dst(z, 2099) {
-            return Err(ExecError::Unsupported {
-                what: "convert_tz past 2099 in a zone with daylight saving time".into(),
-            });
-        }
-    }
+    crate::clock::refuse_past_2099(from, t.year, "convert_tz")?;
+    crate::clock::refuse_past_2099(to, i64::from(local.year()), "convert_tz")?;
     if !(0..=9999).contains(&local.year()) {
         return Ok(None);
     }
@@ -130,17 +105,19 @@ fn convert(t: Dt, from: &QueryZone, to: &QueryZone) -> Result<Option<Dt>, ExecEr
 /// Evaluates `convert_tz`; constant zones resolve once (an unknown one fails before any row,
 /// a NULL one makes every row NULL).
 pub fn eval(args: &[&[Datum]], constant: &[bool], rows: usize) -> Result<Vec<Datum>, ExecError> {
-    let mut fixed: [Option<Option<QueryZone>>; 2] = [None, None];
-    for i in 0..2 {
-        if constant[i + 1] {
-            fixed[i] = Some(match args[i + 1].first() {
-                Some(Datum::Bytes(n)) => Some(zone(n)?),
-                _ => None,
-            });
-        }
-    }
-    if fixed.iter().any(|z| matches!(z, Some(None))) {
+    // `open`: a NULL constant zone makes every row NULL, before any lookup; both zones constant
+    // are looked up once (an unknown one fails before any row); otherwise per row
+    let null_constant = (1..3).any(|i| constant[i] && args[i].first().is_some_and(|d| *d == Datum::Null));
+    if null_constant {
         return Ok(vec![Datum::Null; rows]);
+    }
+    let mut fixed: [Option<QueryZone>; 2] = [None, None];
+    if constant[1] && constant[2] {
+        for (i, slot) in fixed.iter_mut().enumerate() {
+            if let Some(Datum::Bytes(n)) = args[i + 1].first() {
+                *slot = Some(zone(n)?);
+            }
+        }
     }
     (0..rows)
         .map(|r| {
@@ -149,7 +126,7 @@ pub fn eval(args: &[&[Datum]], constant: &[bool], rows: usize) -> Result<Vec<Dat
             }
             let zone_at = |i: usize| -> Result<QueryZone, ExecError> {
                 match fixed[i] {
-                    Some(Some(z)) => Ok(z),
+                    Some(z) => Ok(z),
                     _ => match &args[i + 1][r] {
                         Datum::Bytes(n) => zone(n),
                         _ => Err(ExecError::BadRequest("convert_tz of a non-text zone".into())),

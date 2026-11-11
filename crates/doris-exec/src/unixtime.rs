@@ -81,6 +81,13 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     }
 }
 
+fn bytes_of(d: &Datum) -> &[u8] {
+    match d {
+        Datum::Bytes(b) => b,
+        _ => &[],
+    }
+}
+
 fn int(d: &Datum) -> i64 {
     match d {
         Datum::Int(v) => *v as i64,
@@ -150,21 +157,24 @@ const DAYS: [&str; 7] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 
 /// `string_to_impl`'s fast paths, then `to_format_string_without_check`'s `%` formatter
 /// (`vdatetime_value.cpp:3113-3405`); None when the output passes the length guard.
-fn format(t: &Dt, fmt: &[u8]) -> Option<String> {
+fn format(t: &Dt, fmt: &[u8], fast: bool) -> Option<Vec<u8>> {
     let (y, mo, d) = (t.year, t.month, t.day);
     let (h, mi, s) = (t.hour, t.minute, t.second);
-    match fmt {
-        b"%Y%m%d" | b"yyyyMMdd" => return Some(format!("{y:04}{mo:02}{d:02}")),
-        b"%Y-%m-%d" | b"yyyy-MM-dd" => return Some(format!("{y:04}-{mo:02}-{d:02}")),
-        b"%Y-%m-%d %H:%i:%s" | b"yyyy-MM-dd HH:mm:ss" => return Some(format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}")),
-        b"yyyy-MM" => return Some(format!("{y:04}-{mo:02}")),
-        b"yyyyMM" => return Some(format!("{y:04}{mo:02}")),
-        b"yyyy" => return Some(format!("{y:04}")),
-        _ => {}
+    let fast_path = match fmt {
+        b"%Y%m%d" | b"yyyyMMdd" => Some(format!("{y:04}{mo:02}{d:02}")),
+        b"%Y-%m-%d" | b"yyyy-MM-dd" => Some(format!("{y:04}-{mo:02}-{d:02}")),
+        b"%Y-%m-%d %H:%i:%s" | b"yyyy-MM-dd HH:mm:ss" => Some(format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}")),
+        b"yyyy-MM" => Some(format!("{y:04}-{mo:02}")),
+        b"yyyyMM" => Some(format!("{y:04}{mo:02}")),
+        b"yyyy" => Some(format!("{y:04}")),
+        _ => None,
+    };
+    if let Some(s) = fast_path.filter(|_| fast) {
+        return Some(s.into_bytes());
     }
     let daynr = calc_daynr(y, mo, d);
     let hour12 = (h % 24 + 11) % 12 + 1;
-    let mut out = String::new();
+    let mut out: Vec<u8> = Vec::new();
     let mut i = 0;
     while i < fmt.len() {
         if out.len() + 12 > 112 {
@@ -172,7 +182,7 @@ fn format(t: &Dt, fmt: &[u8]) -> Option<String> {
         }
         let c = fmt[i];
         if c != b'%' || i + 1 == fmt.len() {
-            out.push(c as char);
+            out.push(c);
             i += 1;
             continue;
         }
@@ -180,27 +190,27 @@ fn format(t: &Dt, fmt: &[u8]) -> Option<String> {
         i += 2;
         let week = |mode: i64| calc_week(*t, mysql_week_mode(mode));
         match spec {
-            b'y' => out += &format!("{:02}", y % 100),
-            b'Y' => out += &format!("{y:04}"),
-            b'd' => out += &format!("{d:02}"),
-            b'e' => out += &d.to_string(),
-            b'm' => out += &format!("{mo:02}"),
-            b'c' => out += &mo.to_string(),
-            b'H' => out += &format!("{h:02}"),
-            b'k' => out += &h.to_string(),
-            b'h' | b'I' => out += &format!("{hour12:02}"),
-            b'l' => out += &hour12.to_string(),
-            b'i' => out += &format!("{mi:02}"),
-            b's' | b'S' => out += &format!("{s:02}"),
-            b'f' => out += &format!("{:06}", t.micro),
-            b'p' => out += if h % 24 >= 12 { "PM" } else { "AM" },
-            b'r' => out += &format!("{hour12:02}:{mi:02}:{s:02} {}", if h % 24 >= 12 { "PM" } else { "AM" }),
-            b'T' => out += &format!("{h:02}:{mi:02}:{s:02}"),
-            b'j' => out += &format!("{:03}", daynr - calc_daynr(y, 1, 1) + 1),
-            b'a' => out += &DAYS[calc_weekday(daynr, false) as usize][..3],
-            b'W' => out += DAYS[calc_weekday(daynr, false) as usize],
-            b'b' => out += &MONTHS[(mo - 1) as usize][..3],
-            b'M' => out += MONTHS[(mo - 1) as usize],
+            b'y' => out.extend_from_slice(format!("{:02}", y % 100).as_bytes()),
+            b'Y' => out.extend_from_slice(format!("{y:04}").as_bytes()),
+            b'd' => out.extend_from_slice(format!("{d:02}").as_bytes()),
+            b'e' => out.extend_from_slice(d.to_string().as_bytes()),
+            b'm' => out.extend_from_slice(format!("{mo:02}").as_bytes()),
+            b'c' => out.extend_from_slice(mo.to_string().as_bytes()),
+            b'H' => out.extend_from_slice(format!("{h:02}").as_bytes()),
+            b'k' => out.extend_from_slice(h.to_string().as_bytes()),
+            b'h' | b'I' => out.extend_from_slice(format!("{hour12:02}").as_bytes()),
+            b'l' => out.extend_from_slice(hour12.to_string().as_bytes()),
+            b'i' => out.extend_from_slice(format!("{mi:02}").as_bytes()),
+            b's' | b'S' => out.extend_from_slice(format!("{s:02}").as_bytes()),
+            b'f' => out.extend_from_slice(format!("{:06}", t.micro).as_bytes()),
+            b'p' => out.extend_from_slice((if h % 24 >= 12 { "PM" } else { "AM" }).as_bytes()),
+            b'r' => out.extend_from_slice(format!("{hour12:02}:{mi:02}:{s:02} {}", if h % 24 >= 12 { "PM" } else { "AM" }).as_bytes()),
+            b'T' => out.extend_from_slice(format!("{h:02}:{mi:02}:{s:02}").as_bytes()),
+            b'j' => out.extend_from_slice(format!("{:03}", daynr - calc_daynr(y, 1, 1) + 1).as_bytes()),
+            b'a' => out.extend_from_slice(&DAYS[calc_weekday(daynr, false) as usize].as_bytes()[..3]),
+            b'W' => out.extend_from_slice((DAYS[calc_weekday(daynr, false) as usize]).as_bytes()),
+            b'b' => out.extend_from_slice(&MONTHS[(mo - 1) as usize].as_bytes()[..3]),
+            b'M' => out.extend_from_slice((MONTHS[(mo - 1) as usize]).as_bytes()),
             b'D' => {
                 let suffix = match (d % 100, d % 10) {
                     (11..=13, _) => "th",
@@ -209,16 +219,16 @@ fn format(t: &Dt, fmt: &[u8]) -> Option<String> {
                     (_, 3) => "rd",
                     _ => "th",
                 };
-                out += &format!("{d}{suffix}");
+                out.extend_from_slice(format!("{d}{suffix}").as_bytes());
             }
-            b'w' => out += &calc_weekday(daynr, true).to_string(),
-            b'u' => out += &format!("{:02}", week(1).0),
-            b'U' => out += &format!("{:02}", week(0).0),
-            b'v' => out += &format!("{:02}", week(3).0),
-            b'V' => out += &format!("{:02}", week(2).0),
-            b'x' => out += &format!("{:04}", week(3).1),
-            b'X' => out += &format!("{:04}", week(2).1),
-            other => out.push(other as char),
+            b'w' => out.extend_from_slice(calc_weekday(daynr, true).to_string().as_bytes()),
+            b'u' => out.extend_from_slice(format!("{:02}", week(1).0).as_bytes()),
+            b'U' => out.extend_from_slice(format!("{:02}", week(0).0).as_bytes()),
+            b'v' => out.extend_from_slice(format!("{:02}", week(3).0).as_bytes()),
+            b'V' => out.extend_from_slice(format!("{:02}", week(2).0).as_bytes()),
+            b'x' => out.extend_from_slice(format!("{:04}", week(3).1).as_bytes()),
+            b'X' => out.extend_from_slice(format!("{:04}", week(2).1).as_bytes()),
+            other => out.push(other),
         }
     }
     Some(out)
@@ -306,6 +316,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
                         return Err(fail());
                     }
                     let t = local(&zone, seconds, (v % ratio) * (1_000_000 / ratio)).ok_or_else(fail)?;
+                    crate::clock::refuse_past_2099(&zone, t.year, name)?;
                     Ok(Datum::Int(t.pack(true)))
                 })
                 .collect()
@@ -320,7 +331,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
                     b"yyyy-MM-dd HH:mm:ss".to_vec()
                 }),
             };
-            let fmt = fmt.ok_or_else(|| invalid("Operation from_unixtime of invalid or oversized format is invalid".into()))?;
+            let fmt = fmt.ok_or_else(|| invalid("Operation from_unixtime_new of invalid or oversized format is invalid".into()))?;
             let zone = zone()?;
             (0..rows)
                 .map(|r| {
@@ -348,7 +359,8 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
                         return Err(fail());
                     }
                     let t = local(&zone, seconds, micro).ok_or_else(fail)?;
-                    format(&t, &fmt).map(|s| Datum::Bytes(s.into_bytes())).ok_or_else(fail)
+                    crate::clock::refuse_past_2099(&zone, t.year, "from_unixtime")?;
+                    format(&t, &fmt, !decimal).map(Datum::Bytes).ok_or_else(fail)
                 })
                 .collect()
         }
@@ -384,6 +396,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
                         _ => return Err(ExecError::BadRequest("unix_timestamp of three arguments".into())),
                     };
                     let civil = civil_of(&t).ok_or_else(|| ExecError::BadRequest("unix_timestamp of an invalid date".into()))?;
+                    crate::clock::refuse_past_2099(&zone, t.year, "unix_timestamp")?;
                     let seconds = crate::clock::instant(&zone, civil);
                     // trim_timestamp: before 1970 is 0
                     let (seconds, micro) = if seconds < 0 { (0, 0) } else { (seconds, t.micro) };
@@ -407,25 +420,40 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
             })
             .collect(),
         "next_day" => {
-            let weekday = |r: usize| match &args[1][r] {
-                Datum::Bytes(s) => {
-                    weekday_number(s).ok_or_else(|| invalid(format!("Function next_day failed to parse weekday: {}", String::from_utf8_lossy(s))))
-                }
-                _ => Err(ExecError::BadRequest("next_day of a non-text weekday".into())),
+            // FunctionRelativeDay runs on the columns' values with their NULL rows unwrapped: a
+            // NULL weekday row is the empty name, which fails; a constant NULL is NULL rows
+            if (constant[0] && args[0].first() == Some(&Datum::Null)) || (constant[1] && args[1].first() == Some(&Datum::Null)) {
+                return Ok(vec![Datum::Null; rows]);
+            }
+            let parse = |d: &Datum| {
+                let s = bytes_of(d);
+                weekday_number(s).ok_or_else(|| invalid(format!("Function next_day failed to parse weekday: {}", String::from_utf8_lossy(s))))
             };
-            // C++ moves a constant date in place: with a column weekday it accumulates
-            let accumulate = constant[0] && !constant[1];
-            let mut cur: Option<Dt> = None;
+            let fixed_weekday = if constant[1] { args[1].first().map(parse).transpose()? } else { None };
+            // a constant date is moved in place, row after row
+            let mut cur: Option<Dt> = constant[0]
+                .then(|| args[0].first().map(|d| Dt::unpack(i128::from(int(d)), false)))
+                .flatten();
             (0..rows)
                 .map(|r| {
-                    if null(r) {
-                        return Ok(Datum::Null);
+                    let wd = match fixed_weekday {
+                        Some(w) => w,
+                        None => parse(&args[1][r])?,
+                    };
+                    let from = match cur {
+                        Some(c) => c,
+                        None if args[0][r] == Datum::Null => return Ok(Datum::Null),
+                        None => Dt::unpack(i128::from(int(&args[0][r])), false),
+                    };
+                    let t = next_day(from, wd);
+                    if constant[0] {
+                        cur = Some(t);
                     }
-                    let given = Dt::unpack(i128::from(int(&args[0][r])), false);
-                    let from = if accumulate { cur.unwrap_or(given) } else { given };
-                    let t = next_day(from, weekday(r)?);
-                    cur = Some(t);
-                    Ok(Datum::Int(t.pack(false)))
+                    Ok(if args[1][r] == Datum::Null {
+                        Datum::Null
+                    } else {
+                        Datum::Int(t.pack(false))
+                    })
                 })
                 .collect()
         }
@@ -438,7 +466,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
                         return Ok(Datum::Null);
                     }
                     let t = Dt::unpack(i128::from(int(&args[0][r])), datetime(0));
-                    format(&t, &fmt).map(|s| Datum::Bytes(s.into_bytes())).ok_or_else(|| {
+                    format(&t, &fmt, true).map(Datum::Bytes).ok_or_else(|| {
                         invalid(format!(
                             "Operation date_format of {}, {} is invalid",
                             t.text(datetime(0)),

@@ -256,3 +256,107 @@ fn date_format_specifiers() {
     let e = call("date_format", vc(), vec![date("2021-01-01 00:00:00", dt(0)), string(&long)]);
     assert_eq!(coded(utc(e)).0, "INVALID_ARGUMENT");
 }
+
+// review fixes
+
+#[test]
+fn date_format_keeps_non_ascii_bytes() {
+    let df = |f: &str| match utc(call("date_format", vc(), vec![date("2021-01-02 03:04:05", dt(0)), string(f)])).unwrap() {
+        Datum::Bytes(b) => b,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(df("%Y年%m月%d日"), "2021年01月02日".as_bytes());
+    // `%` before a multi-byte character writes its first byte, then the rest as they are
+    assert_eq!(df("%年"), "年".as_bytes());
+    // the length guard counts bytes
+    assert_eq!(df(&"年".repeat(30)), "年".repeat(30).as_bytes());
+}
+
+#[test]
+fn a_bad_from_unixtime_format_names_the_new_function() {
+    let bad = |f: TExpr| coded(utc(call("from_unixtime", vc(), vec![big(0), f])));
+    let want = (
+        "INVALID_ARGUMENT",
+        "Operation from_unixtime_new of invalid or oversized format is invalid".to_string(),
+    );
+    assert_eq!(bad(null(vc())), want);
+    assert_eq!(bad(string(&"%Y".repeat(65))), want);
+    let df = |f: TExpr| coded(utc(call("date_format", vc(), vec![date("2021-01-01 00:00:00", dt(0)), f])));
+    let want = (
+        "INVALID_ARGUMENT",
+        "Operation date_format of invalid or oversized format is invalid".to_string(),
+    );
+    assert_eq!(df(null(vc())), want);
+    assert_eq!(df(string(&"x".repeat(129))), want);
+}
+
+/// The decimal form uses no Java-style fast path: such a format is printed as text.
+#[test]
+fn decimal_from_unixtime_takes_formats_literally() {
+    let d = scalar(T::DECIMAL64, -1, 18, 6);
+    let r = utc(call("from_unixtime", vc(), vec![decimal("1.000000", d.clone()), string("yyyy-MM-dd")])).unwrap();
+    assert_eq!(r, text("yyyy-MM-dd"));
+    let r = utc(call("from_unixtime", vc(), vec![decimal("1.000000", d), string("%Y-%m-%d")])).unwrap();
+    assert_eq!(r, text("1970-01-01"));
+}
+
+/// chrono-tz applies no daylight saving after 2099, cctz does: refused in such a session zone.
+#[test]
+fn unix_time_past_2099_in_a_dst_zone_is_refused() {
+    let ny = |e: TExpr| in_zone("America/New_York", || eval(e));
+    let summer_2100 = 4_102_444_800 + 200 * 86_400;
+    assert!(matches!(
+        ny(call("from_second", dt(0), vec![big(summer_2100)])),
+        Err(ExecError::Unsupported { .. })
+    ));
+    assert!(matches!(
+        ny(call("from_unixtime", vc(), vec![big(summer_2100)])),
+        Err(ExecError::Unsupported { .. })
+    ));
+    let e = call("unix_timestamp", ty(T::BIGINT), vec![date("2100-07-01", ty(T::DATEV2))]);
+    assert!(matches!(ny(e), Err(ExecError::Unsupported { .. })));
+    // before 2100, and in a zone without daylight saving, they run
+    assert!(ny(call("from_second", dt(0), vec![big(4_000_000_000)])).is_ok());
+    assert!(in_zone("Asia/Shanghai", || eval(call("from_second", dt(0), vec![big(summer_2100)]))).is_ok());
+}
+
+/// A constant date accumulates over the rows whatever the weekday is; a NULL weekday row is
+/// the empty name, which fails.
+#[test]
+fn next_day_follows_cpp_over_columns() {
+    let c = ColType::from_type_desc("", &vc(), true).unwrap();
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    let block = Block {
+        types: vec![c.clone()],
+        rows: vec![vec![text("MON")], vec![Datum::Null]],
+    };
+    let e = call("next_day", ty(T::DATEV2), vec![date("2020-02-27", ty(T::DATEV2)), slot(1, vc())]);
+    check_read(&e).unwrap();
+    assert_eq!(
+        coded(in_zone("UTC", || eval_column(&e, &block, &slots)).map(|mut v| v.1.remove(0))),
+        ("INVALID_ARGUMENT", "Function next_day failed to parse weekday: ".into())
+    );
+    // a column date with a NULL row: NULL, the weekday still read
+    let block = Block {
+        types: vec![ColType::from_type_desc("", &ty(T::DATEV2), true).unwrap()],
+        rows: vec![vec![day("2020-02-27")], vec![Datum::Null]],
+    };
+    let e = call("next_day", ty(T::DATEV2), vec![slot(1, ty(T::DATEV2)), string("MON")]);
+    let got = in_zone("UTC", || eval_column(&e, &block, &slots)).unwrap().1;
+    assert_eq!(got, vec![day("2020-03-02"), Datum::Null]);
+}
+
+/// A format with a specifier `str_to_date` does not port is refused when the plan is checked,
+/// not on the first row.
+#[test]
+fn an_unported_parse_format_is_refused_at_check() {
+    let dec = scalar(T::DECIMAL64, -1, 18, 6);
+    let e = call("unix_timestamp", dec, vec![slot(1, vc()), string("%W %Y")]);
+    let err = in_zone("UTC", || check_read(&e)).unwrap_err().to_string();
+    assert!(err.contains("%W"), "{err}");
+    let e = call("str_to_date", ty(T::DATEV2), vec![slot(1, vc()), string("%W")]);
+    assert!(in_zone("UTC", || check_read(&e)).is_err());
+    // a ported one passes
+    let e = call("str_to_date", ty(T::DATEV2), vec![slot(1, vc()), string("%Y-%b-%d")]);
+    in_zone("UTC", || check_read(&e)).unwrap();
+}
