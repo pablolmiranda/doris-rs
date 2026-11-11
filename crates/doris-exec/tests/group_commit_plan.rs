@@ -121,3 +121,22 @@ fn a_filtered_row_is_not_checked_in() {
     assert_eq!((o.filtered, o.loaded, checked.loaded()), (1, total - 1, total - 1));
     assert!(o.error_log.is_some());
 }
+
+/// A queued row's bytes count every column with a null map (the queue's block is made
+/// nullable): the recorded commit has `receive_bytes` 87 for three `(k, v)` rows of a unique
+/// table, whose reports say 25 bytes each.
+#[test]
+fn queued_bytes_are_those_of_a_nullable_block() {
+    let seq = sequence(doris_fixtures::group_commit::INTERVAL);
+    let exec = seq
+        .iter()
+        .find_map(|m| if let Msg::Exec(r) = m { Some(Msg::params(r)) } else { None })
+        .unwrap();
+    let f = plan_write(&exec).unwrap();
+    let sink = TableSink::new(&f, vec![f.instance_id.clone()]).unwrap();
+    sink.push(0, f.values_rows().unwrap(), &f.input_nullable()).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let (o, checked) = sink.check(&tmp.path().join("error_log"));
+    assert_eq!(o.bytes, 25);
+    assert_eq!(checked.bytes(), 29);
+}

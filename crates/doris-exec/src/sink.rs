@@ -114,6 +114,9 @@ struct InstanceRows {
     /// Rows that reached the sink, filtered ones included (`num_rows_load_total`).
     reached: i64,
     bytes: i64,
+    /// Bytes of the rows that passed, every column with a null map: what they add to a group
+    /// commit queue's block, which is made nullable.
+    queued: i64,
 }
 
 /// The OLAP table sink of a fragment, fed by each of its instances (`VTabletWriterV2`): rows are
@@ -158,8 +161,12 @@ impl TableSink {
             me.bytes += row_bytes(self.f.dest_columns(), nullable, values);
         }
         for row in rows {
-            match row.and_then(|values| self.router.route(&values)) {
-                Ok(r) => me.routed.push(r),
+            let routed = row.and_then(|values| self.router.route(&values).map(|r| (r, row_bytes(self.f.dest_columns(), &[], &values))));
+            match routed {
+                Ok((r, queued)) => {
+                    me.routed.push(r);
+                    me.queued += queued;
+                }
                 Err(e) => {
                     if me.errors.len() >= MAX_LOGGED_ERRORS {
                         if self.f.zero_tolerance {
@@ -256,7 +263,7 @@ impl TableSink {
                 },
             );
         }
-        let bytes = out.bytes;
+        let bytes = instances.iter().map(|i| i.queued).sum();
         let routed = instances.into_iter().flat_map(|i| i.routed).collect();
         (out, Checked { names, routed, bytes })
     }
@@ -276,7 +283,7 @@ impl Checked {
         self.routed.len() as i64
     }
 
-    /// Bytes of the rows that reached the sink (`Block::bytes`).
+    /// Bytes the rows add to a group commit queue (`Block::bytes` of a nullable block).
     pub fn bytes(&self) -> i64 {
         self.bytes
     }
