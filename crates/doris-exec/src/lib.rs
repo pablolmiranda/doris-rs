@@ -10,6 +10,7 @@ pub mod block;
 pub mod clock;
 pub mod codec;
 pub mod conv;
+pub mod crypto;
 pub mod columnar;
 pub mod cond;
 pub mod datagen;

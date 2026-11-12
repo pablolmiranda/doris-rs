@@ -15,7 +15,7 @@ pub type Slots = HashMap<i32, Value>;
 
 /// Checks an expression uses only what `eval` evaluates; names the first node that does not.
 pub fn check(e: &TExpr) -> Result<(), ExecError> {
-    for n in &e.nodes {
+    for (i, n) in e.nodes.iter().enumerate() {
         let ok = match n.node_type {
             TExprNodeType::INT_LITERAL
             | TExprNodeType::LARGE_INT_LITERAL
@@ -31,6 +31,7 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
                 matches!(function_name(n).as_deref(), Some("substring" | "concat" | "now" | "current_date" | "curdate"))
                     || string_function(n)
                     || int_arithmetic(n)
+                    || crypto_function(&e.nodes, i)
             }
             TExprNodeType::ARITHMETIC_EXPR => int_arithmetic(n),
             _ => false,
@@ -47,6 +48,61 @@ pub fn check(e: &TExpr) -> Result<(), ExecError> {
         }
     }
     Ok(())
+}
+
+/// The index one past node `i`'s subtree (pre-order, `num_children` each).
+fn subtree_end(nodes: &[TExprNode], i: usize) -> usize {
+    let mut left = 1usize;
+    let mut j = i;
+    while left > 0 && j < nodes.len() {
+        left = left - 1 + nodes[j].num_children.max(0) as usize;
+        j += 1;
+    }
+    j
+}
+
+/// An encryption, digest or base64 call of `crypto` (a stream load's column mapping), with an
+/// encrypt or decrypt's mode a literal `crypto` runs.
+fn crypto_function(nodes: &[TExprNode], i: usize) -> bool {
+    let n = &nodes[i];
+    let Some(name) = function_name(n).filter(|f| crate::crypto::is_crypto_function(f)) else { return false };
+    let Some(f) = n.fn_.as_ref() else { return false };
+    let args: Option<Vec<ColType>> = f.arg_types.iter().map(|t| ColType::from_type_desc("", t, true)).collect();
+    let Some(to) = ColType::from_type_desc("", &n.type_, true) else { return false };
+    if !args.is_some_and(|a| crate::crypto::supported(&name, &a, &to)) {
+        return false;
+    }
+    // the fourth argument's subtree: a lone STRING_LITERAL is the mode
+    let mut at = i + 1;
+    for _ in 0..3 {
+        at = subtree_end(nodes, at);
+    }
+    let mode = nodes
+        .get(at)
+        .filter(|m| m.node_type == TExprNodeType::STRING_LITERAL)
+        .and_then(|m| m.string_literal.as_ref())
+        .map(|l| l.value.as_bytes());
+    crate::crypto::writable(&name, mode, n.num_children == 5)
+}
+
+/// A `crypto` call on one row's values; NULL in, NULL out.
+fn crypto_call(n: &TExprNode, children: Vec<Value>) -> Result<Value, RowError> {
+    use doris_segment::writer::Datum;
+    let name = function_name(n).unwrap_or_default();
+    let mut cols = Vec::with_capacity(children.len());
+    for v in children {
+        cols.push(match v {
+            Value::Null => return Ok(Value::Null),
+            Value::Str(b) => vec![Datum::Bytes(b)],
+            other => return Err(RowError::new(format!("{name} of {other:?}"))),
+        });
+    }
+    let args: Vec<&[Datum]> = cols.iter().map(Vec::as_slice).collect();
+    let out = crate::crypto::eval(&name, &args, 1).map_err(|e| RowError::new(e.to_string()))?;
+    Ok(match out.into_iter().next() {
+        Some(Datum::Bytes(b)) => Value::Str(b),
+        _ => Value::Null,
+    })
 }
 
 /// A text-to-text call of `strfn` (`unhex`, `char`, …) whose signature it evaluates.
@@ -174,6 +230,7 @@ fn eval_at(nodes: &[TExprNode], pos: &mut usize, slots: &Slots) -> Result<Value,
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("substring") => substring(&children),
         TExprNodeType::FUNCTION_CALL if function_name(n).as_deref() == Some("concat") => concat(&children),
         TExprNodeType::FUNCTION_CALL if string_function(n) => string_call(n, children)?,
+        TExprNodeType::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::crypto::is_crypto_function(&f)) => crypto_call(n, children)?,
         TExprNodeType::FUNCTION_CALL | TExprNodeType::ARITHMETIC_EXPR if int_arithmetic(n) => int_arithmetic_call(n, children)?,
         TExprNodeType::FUNCTION_CALL if matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate")) => {
             let f = function_name(n).unwrap_or_default();

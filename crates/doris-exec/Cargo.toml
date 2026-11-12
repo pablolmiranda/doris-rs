@@ -21,6 +21,11 @@ crc32fast = { workspace = true }
 # correctly rounded transcendentals: glibc's results on every recorded input
 core-math = { workspace = true }
 libm = { workspace = true }
+aes = { workspace = true }
+aes-gcm = { workspace = true }
+sm4 = { workspace = true }
+sm3 = { workspace = true }
+base64 = { workspace = true }
 twox-hash = { workspace = true }
 # compress_type GZ (pure Rust backend)
 flate2 = { workspace = true }
