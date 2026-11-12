@@ -320,3 +320,54 @@ fn join_replays_hold_their_nodes() {
     assert!(assert_rows, "no replay has an ASSERT_NUM_ROWS_NODE");
     assert!(bucket_shuffle, "no replay has a bucket-shuffle sink");
 }
+
+/// The M6 story 7 batch 1 replays (regexp, to_date, eq_for_null, concat_ws, stddev,
+/// window_funnel_v2, REPEAT_NODE, DATA_GEN_SCAN_NODE).
+const BATCH1: [&str; 16] = [
+    "correctness_p0.test_assert_row_num.test_assert_num_rows",
+    "correctness_p0.test_grouping_sets_empty.test_grouping_sets_empty",
+    "correctness_p0.test_like_predicate_with_concat.test_like_predicate_with_concat",
+    "correctness_p0.test_null_equal.test_null_equal",
+    "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
+    "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
+    "nereids_p0.aggregate.agg_distinct_case_when.agg_distinct_case_when",
+    "nereids_p0.aggregate.agg_with_distinct_project.agg_with_distinct_project",
+    "nereids_p0.aggregate.aggregate_groupby_simplify.aggregate_groupby_simplify",
+    "nereids_p0.aggregate.aggregate_stddev_over_range.aggregate_stddev_over_range",
+    "nereids_p0.grouping_sets.test_grouping_sets1.test_grouping_sets1",
+    "query_p0.having.having_between.test_having_between",
+    "query_p0.join.rqg.rqg500079780.rqg500079780.rqg1333347798",
+    "query_p0.set.test_user_var.test_user_var",
+    "query_p0.sql_functions.string_functions.test_regexp_chinese.test_regexp_chinese",
+    "query_p0.sql_functions.string_functions.test_regexp_extended_nonconstant_pattern.test_regexp_extended_nonconstant_pattern",
+];
+
+#[test]
+fn batch1_replays_hold_their_features() {
+    use doris_thrift::gen::plan_nodes::TPlanNodeType as P;
+    let wanted = ["regexp", "to_date", "concat_ws", "stddev", "window_funnel_v2", "eq_for_null"];
+    let mut seen = BTreeSet::new();
+    for s in BATCH1 {
+        let mut mine = BTreeSet::new();
+        for q in replays::load(s).queries() {
+            mine.extend(replays::functions(&q).into_iter().filter(|f| wanted.contains(&f.as_str())));
+            if format!("{q:?}").contains("opcode: TExprOpcode(65)") {
+                mine.insert("eq_for_null".to_string());
+            }
+            for f in q.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()) {
+                for n in f.plan.iter().flat_map(|p| &p.nodes) {
+                    match n.node_type {
+                        P::REPEAT_NODE => mine.insert("REPEAT_NODE".to_string()),
+                        P::DATA_GEN_SCAN_NODE => mine.insert("DATA_GEN_SCAN_NODE".to_string()),
+                        _ => false,
+                    };
+                }
+            }
+        }
+        assert!(!mine.is_empty(), "{s} holds no batch 1 feature");
+        seen.extend(mine);
+    }
+    for f in wanted.iter().copied().chain(["REPEAT_NODE", "DATA_GEN_SCAN_NODE"]) {
+        assert!(seen.contains(f), "no batch 1 replay holds {f} (seen: {seen:?})");
+    }
+}

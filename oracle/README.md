@@ -174,6 +174,20 @@ picks one by an unstable sort. Decimal add and subtract are supported now
 (`test_join_result_count` needs them). `assert_true` moved on to story 7: no newly eligible
 suite uses it. The readback check's join is answered by doris-rs in rounds b and c.
 
+After Milestone 6 story 7 batch 1 (the long tail: `ndv`, `assert_true`, `regexp`, `to_date`,
+`sum0`, `stddev`, `ntile`, `group_concat`, `eq_for_null`, `concat_ws`, `window_funnel_v2`,
+REPEAT_NODE, DATA_GEN_SCAN_NODE, and RIGHT SEMI mark joins; run `m6-s7b1-full-3`, 2026-11-10):
+579 eligible suites, all passing both gates; 627 Epic 1 suites pass the out gate (460 of those
+that reach the BE) and 511 the strict gate (431). The ratchets gain 32 suites in the out gate
+and 28 in the strict gate. The supplement now blocks 7 more suites, on needs the replies cannot
+show: three return rows from several instances with no ORDER BY (`result:cpp_instance_order`),
+one explains a folded `CURDATE()` (`result:reference_date`), one shows on-disk size
+(`result:cpp_data_size`), one reads a UNIQUE KEYS table, and one expects Boost's
+backtrack-limit error (`regex:boost_backtrack_limit`). A RIGHT ANTI mark join stays refused:
+C++ sets its marks by output row. `ndv` matches C++'s HLL, checked against a Python port of
+`hll.cpp`. Run `m6-s7b1-full-2` does not count: DNS for the reference data host failed in its
+first minute, and 14 data loads failed.
+
 The older directory-level gate also works against any target:
 
 ```

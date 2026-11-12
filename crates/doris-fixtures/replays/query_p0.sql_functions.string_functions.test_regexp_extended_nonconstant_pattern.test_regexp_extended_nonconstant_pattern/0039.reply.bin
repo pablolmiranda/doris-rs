@@ -1,0 +1,2 @@
+
+µ°(127.0.0.1)[INTERNAL_ERROR]Invalid regex expression: (?<=foo)bar. Error: invalid perl operator: (?<. If you need advanced regex features, try setting enable_extended_regex=true

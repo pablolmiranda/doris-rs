@@ -38,7 +38,8 @@ fn int(nullable: bool) -> ColType {
 }
 
 /// Tuple 0: slot 1 (probe k); tuple 1: slot 2 (build k); tuple 2: slots 3, 4 (a join's
-/// intermediate); tuple 3: slot 5 (a semi join's intermediate). All INT, not nullable.
+/// intermediate); tuple 3: slot 5 (a semi join's intermediate). All INT, not nullable. Tuple 4:
+/// slots 6, 7 (INT, nullable) and 8 (a nullable BOOLEAN mark): a mark join's intermediate.
 fn desc() -> DescTable {
     let s = |id: i32, tuple: i32| {
         (
@@ -46,16 +47,21 @@ fn desc() -> DescTable {
             SlotInfo {
                 id,
                 tuple,
-                ty: int(false),
+                ty: int(id >= 6),
                 unique_id: 0,
                 name: "k".into(),
                 virtual_expr: None,
             },
         )
     };
+    let mut mark = s(8, 4);
+    mark.1.ty = ColType {
+        ptype: T::BOOLEAN,
+        ..int(true)
+    };
     DescTable {
-        slots: HashMap::from([s(1, 0), s(2, 1), s(3, 2), s(4, 2), s(5, 3)]),
-        tuples: HashMap::from([(0, vec![1]), (1, vec![2]), (2, vec![3, 4]), (3, vec![5])]),
+        slots: HashMap::from([s(1, 0), s(2, 1), s(3, 2), s(4, 2), s(5, 3), s(6, 4), s(7, 4), mark]),
+        tuples: HashMap::from([(0, vec![1]), (1, vec![2]), (2, vec![3, 4]), (3, vec![5]), (4, vec![6, 7, 8])]),
     }
 }
 
@@ -201,6 +207,7 @@ fn fragment(
 
 fn instance(i: i64, ranges: &[(i32, Vec<(i64, i64)>)]) -> InstancePlan {
     InstancePlan {
+        data_gen: Default::default(),
         id: id(i),
         sender_id: i as i32,
         scan_ranges: ranges.iter().cloned().collect::<BTreeMap<_, _>>(),
@@ -223,6 +230,7 @@ fn query(fragments: Vec<FragmentPlan>) -> QueryPlan {
         unchecked_arithmetic: false,
         clock: doris_exec::clock::QueryClock::from_optional(None),
         share_broadcast_build: true,
+        regex: Default::default(),
     }
 }
 
@@ -543,4 +551,57 @@ fn assert_rows_over_no_rows_keeps_its_types() {
     run(&plan, 0, &ex).remove(0).unwrap();
     let chunks = ex.receive(&out_key(), 1).unwrap();
     assert!(chunks.iter().all(|c| c.block.types.iter().all(|t| !t.nullable)), "{chunks:?}");
+}
+
+#[test]
+fn a_right_semi_mark_join_runs_with_both_sides_and_its_mark() {
+    use doris_fixtures::build::{binary, int as lit};
+    let (blank, _, sink) = templates();
+    let sender = |node: i32, to: i32, tuple: i32, i: i64| {
+        fragment(
+            empty(&blank, node, tuple),
+            stream_sink(&sink, to),
+            vec![id(1)],
+            vec![instance(i, &[])],
+            &[],
+            RunMode::Each,
+        )
+    };
+    let mut join = hash_join(&blank, TJoinOp::RIGHT_SEMI_JOIN, false, exchange(&blank, 11, 0), exchange(&blank, 12, 1));
+    let h = join.node.hash_join_node.as_mut().unwrap();
+    h.is_mark = Some(true);
+    h.vintermediate_tuple_id_list = Some(vec![4]);
+    // the mark conjunct reads the probe side (probe k <= 1): the intermediate holds both sides
+    h.mark_join_conjuncts = Some(vec![binary("le", slot(6, ty(T::INT)), lit(1, ty(T::INT)))]);
+    let joining = fragment(
+        join,
+        stream_sink(&sink, OUT),
+        vec![TUniqueId {
+            hi: OUT_INSTANCE.0,
+            lo: OUT_INSTANCE.1,
+        }],
+        vec![instance(1, &[])],
+        &[(11, 1), (12, 1)],
+        RunMode::Each,
+    );
+    let plan = query(vec![sender(50, 11, 0, 20), sender(51, 12, 1, 21), joining]);
+    doris_exec::query::check_plan(&plan).unwrap();
+    let ex = Exchanges::default();
+    let key = |node: i32| ExchangeKey {
+        query: QUERY,
+        instance: (1, 1),
+        node,
+    };
+    ex.send(&key(11), chunk(1, &[1, 3]));
+    ex.end(&key(11));
+    ex.send(&key(12), chunk(2, &[2, 1, 3]));
+    ex.end(&key(12));
+    for r in run(&plan, 2, &ex) {
+        r.unwrap();
+    }
+    let rows: Vec<Vec<Datum>> = ex.receive(&out_key(), 1).unwrap().into_iter().flat_map(|c| c.block.rows).collect();
+    // every build row in build order, the probe slot NULL: 2 has no match, 1 matches probe 1
+    // (1 <= 1), 3 matches probe 3 (3 <= 1 fails)
+    let b = |k: i128, m: bool| vec![Datum::Null, Datum::Int(k), Datum::Bool(m)];
+    assert_eq!(rows, [b(2, false), b(1, true), b(3, false)]);
 }

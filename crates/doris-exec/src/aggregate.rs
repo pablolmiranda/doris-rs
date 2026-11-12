@@ -326,6 +326,42 @@ enum State {
     Max(Option<Datum>),
     Avg { sum: Num, count: i64 },
     Distinct(BTreeSet<Vec<u8>>),
+    /// Welford's running mean and squared deviation (`aggregate_function_stddev.h`)
+    Stddev { mean: f64, m2: f64, count: i64 },
+    /// the first accepted row's separator is the one kept (`aggregate_function_group_concat.h`)
+    GroupConcat { data: Vec<u8>, sep: Vec<u8>, inited: bool },
+    /// `ndv`: the HyperLogLog of the values' hashes
+    Ndv(crate::hll::Hll),
+    /// `window_funnel_v2`; `accepted`: a row without a NULL argument was added (the NULL wrapper)
+    Funnel { f: crate::funnel::Funnel, accepted: bool },
+}
+
+/// The bytes `ndv` hashes for a value: a fixed-width type's in-memory value, little-endian
+/// (`aggregate_function_approx_count_distinct.h:98-112`), a string's bytes.
+fn ndv_bytes(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
+    Some(match (d, t.ptype) {
+        (Datum::Bytes(b), _) => b.clone(),
+        (Datum::Bool(b), _) => vec![u8::from(*b)],
+        (Datum::Float(f), _) => f.to_bits().to_le_bytes().to_vec(),
+        (Datum::Double(f), _) => f.to_bits().to_le_bytes().to_vec(),
+        (Datum::Int(v), p) => {
+            let width = ndv_width(p)?;
+            v.to_le_bytes()[..width].to_vec()
+        }
+        _ => return None,
+    })
+}
+
+/// The in-memory width of a fixed-width type `ndv` reads; `None` for one it is not matched over.
+fn ndv_width(p: T) -> Option<usize> {
+    Some(match p {
+        T::BOOLEAN | T::TINYINT => 1,
+        T::SMALLINT => 2,
+        T::INT | T::DATEV2 | T::DECIMAL32 | T::FLOAT => 4,
+        T::BIGINT | T::DATETIMEV2 | T::DECIMAL64 | T::DOUBLE => 8,
+        T::LARGEINT | T::DECIMAL128I => 16,
+        _ => return None,
+    })
 }
 
 fn overflow(what: &str) -> ExecError {
@@ -419,6 +455,28 @@ impl State {
                 count: 0,
             },
             "multi_distinct_count" => State::Distinct(BTreeSet::new()),
+            // sum0 is sum with a non-null result (register_alias("sum", "sum0")); only BIGINT is
+            // matched: C++ adds DOUBLEs under `fp reassociate`
+            "sum0" if f.ret.ptype == T::BIGINT => State::Sum(None),
+            "sum0" => {
+                return Err(ExecError::Unsupported { what: format!("sum0 of {}", f.ret.type_name()) });
+            }
+            "stddev" if f.param_types.first().is_some_and(|t| t.ptype == T::DOUBLE) => State::Stddev { mean: 0.0, m2: 0.0, count: 0 },
+            "stddev" => return Err(ExecError::Unsupported { what: "stddev of a type other than DOUBLE".into() }),
+            "group_concat" if (1..=2).contains(&f.param_types.len()) => State::GroupConcat { data: vec![], sep: vec![], inited: false },
+            "ndv" if f.param_types.first().is_some_and(|t| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING) || ndv_width(t.ptype).is_some()) => {
+                State::Ndv(crate::hll::Hll::default())
+            }
+            "ndv" => return Err(ExecError::Unsupported { what: format!("ndv of {}", f.param_types.first().map_or("nothing".into(), |t| t.type_name())) }),
+            "window_funnel_v2"
+                if f.param_types.len() > 3
+                    && f.param_types.len() - 3 <= crate::funnel::MAX_CONDITIONS
+                    && f.param_types[2].ptype == T::DATETIMEV2 =>
+            {
+                State::Funnel { f: crate::funnel::Funnel::new(f.param_types.len() - 3), accepted: false }
+            }
+            "window_funnel_v2" => return Err(ExecError::Unsupported { what: "window_funnel_v2 over a timestamp other than DATETIMEV2".into() }),
+            "group_concat" => return Err(ExecError::Unsupported { what: "group_concat with ORDER BY".into() }),
             other => {
                 return Err(ExecError::Unsupported {
                     what: format!("function {other}"),
@@ -482,6 +540,58 @@ impl State {
                     set.insert(canonical(std::slice::from_ref(d)));
                 }
             }
+            State::Stddev { mean, m2, count } => {
+                if let Some((_, Datum::Double(x))) = first {
+                    // aggregate_function_stddev.h:110-120, in this order
+                    let delta = x - *mean;
+                    let r = delta / (1 + *count) as f64;
+                    *mean += r;
+                    *m2 += (*count as f64 * delta) * r;
+                    *count += 1;
+                }
+            }
+            State::Funnel { f, accepted } => {
+                if args.len() < 4 || args.iter().any(|(_, d)| **d == Datum::Null) {
+                    return Ok(());
+                }
+                let (Datum::Int(window), Datum::Bytes(mode), Datum::Int(ts)) = (args[0].1, args[1].1, args[2].1) else {
+                    return Err(ExecError::BadRequest("window_funnel_v2 with malformed arguments".into()));
+                };
+                let conditions: Vec<bool> = args[3..].iter().map(|(_, d)| matches!(d, Datum::Bool(true))).collect();
+                f.add(*window as i64, crate::funnel::mode(mode), *ts as u64, &conditions);
+                *accepted = true;
+            }
+            State::Ndv(h) => {
+                if let Some((t, d)) = first.filter(|_| !null) {
+                    let b = ndv_bytes(d, t).ok_or_else(|| ExecError::Unsupported { what: format!("ndv of {}", t.type_name()) })?;
+                    // a zero hash is not added (AggregateFunctionApproxCountDistinctData::add)
+                    let hash = crate::hll::murmur64a(&b, 0xadc83b19);
+                    if hash != 0 {
+                        h.update(hash);
+                    }
+                }
+            }
+            State::GroupConcat { data, sep, inited } => {
+                // the variadic NULL wrapper skips a row with any NULL argument
+                if args.iter().any(|(_, d)| **d == Datum::Null) {
+                    return Ok(());
+                }
+                let text = |d: &Datum| match d {
+                    Datum::Bytes(b) => Ok(b.clone()),
+                    _ => Err(ExecError::Unsupported { what: "group_concat of a type other than text".into() }),
+                };
+                let value = text(first.map(|(_, d)| d).unwrap_or(&Datum::Null))?;
+                if *inited {
+                    data.extend_from_slice(sep);
+                } else {
+                    *sep = match args.get(1) {
+                        Some((_, d)) => text(d)?,
+                        None => b",".to_vec(),
+                    };
+                    *inited = true;
+                }
+                data.extend(value);
+            }
         }
         Ok(())
     }
@@ -524,6 +634,32 @@ impl State {
                 *count += c2;
             }
             (State::Distinct(a), State::Distinct(b)) => a.extend(b.iter().cloned()),
+            // aggregate_function_stddev.h:99-108: the formula runs even into an empty state
+            (State::Stddev { mean, m2, count }, State::Stddev { mean: rm, m2: rm2, count: rc }) => {
+                if *rc != 0 {
+                    let delta = *mean - rm;
+                    let n = (*count + rc) as f64;
+                    *mean = rm + (delta * *count as f64) / n;
+                    *m2 = (rm2 + *m2) + (((delta * delta) * *rc as f64) * *count as f64) / n;
+                    *count = n as i64;
+                }
+            }
+            (State::Ndv(a), State::Ndv(b)) => a.merge(b),
+            (State::Funnel { f, accepted }, State::Funnel { f: g, accepted: b }) => {
+                f.merge(g);
+                *accepted |= b;
+            }
+            (State::GroupConcat { data, sep, inited }, State::GroupConcat { data: rd, sep: rs, inited: ri }) => {
+                if *ri {
+                    if *inited {
+                        data.extend_from_slice(sep);
+                    } else {
+                        *sep = rs.clone();
+                        *inited = true;
+                    }
+                    data.extend_from_slice(rd);
+                }
+            }
             (a, b) => return Err(ExecError::Internal(format!("cannot merge a {b:?} state into {a:?}"))),
         }
         Ok(())
@@ -565,6 +701,22 @@ impl State {
                 }
             }
             State::Distinct(set) => Datum::Int(set.len() as i128),
+            State::Stddev { m2, count, .. } => match *count {
+                0 => Datum::Null,
+                1 => Datum::Double(0.0),
+                n => {
+                    let v = (m2 / n as f64).sqrt();
+                    Datum::Double(if v.is_infinite() { f64::NAN } else { v })
+                }
+            },
+            State::Ndv(h) => Datum::Int(h.estimate().into()),
+            State::Funnel { accepted: false, .. } if ret.nullable => Datum::Null,
+            State::Funnel { f, .. } => Datum::Int(f.get()?.into()),
+            State::GroupConcat { data, inited, .. } => match inited {
+                true => Datum::Bytes(data.clone()),
+                false if ret.nullable => Datum::Null,
+                false => Datum::Bytes(vec![]),
+            },
         })
     }
 
@@ -604,6 +756,42 @@ impl State {
                 out.push(4);
                 num(sum, &mut out);
                 out.extend(count.to_le_bytes());
+            }
+            State::Stddev { mean, m2, count } => {
+                out.push(6);
+                out.extend(mean.to_bits().to_le_bytes());
+                out.extend(m2.to_bits().to_le_bytes());
+                out.extend(count.to_le_bytes());
+            }
+            State::GroupConcat { data, sep, inited } => {
+                out.push(7);
+                out.push(u8::from(*inited));
+                for b in [sep, data] {
+                    out.extend((b.len() as u64).to_le_bytes());
+                    out.extend(b);
+                }
+            }
+            State::Funnel { f, accepted } => {
+                out.push(9);
+                out.push(u8::from(*accepted));
+                out.extend((f.event_count as u64).to_le_bytes());
+                out.extend(f.window.to_le_bytes());
+                out.push(match f.mode {
+                    crate::funnel::Mode::Default => 0,
+                    crate::funnel::Mode::Increase => 1,
+                    crate::funnel::Mode::Deduplication => 2,
+                    crate::funnel::Mode::Fixed => 3,
+                    crate::funnel::Mode::Invalid => 4,
+                });
+                out.extend((f.events.len() as u64).to_le_bytes());
+                for (t, e) in &f.events {
+                    out.extend(t.to_le_bytes());
+                    out.push(*e);
+                }
+            }
+            State::Ndv(h) => {
+                out.push(8);
+                out.extend(h.encode());
             }
             State::Distinct(set) => {
                 out.push(5);
@@ -650,6 +838,38 @@ impl State {
                     set.insert(r.take(len)?.to_vec());
                 }
                 State::Distinct(set)
+            }
+            6 => State::Stddev {
+                mean: f64::from_bits(r.u64()?),
+                m2: f64::from_bits(r.u64()?),
+                count: r.u64()? as i64,
+            },
+            7 => {
+                let inited = r.u8()? == 1;
+                let n = r.u64()? as usize;
+                let sep = r.take(n)?.to_vec();
+                let n = r.u64()? as usize;
+                State::GroupConcat { sep, data: r.take(n)?.to_vec(), inited }
+            }
+            8 => State::Ndv(crate::hll::Hll::decode(r.0)?),
+            9 => {
+                use crate::funnel::{Funnel, Mode};
+                let accepted = r.u8()? == 1;
+                let event_count = r.u64()? as usize;
+                let window = r.u64()? as i64;
+                let mode = match r.u8()? {
+                    0 => Mode::Default,
+                    1 => Mode::Increase,
+                    2 => Mode::Deduplication,
+                    3 => Mode::Fixed,
+                    _ => Mode::Invalid,
+                };
+                let n = r.u64()? as usize;
+                let mut events = Vec::with_capacity(n);
+                for _ in 0..n {
+                    events.push((r.u64()?, r.u8()?));
+                }
+                State::Funnel { f: Funnel { event_count, window, mode, events }, accepted }
             }
             t => return Err(ExecError::Internal(format!("unknown partial aggregate state {t}"))),
         })

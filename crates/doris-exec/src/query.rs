@@ -110,6 +110,8 @@ pub struct InstancePlan {
     pub sender_id: i32,
     /// Scan node → `(tablet id, version)` ranges.
     pub scan_ranges: BTreeMap<i32, Vec<(i64, i64)>>,
+    /// Data-gen scan node → its `numbers` ranges.
+    pub data_gen: BTreeMap<i32, Vec<crate::datagen::Numbers>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +165,8 @@ pub struct QueryPlan {
     /// `enable_share_hash_table_for_broadcast_join`: a broadcast hash join's build input goes to
     /// the first instance of its fragment, and the others share it.
     pub share_broadcast_build: bool,
+    /// `enable_extended_regex` and `enable_hyperscan_fallback`, read by `regexp`.
+    pub regex: crate::regexp::RegexOptions,
 }
 
 impl QueryPlan {
@@ -215,8 +219,29 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
                         (*node, r)
                     })
                     .collect(),
+                data_gen: l
+                    .per_node_scan_ranges
+                    .iter()
+                    .map(|(node, ranges)| {
+                        let r = ranges
+                            .iter()
+                            .filter_map(|r| r.scan_range.data_gen_scan_range.as_ref()?.numbers_params.as_ref())
+                            .map(|n| crate::datagen::Numbers {
+                                total: n.total_numbers.unwrap_or(0),
+                                use_const: n.use_const == Some(true),
+                                const_value: n.const_value.unwrap_or(0),
+                            })
+                            .collect::<Vec<_>>();
+                        (*node, r)
+                    })
+                    .filter(|(_, r)| !r.is_empty())
+                    .collect(),
             })
             .collect();
+        // vnumbers_tvf.cpp reads only an instance's first range
+        if instances.iter().any(|i| i.data_gen.values().any(|r| r.len() > 1)) {
+            return Err(unsupported("a data-gen scan with several ranges in one instance"));
+        }
         let write = if sink.type_ == TDataSinkType::OLAP_TABLE_SINK {
             // a later fragment of a prepare is simplified (is_simplified_param): it takes the
             // query's options and globals from the fragment that carries them
@@ -255,6 +280,7 @@ pub fn plan_query(list: &TPipelineFragmentParamsList) -> Result<QueryPlan, ExecE
         binary_rows: o.and_then(|o| o.mysql_row_binary_format).unwrap_or(false),
         dry_run: o.and_then(|o| o.dry_run_query).unwrap_or(false),
         share_broadcast_build: o.and_then(|o| o.enable_share_hash_table_for_broadcast_join).unwrap_or(true),
+        regex: crate::regexp::RegexOptions::from_query_options(o),
         clock: crate::clock::QueryClock::from_optional(params.iter().find_map(|p| p.query_globals.as_ref())),
         unchecked_arithmetic: o.and_then(|o| o.check_overflow_for_decimal) == Some(false)
             && format!("{list:?}").contains(&format!("node_type: {:?}", TExprNodeType::ARITHMETIC_EXPR)),
@@ -361,6 +387,18 @@ fn check_node(n: &TPlanNode) -> Result<(), ExecError> {
     let name = node_type_name(n.node_type);
     match n.node_type {
         P::OLAP_SCAN_NODE | P::EMPTY_SET_NODE | P::SELECT_NODE => {}
+        P::REPEAT_NODE => {
+            let r = n.repeat_node.as_ref().ok_or_else(|| ExecError::BadRequest("REPEAT_NODE without its parameters".into()))?;
+            crate::repeat::check_repeat(r)?;
+            check_exprs(&r.exprs, false)?;
+        }
+        P::DATA_GEN_SCAN_NODE => {
+            use doris_thrift::gen::plan_nodes::TDataGenFunctionName;
+            let d = n.data_gen_scan_node.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_GEN_SCAN_NODE without its parameters".into()))?;
+            if d.func_name != Some(TDataGenFunctionName::NUMBERS) {
+                return Err(unsupported("a data-gen scan other than numbers"));
+            }
+        }
         P::UNION_NODE => {
             let u = n
                 .union_node
@@ -470,7 +508,7 @@ fn check_hash_join(n: &TPlanNode) -> Result<(), ExecError> {
     match op {
         JoinOp::Cross => return Err(unsupported("a HASH_JOIN_NODE with join op CROSS_JOIN")),
         JoinOp::NullAwareLeftSemi if !mark => return Err(unsupported("a NULL_AWARE_LEFT_SEMI_JOIN that is not a mark join")),
-        JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti | JoinOp::NullAwareLeftSemi => {}
+        JoinOp::LeftSemi | JoinOp::LeftAnti | JoinOp::NullAwareLeftAnti | JoinOp::NullAwareLeftSemi | JoinOp::RightSemi => {}
         _ if mark => return Err(unsupported(format!("a mark join with join op {}", join_op_name(h.join_op)))),
         _ => {}
     }

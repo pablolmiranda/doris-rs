@@ -29,9 +29,9 @@
   },
   "nereids_p0.stats.col_stats.hot_value_str_to_date.hot_value_str_to_date": {
    "needs": [
-    "function:ndv"
+    "result:reference_date"
    ],
-   "reason": "Its ANALYZE runs the FE's statistics SQL (count, ndv, min, max), which fails on doris-rs without ndv; the explain at exchange 13 then shows other statistics (doris-rs run m5-full-1, 2026-11-07). The corpus attributes that SQL outside the suite."
+   "reason": "Its ANALYZE runs the FE's statistics SQL with ndv, which doris-rs runs since M6 story 7. The explain at exchange 13 then still differs in one row: a filter on CURDATE(), which the FE folds to the day it plans the query (2026-11-03 00:00:00 on the reference, 2026-11-10 00:00:00 in doris-rs run m6-s7b1-full-1); every other row matches. No BE can return the reference's date on another day."
   },
   "nereids_p0.select_tablets.select_with_tablets.select_with_tablets": {
    "needs": [
@@ -62,6 +62,42 @@
     "result:cpp_scan_order"
    ],
    "reason": "The suite's like query, select name from tpch_tiny_nation where name like '%AN' with no ORDER BY, returns its three rows from three tablets in the C++ BE's scanner order (JAPAN, IRAN, JORDAN), stable over the 5 reference runs; doris-rs returns the same rows in another order, which the strict gate compares at exchange 11 (doris-rs run m6-s5-full-1, 2026-11-09). As for select_with_tablets, no instance or tablet order reproduces it."
+  },
+  "nereids_p0.show.test_show_column_stats_command.test_show_column_stats_command": {
+   "needs": [
+    "read:UNIQUE_KEYS"
+   ],
+   "reason": "The FE's column-statistics job runs internal SQL (ndv, min, max, count) over the suite's UNIQUE KEY table; those reads reach the BE outside the suite's captured traffic, so the index lacks read:UNIQUE_KEYS. doris-rs refuses them: \"doris-rs cannot read tablet … yet: UNIQUE_KEYS tablets with rows (they need a merge)\" (doris-rs run m6-s7b1-full-1, 2026-11-10)."
+  },
+  "query_p0.sql_functions.string_functions.test_regexp_extended_nonconstant_pattern.test_regexp_extended_nonconstant_pattern": {
+   "needs": [
+    "regex:boost_backtrack_limit"
+   ],
+   "reason": "With enable_extended_regex the suite expects repeat('a', 60) REGEXP '(?=a)(a+)+b' (a column pattern) to fail with Boost's \"Failed to match regex expression\" when Boost's complexity limit is hit. doris-rs's Boost path (fancy-regex) has no such limit and refuses nested unbounded repetitions instead: \"doris-rs does not support a Boost regexp with a nested unbounded repetition yet\" (doris-rs run m6-s7b1-full-1, 2026-11-10)."
+  },
+  "nereids_p0.stats.partitionRowCount.partitionRowCount": {
+   "needs": [
+    "result:cpp_data_size"
+   ],
+   "reason": "Exchange 12, show data, reports the table's on-disk size from the BE's tablet reports: 4.228 KB from the C++ BE, 3.568 KB from doris-rs, whose segment files are encoded differently; the row counts match (doris-rs run m6-s7b1-full-1, 2026-11-10)."
+  },
+  "nereids_p0.aggregate.agg_with_distinct_project.agg_with_distinct_project": {
+   "needs": [
+    "result:cpp_instance_order"
+   ],
+   "reason": "Its grouping-sets query at exchange 19 has no ORDER BY, and its rows reach the result sink from several instances in the order the instances finish. The reference gave one order in its runs; doris-rs gives the reference's order in m6-s7b1-rerun-1 and the other one in m6-s7b1-full-1 (runs m6-s7b1-full-1 and m6-s7b1-rerun-1, 2026-11-10). The out gate, which compares rows as sets, passes."
+  },
+  "nereids_p0.eager_agg.eager_agg.eager_agg": {
+   "needs": [
+    "result:cpp_instance_order"
+   ],
+   "reason": "Its aggregation over a join (exchanges 13 and 23) has no ORDER BY, and its rows reach the result sink from several instances in the order the instances finish. The reference gave one order in its runs; doris-rs gives the other order at exchange 13 in m6-s7b1-full-1 and at exchange 23 in m6-s7b1-rerun-1 (runs m6-s7b1-full-1 and m6-s7b1-rerun-1, 2026-11-10). The out gate, which compares rows as sets, passes."
+  },
+  "nereids_p0.eager_agg.bilateral_eager_agg.bilateral_eager_agg": {
+   "needs": [
+    "result:cpp_instance_order"
+   ],
+   "reason": "Its aggregation over a colocated join at exchange 37 (groups k=2 and k=1, in two buckets) has no ORDER BY, and its rows reach the result sink from several instances in the order the instances finish. The reference gave one order in its runs; doris-rs gives k=1 first, in m6-s7b1-full-1 and in five direct runs of the query (runs m6-s7b1-full-1 and m6-s7b1-rerun-1, 2026-11-10). The out gate, which compares rows as sets, passes."
   }
  },
  "groups": []

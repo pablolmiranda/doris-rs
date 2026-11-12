@@ -299,11 +299,18 @@ fn date_parts(s: &str) -> Option<(u32, u32, u32, &str)> {
         Some(i) => (&s[..i], s[i + 1..].trim()),
         None => (s, ""),
     };
-    let mut p = date.split('-');
-    let y: u32 = p.next()?.parse().ok()?;
-    let m: u32 = p.next()?.parse().ok()?;
-    let d: u32 = p.next()?.parse().ok()?;
-    if p.next().is_some() || !(1..=12).contains(&m) || d == 0 || d > days_in_month(y, m) {
+    let (y, m, d): (u32, u32, u32) = if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) {
+        // `YYYYMMDD`, no delimiter (cast_to_datetimev2_impl.hpp: <year> <month2> <day2>)
+        (date[..4].parse().ok()?, date[4..6].parse().ok()?, date[6..].parse().ok()?)
+    } else {
+        let mut p = date.split('-');
+        let ymd = (p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?);
+        if p.next().is_some() {
+            return None;
+        }
+        ymd
+    };
+    if !(1..=12).contains(&m) || d == 0 || d > days_in_month(y, m) {
         return None;
     }
     Some((y, m, d, rest))

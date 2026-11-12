@@ -444,3 +444,135 @@ fn nullable_passes_values() {
     assert!(t.nullable);
     assert_eq!(v, [Datum::Int(1), Datum::Int(2), Datum::Null]);
 }
+
+fn column_of(e: doris_thrift::gen::exprs::TExpr, block: &Block) -> Vec<Datum> {
+    check_read(&e).expect("supported");
+    eval_column(&e, block, &SlotMap(HashMap::from([(1, 0), (2, 1)]))).expect("eval").1
+}
+
+#[test]
+fn to_date_takes_the_date_bits() {
+    let ts = scalar(T::DATETIMEV2, -1, 0, 3);
+    let block = Block {
+        types: vec![col("t", T::DATETIMEV2, 0, 3)],
+        rows: vec![vec![Datum::Int(parse_datetimev2("2024-03-05 10:11:12.345", 3).unwrap().into())], vec![Datum::Null]],
+    };
+    let e = call("to_date", ty(T::DATEV2), vec![slot(1, ts)]);
+    assert_eq!(column_of(e, &block), vec![Datum::Int(parse_datev2("2024-03-05").unwrap().into()), Datum::Null]);
+}
+
+#[test]
+fn to_date_of_text_is_refused() {
+    let e = call("to_date", ty(T::DATEV2), vec![string("2024-03-05")]);
+    let err = check_read(&e).expect_err("only DATETIMEV2 is supported").to_string();
+    assert!(err.contains("function to_date"), "{err}");
+}
+
+#[test]
+fn eq_for_null_is_two_valued() {
+    let i = ty(T::INT);
+    let block = Block {
+        types: vec![col("a", T::INT, 0, 0), col("b", T::INT, 0, 0)],
+        rows: vec![
+            vec![Datum::Null, Datum::Null],
+            vec![Datum::Null, Datum::Int(1)],
+            vec![Datum::Int(1), Datum::Int(1)],
+            vec![Datum::Int(1), Datum::Int(2)],
+        ],
+    };
+    let e = binary("eq_for_null", slot(1, i.clone()), slot(2, i));
+    assert_eq!(column_of(e, &block), vec![Datum::Bool(true), Datum::Bool(false), Datum::Bool(true), Datum::Bool(false)]);
+}
+
+#[test]
+fn concat_ws_skips_null_args_and_null_sep_is_null() {
+    let v = ty(T::VARCHAR);
+    let block = Block {
+        types: vec![col("a", T::VARCHAR, 0, 0), col("b", T::VARCHAR, 0, 0)],
+        rows: vec![
+            vec![Datum::Bytes(b"x".to_vec()), Datum::Bytes(b"y".to_vec())],
+            vec![Datum::Null, Datum::Bytes(b"y".to_vec())],
+            vec![Datum::Null, Datum::Null],
+        ],
+    };
+    let e = call("concat_ws", v.clone(), vec![string("_"), slot(1, v.clone()), slot(2, v.clone()), string("z")]);
+    assert_eq!(
+        column_of(e, &block),
+        vec![Datum::Bytes(b"x_y_z".to_vec()), Datum::Bytes(b"y_z".to_vec()), Datum::Bytes(b"z".to_vec())]
+    );
+    let e = call("concat_ws", v.clone(), vec![slot(1, v.clone()), string("p"), string("q")]);
+    assert_eq!(column_of(e, &block), vec![Datum::Bytes(b"pxq".to_vec()), Datum::Null, Datum::Null]);
+}
+
+#[test]
+fn assert_true_fails_with_e33() {
+    let block = Block {
+        types: vec![col("c", T::BOOLEAN, 0, 0)],
+        rows: vec![vec![Datum::Bool(true)], vec![Datum::Bool(true)]],
+    };
+    let msg = "ANALYZE_SKIP_LONG_STRING_COLUMN";
+    let e = call("assert_true", ty(T::BOOLEAN), vec![slot(1, ty(T::BOOLEAN)), string(msg)]);
+    assert_eq!(column_of(e.clone(), &block), vec![Datum::Bool(true), Datum::Bool(true)]);
+    for bad in [Datum::Bool(false), Datum::Null] {
+        let block = Block { types: block.types.clone(), rows: vec![vec![Datum::Bool(true)], vec![bad]] };
+        let err = eval_column(&e, &block, &SlotMap(HashMap::from([(1, 0)]))).expect_err("assert fails");
+        match err {
+            doris_exec::ExecError::Coded { name, msg: m, .. } => {
+                assert_eq!(name, "INVALID_ARGUMENT");
+                assert_eq!(m, format!("[E33] {msg}"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+#[test]
+fn assert_true_needs_a_literal_message() {
+    let e = call("assert_true", ty(T::BOOLEAN), vec![boolean(true), slot(1, ty(T::VARCHAR))]);
+    assert!(check_read(&e).is_err());
+}
+
+#[test]
+fn compact_text_casts_to_datetime() {
+    // `20231026` (no separators) is a date, as C++'s DateV2 parser reads it
+    let to = scalar(T::DATETIMEV2, -1, 0, 6);
+    let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to.clone(), 1);
+    cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
+    let e = doris_fixtures::build::over(cast, vec![string("20231026")]);
+    let want = Datum::Int(parse_datetimev2("2023-10-26 00:00:00", 6).unwrap().into());
+    assert_eq!(one_row(e), want);
+    // and a DATEV2 cast to DATETIMEV2(6) is its midnight
+    let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 1);
+    cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
+    let e = doris_fixtures::build::over(cast, vec![date("2023-10-26", ty(T::DATEV2))]);
+    assert_eq!(one_row(e), want);
+}
+
+#[test]
+fn regexp_evaluates_with_the_querys_options() {
+    use doris_exec::regexp::{with_regex_options, RegexOptions};
+    let v = ty(T::VARCHAR);
+    let block = Block {
+        types: vec![col("s", T::VARCHAR, 0, 0), col("p", T::VARCHAR, 0, 0)],
+        rows: vec![vec![Datum::Bytes(b"foobar".to_vec()), Datum::Bytes(b"(?<=foo)bar".to_vec())]],
+    };
+    let e = call("regexp", ty(T::BOOLEAN), vec![slot(1, v.clone()), slot(2, v.clone())]);
+    let slots = SlotMap(HashMap::from([(1, 0), (2, 1)]));
+    check_read(&e).expect("supported");
+    let off = eval_column(&e, &block, &slots).expect_err("RE2 rejects lookbehind").to_string();
+    assert!(off.contains("try setting enable_extended_regex=true"), "{off}");
+    let on = RegexOptions { extended: true, hyperscan_fallback: true };
+    let (_, got) = with_regex_options(on, || eval_column(&e, &block, &slots)).expect("Boost runs it");
+    assert_eq!(got, vec![Datum::Bool(true)]);
+    let rlike = call("rlike", ty(T::BOOLEAN), vec![slot(1, v), string("^foo")]);
+    assert_eq!(column_of(rlike, &block), vec![Datum::Bool(true)]);
+}
+
+#[test]
+fn compact_zero_date_is_null() {
+    // try_convert_set_zero_date applies only under config::allow_zero_date, false by default
+    let to = scalar(T::DATETIMEV2, -1, 0, 6);
+    let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 1);
+    cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
+    assert_eq!(one_row(doris_fixtures::build::over(cast, vec![string("00000000")])), Datum::Null);
+}

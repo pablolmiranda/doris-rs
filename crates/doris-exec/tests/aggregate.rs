@@ -219,9 +219,9 @@ fn sum_overflow_is_an_error() {
 #[test]
 fn an_unknown_aggregate_is_refused() {
     let int = ty(T::INT);
-    let e = aggregate("ndv", ty(T::BIGINT), vec![int.clone()], false, vec![slot(1, int)]);
-    let err = AggSpec::from_expr(&e).expect_err("ndv is not supported").to_string();
-    assert!(err.contains("function ndv"), "{err}");
+    let e = aggregate("percentile", ty(T::DOUBLE), vec![int.clone()], false, vec![slot(1, int)]);
+    let err = AggSpec::from_expr(&e).expect_err("percentile is not supported").to_string();
+    assert!(err.contains("function percentile"), "{err}");
 }
 
 #[test]
@@ -251,4 +251,197 @@ fn a_sum_to_a_lower_scale_is_refused() {
     .expect_err("scale 2 to 1")
     .to_string();
     assert!(err.contains("lower scale"), "{err}");
+}
+
+fn not_null(mut e: TExpr) -> TExpr {
+    e.nodes[0].is_nullable = Some(false);
+    e
+}
+
+fn doubles(v: &[f64]) -> Vec<Datum> {
+    v.iter().map(|x| Datum::Double(*x)).collect()
+}
+
+/// Runs `name` in two phases: one first-phase instance per input, then a merge.
+fn two_phases(name: &str, ret: TTypeDesc, param: TTypeDesc, inputs: &[Vec<Datum>]) -> Datum {
+    let mut partials = Vec::new();
+    for values in inputs {
+        let phase1 = Aggregation {
+            group_by: vec![],
+            functions: vec![spec(name, ret.clone(), vec![param.clone()], false, vec![slot(1, param.clone())])],
+            finalize: false,
+        };
+        partials.extend(phase1.run(&input(&param, values)).unwrap().rows);
+    }
+    let state = scalar(T::VARCHAR, 65533, 0, 0);
+    let phase2 = Aggregation {
+        group_by: vec![],
+        functions: vec![spec(name, ret, vec![param], true, vec![slot(10, state.clone())])],
+        finalize: true,
+    };
+    let merge_in = Chunk { block: Block { types: vec![ct(&state)], rows: partials }, slots: vec![10] };
+    phase2.run(&merge_in).unwrap().rows.remove(0).remove(0)
+}
+
+#[test]
+fn sum0_of_no_rows_is_zero() {
+    let big = ty(T::BIGINT);
+    let f = AggSpec::from_expr(&not_null(aggregate("sum0", big.clone(), vec![big.clone()], false, vec![slot(1, big.clone())]))).unwrap();
+    assert_eq!(one_phase(vec![f.clone()], &input(&big, &[])), vec![vec![Datum::Int(0)]]);
+    assert_eq!(one_phase(vec![f.clone()], &input(&big, &ints(&[None]))), vec![vec![Datum::Int(0)]]);
+    assert_eq!(one_phase(vec![f], &input(&big, &ints(&[Some(2), None, Some(5)]))), vec![vec![Datum::Int(7)]]);
+}
+
+#[test]
+fn stddev_is_welford_pop() {
+    let d = ty(T::DOUBLE);
+    let f = || vec![spec("stddev", d.clone(), vec![d.clone()], false, vec![slot(1, d.clone())])];
+    assert_eq!(one_phase(f(), &input(&d, &doubles(&[1.0, 2.0, 3.0, 4.0]))), vec![vec![Datum::Double(1.25f64.sqrt())]]);
+    // one row: 0, even for an infinity
+    assert_eq!(one_phase(f(), &input(&d, &doubles(&[f64::INFINITY]))), vec![vec![Datum::Double(0.0)]]);
+    assert_eq!(one_phase(f(), &input(&d, &[])), vec![vec![Datum::Null]]);
+    // an infinite deviation is NaN
+    let Datum::Double(v) = one_phase(f(), &input(&d, &doubles(&[f64::INFINITY, 1.0])))[0][0] else { panic!() };
+    assert!(v.is_nan());
+}
+
+#[test]
+fn stddev_merges_through_the_formula_even_into_an_empty_state() {
+    let d = ty(T::DOUBLE);
+    assert_eq!(two_phases("stddev", d.clone(), d.clone(), &[doubles(&[1.0, 2.0]), doubles(&[3.0, 4.0])]), Datum::Double(1.25f64.sqrt()));
+    // one phase over two equal huge values: 0; two phases: the first merge's (delta²)·0 is NaN
+    let big = f64::MAX;
+    let d1 = one_phase(vec![spec("stddev", d.clone(), vec![d.clone()], false, vec![slot(1, d.clone())])], &input(&d, &doubles(&[big, big])));
+    assert_eq!(d1, vec![vec![Datum::Double(0.0)]]);
+    let Datum::Double(v) = two_phases("stddev", d.clone(), d.clone(), &[doubles(&[big]), doubles(&[big])]) else { panic!() };
+    assert!(v.is_nan(), "{v}");
+}
+
+#[test]
+fn group_concat_skips_nulls_and_keeps_input_order() {
+    let v = ty(T::VARCHAR);
+    let b = |s: &str| Datum::Bytes(s.as_bytes().to_vec());
+    let f = vec![spec("group_concat", v.clone(), vec![v.clone()], false, vec![slot(1, v.clone())])];
+    assert_eq!(one_phase(f, &input(&v, &[b("a"), Datum::Null, b("c"), b("b")])), vec![vec![b("a,c,b")]]);
+    let sep = vec![spec("group_concat", v.clone(), vec![v.clone(), v.clone()], false, vec![slot(1, v.clone()), doris_fixtures::build::string("-")])];
+    assert_eq!(one_phase(sep, &input(&v, &[b("a"), b("b")])), vec![vec![b("a-b")]]);
+}
+
+#[test]
+fn group_concat_of_no_rows_is_null() {
+    let v = ty(T::VARCHAR);
+    let f = || vec![spec("group_concat", v.clone(), vec![v.clone()], false, vec![slot(1, v.clone())])];
+    assert_eq!(one_phase(f(), &input(&v, &[Datum::Null, Datum::Null])), vec![vec![Datum::Null]]);
+    assert_eq!(one_phase(f(), &input(&v, &[])), vec![vec![Datum::Null]]);
+}
+
+#[test]
+fn sum0_of_a_double_is_refused() {
+    let d = ty(T::DOUBLE);
+    let e = not_null(aggregate("sum0", d.clone(), vec![d.clone()], false, vec![slot(1, d)]));
+    let spec = AggSpec::from_expr(&e).unwrap();
+    let r = Aggregation { group_by: vec![], functions: vec![spec], finalize: true }.run(&input(&ty(T::DOUBLE), &[]));
+    assert!(r.is_err());
+}
+
+#[test]
+fn ndv_counts_distinct_values_skipping_nulls() {
+    let int = ty(T::INT);
+    let f = AggSpec::from_expr(&not_null(aggregate("ndv", ty(T::BIGINT), vec![int.clone()], false, vec![slot(1, int.clone())]))).unwrap();
+    let got = one_phase(vec![f.clone()], &input(&int, &ints(&[Some(1), Some(2), None, Some(1), Some(3)])));
+    assert_eq!(got, vec![vec![Datum::Int(3)]]);
+    assert_eq!(one_phase(vec![f], &input(&int, &[])), vec![vec![Datum::Int(0)]]);
+    let v = ty(T::VARCHAR);
+    let b = |s: &str| Datum::Bytes(s.as_bytes().to_vec());
+    let parts = [vec![b("a"), b("b")], vec![b("b"), b("c"), Datum::Null]];
+    assert_eq!(two_phases("ndv", ty(T::BIGINT), v, &parts), Datum::Int(3));
+}
+
+#[test]
+fn ndv_of_an_unlisted_type_is_refused() {
+    let t = ty(T::DECIMALV2);
+    let f = AggSpec::from_expr(&aggregate("ndv", ty(T::BIGINT), vec![t.clone()], false, vec![slot(1, t)]));
+    let r = f.and_then(|f| Aggregation { group_by: vec![], functions: vec![f], finalize: true }.run(&input(&ty(T::INT), &[])));
+    assert!(r.is_err());
+}
+
+/// window_funnel_v2(window, mode, ts, c1..cn) over rows of (ts text, conditions), one phase.
+fn funnel(window: i64, mode: &str, rows: &[(&str, &[bool])]) -> Result<Datum, doris_exec::ExecError> {
+    let n = rows.first().map_or(2, |r| r.1.len());
+    let ts = scalar(T::DATETIMEV2, -1, 0, 0);
+    let b = ty(T::BOOLEAN);
+    let mut types = vec![ct(&ts)];
+    types.extend((0..n).map(|_| ct(&b)));
+    let data = rows
+        .iter()
+        .map(|(t, c)| {
+            let mut r = vec![Datum::Int(doris_exec::value::parse_datetimev2(t, 0).unwrap().into())];
+            r.extend(c.iter().map(|x| Datum::Bool(*x)));
+            r
+        })
+        .collect();
+    let chunk = Chunk { block: Block { types, rows: data }, slots: (1..=n as i32 + 1).collect() };
+    let mut params = vec![ty(T::BIGINT), ty(T::VARCHAR), ts.clone()];
+    params.extend((0..n).map(|_| b.clone()));
+    let mut args = vec![doris_fixtures::build::int(window, ty(T::BIGINT)), doris_fixtures::build::string(mode), slot(1, ts)];
+    args.extend((0..n).map(|i| slot(i as i32 + 2, b.clone())));
+    let f = spec("window_funnel_v2", ty(T::INT), params, false, args);
+    Ok(Aggregation { group_by: vec![], functions: vec![f], finalize: true }.run(&chunk)?.rows.remove(0).remove(0))
+}
+
+const T0: &str = "2024-01-01 10:00:00";
+const T1: &str = "2024-01-01 10:00:01";
+const T2: &str = "2024-01-01 10:00:02";
+
+#[test]
+fn window_funnel_v2_default_chains_rows_within_the_window() {
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false, false]), (T1, &[false, true, false]), (T2, &[false, false, true])];
+    assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(3));
+    assert_eq!(funnel(1, "default", rows).unwrap(), Datum::Int(2));
+    // two conditions of one row never chain
+    assert_eq!(funnel(10, "default", &[(T0, &[true, true])]).unwrap(), Datum::Int(1));
+    // no matching row: 0; no row at all: NULL
+    assert_eq!(funnel(10, "default", &[(T0, &[false, true])]).unwrap(), Datum::Int(0));
+    assert_eq!(funnel(10, "default", &[]).unwrap(), Datum::Null);
+}
+
+#[test]
+fn window_funnel_v2_increase_needs_a_later_timestamp() {
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false]), (T0, &[false, true])];
+    assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(2));
+    assert_eq!(funnel(10, "increase", rows).unwrap(), Datum::Int(1));
+}
+
+#[test]
+fn window_funnel_v2_deduplication_breaks_on_a_repeated_level() {
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false, false]), (T1, &[true, false, false]), (T2, &[false, true, false])];
+    // from the first c1 the gap holds another c1; from the second the chain reaches c2
+    assert_eq!(funnel(10, "deduplication", rows).unwrap(), Datum::Int(2));
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false, false]), (T1, &[false, true, false]), (T1, &[false, true, false]), (T2, &[false, false, true])];
+    // the second c2 sits in the gap before c3: the chain stops at c2
+    assert_eq!(funnel(10, "deduplication", rows).unwrap(), Datum::Int(2));
+    assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(3));
+}
+
+#[test]
+fn window_funnel_v2_fixed_breaks_on_a_level_jump() {
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false, false]), (T1, &[false, false, true]), (T2, &[false, true, false])];
+    assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(2));
+    assert_eq!(funnel(10, "fixed", rows).unwrap(), Datum::Int(1));
+}
+
+#[test]
+fn window_funnel_v2_errors_like_cpp() {
+    let rows: &[(&str, &[bool])] = &[(T0, &[true, false])];
+    let e = funnel(-1, "default", rows).unwrap_err().to_string();
+    assert_eq!(e, "the sliding time window must be a positive integer, but got: -1");
+    let e = funnel(10, "Default", rows).unwrap_err().to_string();
+    assert_eq!(e, "Invalid window_funnel mode");
+}
+
+#[test]
+fn window_funnel_v2_window_past_9999_is_zero() {
+    let end = "9999-12-31 23:59:59";
+    let rows: &[(&str, &[bool])] = &[("9999-12-31 23:59:58", &[true, false]), (end, &[false, true])];
+    assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(1));
 }

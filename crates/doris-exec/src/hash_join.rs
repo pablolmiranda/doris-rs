@@ -285,12 +285,14 @@ pub type TExprPair = (doris_thrift::gen::exprs::TExpr, doris_thrift::gen::exprs:
 /// A mark join (`process_hash_table_probe_impl.h:741-892`): every probe row once, with its mark
 /// last. The mark is TRUE when some candidate passes; else NULL when the join is null-aware and
 /// the probe key or a build key is NULL, or a candidate's conjuncts were NULL; else FALSE. An empty
-/// build side gives FALSE. Anti joins flip TRUE and FALSE.
+/// build side gives FALSE. Anti joins flip TRUE and FALSE. A RIGHT_SEMI mark join marks each
+/// build row instead. RIGHT_ANTI is refused: C++ flips its marks by output row, not build row
+/// (PI:865-875).
 fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, ExecError> {
     use JoinOp::*;
     let null_aware = matches!(j.op, NullAwareLeftAnti | NullAwareLeftSemi);
     let anti = match j.op {
-        LeftSemi | NullAwareLeftSemi => false,
+        LeftSemi | NullAwareLeftSemi | RightSemi => false,
         LeftAnti | NullAwareLeftAnti => true,
         other => {
             return Err(ExecError::Unsupported {
@@ -343,10 +345,13 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
     let (other, mark_conj) = (eval(j.other)?, eval(j.mark_conj)?);
     let mut at = 0;
     let mut out = Vec::with_capacity(probe.rows.len());
+    // RIGHT_SEMI: each build row's mark, set by its candidates (PI:831-848): TRUE once one
+    // passes, NULL while one was NULL
+    let mut flags: Vec<Option<bool>> = vec![Some(false); build.rows.len()];
     for (p, c) in candidates.iter().enumerate() {
         let mut found = false;
         let mut null = false;
-        for (_, from_null) in c {
+        for (b, from_null) in c {
             // the mark conjuncts AND three-valued into TRUE (PI:148-156, vexpr_context.cpp:324-370);
             // a null-aware join then takes the mark as "found a build row" (PI:774-799)
             let (mut value, mut is_null) = match mark_conj[at] {
@@ -366,6 +371,16 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
             at += 1;
             found |= value;
             null |= is_null;
+            if j.op == RightSemi && flags[*b] != Some(true) {
+                if is_null {
+                    flags[*b] = None;
+                } else if value {
+                    flags[*b] = Some(true);
+                }
+            }
+        }
+        if j.op == RightSemi {
+            continue;
         }
         let mark = if build.rows.is_empty() {
             Some(false)
@@ -380,6 +395,15 @@ fn mark_join(j: &HashJoin, probe: Side, build: Side) -> Result<Vec<Vec<Datum>>, 
         let mut row = joined(Some(&probe.rows[p]), pw, None, bw);
         row.push(mark.map_or(Datum::Null, Datum::Bool));
         out.push(row);
+    }
+    // RIGHT_SEMI emits nothing while probing, then every build row in build order with its mark
+    // (`join_hash_table.h:200-225`, PI:1044-1062)
+    if j.op == RightSemi {
+        for (b, mark) in flags.into_iter().enumerate() {
+            let mut row = joined(None, pw, Some(&build.rows[b]), bw);
+            row.push(mark.map_or(Datum::Null, Datum::Bool));
+            out.push(row);
+        }
     }
     Ok(out)
 }
@@ -664,6 +688,101 @@ mod tests {
             got.iter().map(|r| r.last().cloned()).collect::<Vec<_>>(),
             [Some(Datum::Bool(false)), Some(Datum::Bool(true)), Some(Datum::Bool(false))]
         );
+    }
+
+    /// A RIGHT_SEMI mark join (`join_hash_table.h:200-225`, PI:1044-1062): nothing in the probe
+    /// phase, then every build row in build order with its mark: TRUE when some candidate passed,
+    /// else NULL when one was NULL, else FALSE.
+    #[test]
+    fn right_semi_mark_emits_every_build_row_with_its_mark() {
+        let j = marked(JoinOp::RightSemi);
+        let got = hash_join(&j, side(&[Some(1), Some(1), None]), side(&[Some(2), Some(1), None])).unwrap();
+        assert_eq!(got.iter().map(|r| idx(&r[3])).collect::<Vec<_>>(), [Some(0), Some(1), Some(2)]);
+        assert!(got.iter().all(|r| r[0] == Datum::Null && r.len() == 5));
+        assert_eq!(
+            marks(&j, &[Some(1), Some(1), None], &[Some(2), Some(1), None]),
+            [Some(false), Some(true), Some(false)]
+        );
+        assert!(marks(&j, &[Some(1)], &[]).is_empty());
+    }
+
+    #[test]
+    fn right_semi_mark_true_wins_over_null() {
+        // probe 0 (key 1) gives NULL, probe 1 (key 1) TRUE: TRUE whichever comes first
+        fn first_null(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(rows.iter().map(|r| if r[1] == Datum::Int(0) { None } else { Some(true) }).collect())
+        }
+        fn second_null(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(rows.iter().map(|r| if r[1] == Datum::Int(1) { None } else { Some(true) }).collect())
+        }
+        for c in [&first_null as &Cond, &second_null] {
+            let j = HashJoin {
+                mark_conj: Some(c),
+                ..marked(JoinOp::RightSemi)
+            };
+            assert_eq!(marks(&j, &[Some(1), Some(1)], &[Some(1)]), [Some(true)]);
+        }
+        let j = HashJoin {
+            mark_conj: Some(&null_cond),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1), Some(2)], &[Some(1), Some(2), Some(3)]), [None, None, Some(false)]);
+    }
+
+    #[test]
+    fn right_semi_mark_other_conjunct_is_two_valued() {
+        let j = HashJoin {
+            mark_conj: Some(&null_cond),
+            other: Some(&false_cond),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1)]), [Some(false)]);
+        let j = HashJoin {
+            other: Some(&null_cond),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1)]), [Some(false)]);
+    }
+
+    #[test]
+    fn right_semi_mark_null_and_a_passing_other_conjunct_is_null() {
+        // NULL mark AND passing other stays NULL (PI:818-825)
+        fn true_cond(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(vec![Some(true); rows.len()])
+        }
+        let j = HashJoin {
+            mark_conj: Some(&null_cond),
+            other: Some(&true_cond),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1)]), [None]);
+    }
+
+    #[test]
+    fn right_semi_mark_flags_each_build_row_of_a_chain() {
+        // two build rows share key 1; the mark conjunct passes only for build row 1
+        fn second_build_row(rows: &[Vec<Datum>]) -> Result<Vec<Option<bool>>, ExecError> {
+            Ok(rows.iter().map(|r| Some(r[3] == Datum::Int(1))).collect())
+        }
+        let j = HashJoin {
+            mark_conj: Some(&second_build_row),
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[Some(1)], &[Some(1), Some(1)]), [Some(false), Some(true)]);
+    }
+
+    #[test]
+    fn right_semi_mark_null_safe_key_matches_null() {
+        let j = HashJoin {
+            null_safe: vec![true],
+            ..marked(JoinOp::RightSemi)
+        };
+        assert_eq!(marks(&j, &[None], &[None, Some(1)]), [Some(true), Some(false)]);
+    }
+
+    #[test]
+    fn right_anti_mark_is_refused() {
+        assert!(hash_join(&marked(JoinOp::RightAnti), side(&[Some(1)]), side(&[Some(1)])).is_err());
     }
 
     /// Rows `[k, v, x]` keyed on k, with v the ASOF value as the last key.

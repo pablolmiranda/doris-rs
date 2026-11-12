@@ -205,6 +205,11 @@ fn corpus_batches() -> Vec<CorpusBatch> {
 
 /// A recorded cell as the datum doris-rs would hold for it.
 fn datum(cell: &[u8], t: &ColType) -> Datum {
+    // a reply's text is the value itself: an expression's CHAR(n) result may be longer than n
+    // (the load path's cut to n does not apply)
+    if matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING) {
+        return Datum::Bytes(cell.to_vec());
+    }
     let s = std::str::from_utf8(cell).expect("utf8 cell");
     let v = parse_text(s, t).unwrap_or_else(|| panic!("{s:?} does not parse as {t:?}"));
     to_datum(&v, t, false).unwrap_or_else(|e| panic!("{s:?} as {t:?}: {e:?}"))

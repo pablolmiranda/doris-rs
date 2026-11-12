@@ -1,7 +1,7 @@
 //! Window functions over sorted rows, as the C++ BE's ANALYTIC_EVAL_NODE computes them: frames
 //! clamped to the partition, peers by value (NULL = NULL, -0.0 = 0.0), values added in row order.
 use doris_exec::aggregate::AggSpec;
-use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, WindowFn, WindowKind};
+use doris_exec::analytic::{check_frame, split_float_keys, window_columns, Frame, Window, WindowFn, WindowKind};
 use doris_exec::value::ColType;
 use doris_fixtures::build;
 use doris_segment::writer::Datum;
@@ -59,7 +59,7 @@ fn run(part: &[Datum], order: &[Datum], frame: Frame, f: &WindowFn, args: &[(T, 
     let ot = if order.is_empty() { vec![] } else { vec![ty(T::DOUBLE)] };
     let p: Vec<Vec<Datum>> = if part.is_empty() { vec![vec![]; rows(&args, order)] } else { p };
     let o: Vec<Vec<Datum>> = if order.is_empty() { vec![vec![]; p.len()] } else { o };
-    window_columns(&p, &pt, &o, &ot, &frame, f, &args).unwrap()
+    window_columns(&p, &pt, &o, &ot, &Window { frame: &frame, f, args: &args, batch_size: 4064 }).unwrap()
 }
 
 fn rows(args: &[(ColType, Vec<Datum>)], order: &[Datum]) -> usize {
@@ -371,4 +371,48 @@ fn float_keys_equal_in_value_but_not_in_bits_are_found() {
     assert!(!split_float_keys(&keys(&[d(0.0), d(0.0), d(1.0)]), &t));
     assert!(!split_float_keys(&keys(&[N, N]), &t));
     assert!(split_float_keys(&keys(&[Datum::Float(-0.0), Datum::Float(0.0)]), &[ty(T::FLOAT)]));
+}
+
+#[test]
+fn batch1_aggregates_are_not_window_aggregates() {
+    for (f, t) in [("sum0", T::BIGINT), ("stddev", T::DOUBLE), ("group_concat", T::VARCHAR), ("ndv", T::INT), ("window_funnel_v2", T::INT)] {
+        let e = build::aggregate(f, build::ty(t), vec![build::ty(t)], false, vec![build::slot(1, build::ty(t))]);
+        let err = WindowFn::from_expr(&e).unwrap_err().to_string();
+        assert!(err.contains(&format!("{f} over a window")), "{err}");
+    }
+}
+
+#[test]
+fn ntile_splits_like_cpp() {
+    // 7 rows into 3: the first 7 % 3 buckets take one more row
+    let order: Vec<Datum> = (1..=7).map(|v| d(v as f64)).collect();
+    let got = run(&[], &order, TO_CURRENT, &win(WindowKind::Ntile(3), T::BIGINT), &[]);
+    assert_eq!(got, [1, 1, 1, 2, 2, 3, 3].map(i).to_vec());
+    // more buckets than rows: row i is bucket i + 1; restarts per partition
+    let part = [s("a"), s("a"), s("b")];
+    let got = run(&part, &[d(1.0), d(2.0), d(1.0)], TO_CURRENT, &win(WindowKind::Ntile(5), T::BIGINT), &[]);
+    assert_eq!(got, vec![i(1), i(2), i(1)]);
+}
+
+#[test]
+fn ntile_parses_its_literal() {
+    let e = build::aggregate("ntile", build::ty(T::BIGINT), vec![build::ty(T::TINYINT)], false, vec![build::int(3, build::ty(T::TINYINT))]);
+    assert_eq!(WindowFn::from_expr(&e).unwrap().kind, WindowKind::Ntile(3));
+}
+
+#[test]
+fn ntile_refuses_a_partition_past_one_block() {
+    let order: Vec<Datum> = (0..5000).map(|v| d(v as f64)).collect();
+    let (p, o) = (vec![vec![]; order.len()], keys(&order));
+    let r = window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &win(WindowKind::Ntile(3), T::BIGINT), args: &[], batch_size: 4064 });
+    assert!(r.is_err());
+}
+
+#[test]
+fn ntile_refuses_past_the_querys_batch_size() {
+    let order: Vec<Datum> = (0..2000).map(|v| d(v as f64)).collect();
+    let (p, o) = (vec![vec![]; order.len()], keys(&order));
+    let f = win(WindowKind::Ntile(3), T::BIGINT);
+    assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 1024 }).is_err());
+    assert!(window_columns(&p, &[], &o, &[ty(T::DOUBLE)], &Window { frame: &TO_CURRENT, f: &f, args: &[], batch_size: 4064 }).is_ok());
 }
