@@ -138,6 +138,7 @@ impl Instance<'_> {
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
+            P::TABLE_FUNCTION_NODE => self.table_function(t)?,
             P::ANALYTIC_EVAL_NODE => self.analytic(t)?,
             P::PARTITION_SORT_NODE => self.partition_sort(t)?,
             P::SCHEMA_SCAN_NODE => self.schema_scan(t)?,
@@ -674,8 +675,11 @@ impl Instance<'_> {
 
     fn aggregate(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let a = t.node.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
-        let child = self.child(t, 0)?;
-        let mut block = crate::aggregate::Aggregation::from_thrift(a)?.run(&child)?;
+        let agg = crate::aggregate::Aggregation::from_thrift(a)?;
+        let mut block = match self.tablet_scans(t, &agg)? {
+            Some(parts) => parts,
+            None => agg.run(&self.child(t, 0)?)?,
+        };
         // the FE pushed the limit of an ORDER BY on the group keys into the aggregation
         if let (Some(info), Some(l)) = (&a.agg_sort_info_by_group_key, limit(t.node.limit)) {
             block = crate::aggregate::top_groups(block, info, l);
@@ -683,6 +687,63 @@ impl Instance<'_> {
         let tuple = if a.need_finalize { a.output_tuple_id } else { a.intermediate_tuple_id };
         let slots = self.plan.desc.tuple_slots(tuple)?.to_vec();
         Ok(Chunk { block: self.typed(block, &slots)?, slots })
+    }
+
+    /// TABLE_FUNCTION_NODE: the child's slots (a slot not in `outputSlotIds` at its default),
+    /// then one column per function, each child row once per combination of the functions'
+    /// values (`table_function_operator.cpp`).
+    fn table_function(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::table_function::{expand, function_name, values};
+        let n = &t.node;
+        let tf = n.table_function_node.as_ref().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        let map = slot_map(&child.slots);
+        let fns = tf.fn_call_expr_list.as_deref().unwrap_or_default();
+        let mut lists = Vec::with_capacity(fns.len());
+        for e in fns {
+            let name = function_name(e).unwrap_or_default();
+            let (_, arg) = eval_column(&TExpr { nodes: e.nodes[1..].to_vec() }, &child.block, &map)?;
+            lists.push(arg.iter().map(|a| values(&name, a)).collect::<Vec<_>>());
+        }
+        let fn_tuple = *n.row_tuples.last().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its tuples".into()))?;
+        let fn_slots = self.plan.desc.tuple_slots(fn_tuple)?.to_vec();
+        if fn_slots.len() != fns.len() {
+            return Err(ExecError::BadRequest(format!("a TABLE_FUNCTION_NODE with {} functions for {} slots", fns.len(), fn_slots.len())));
+        }
+        let keep: Vec<bool> = child.slots.iter().map(|s| tf.output_slot_ids.as_ref().is_none_or(|o| o.contains(s))).collect();
+        let defaults: Vec<Datum> = child.block.types.iter().map(default_of).collect();
+        let rows = expand(&child.block.rows, &lists, &keep, &defaults);
+        let mut types = child.block.types.clone();
+        for s in &fn_slots {
+            types.push(self.plan.desc.slots.get(s).map(|s| s.ty.clone()).ok_or_else(|| ExecError::BadRequest(format!("slot {s} is not described")))?);
+        }
+        let mut slots = child.slots;
+        slots.extend(fn_slots);
+        Ok(Chunk { block: Block { types, rows }, slots })
+    }
+
+    /// A scalar first-phase aggregation straight over a scan of several tablets: one partial
+    /// state per tablet, as C++'s parallel scan tasks each keep their own (the merge combines
+    /// them). None for any other aggregation.
+    fn tablet_scans(&self, t: &PlanTree, agg: &crate::aggregate::Aggregation) -> Result<Option<Block>, ExecError> {
+        let Some(scan) = t.children.first().filter(|c| c.node.node_type == P::OLAP_SCAN_NODE) else { return Ok(None) };
+        let ranges = self.instance.scan_ranges.get(&scan.node.node_id).cloned().unwrap_or_default();
+        // a scan limit counts across the tablets: such a scan runs once
+        if agg.finalize || !agg.group_by.is_empty() || agg.functions.iter().any(|f| f.merge) || ranges.len() < 2 || scan.node.limit >= 0 {
+            return Ok(None);
+        }
+        let mut out: Option<Block> = None;
+        for range in ranges {
+            let mut one = self.instance.clone();
+            one.scan_ranges.insert(scan.node.node_id, vec![range]);
+            let tablet = Instance { instance: &one, prefetched: Default::default(), ..*self };
+            let part = agg.run(&tablet.node(scan)?)?;
+            match &mut out {
+                None => out = Some(part),
+                Some(b) => b.rows.extend(part.rows),
+            }
+        }
+        Ok(out)
     }
 
     /// ANALYTIC_EVAL_NODE: each input row, in input order, then one column per function, typed
@@ -1055,6 +1116,12 @@ fn hash_values(values: &[Datum]) -> u64 {
                 eat(&(b.len() as u64).to_le_bytes());
                 eat(b);
             }
+            Datum::Array(a) => {
+                let k = crate::set_op::row_key(a);
+                eat(&[5]);
+                eat(&(k.len() as u64).to_le_bytes());
+                eat(&k);
+            }
         }
     }
     h
@@ -1171,6 +1238,20 @@ impl Layout {
     }
 }
 
+/// `insert_many_defaults`: NULL in a nullable column, else the type's zero.
+fn default_of(t: &crate::value::ColType) -> Datum {
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    match t.ptype {
+        _ if t.nullable => Datum::Null,
+        T::BOOLEAN => Datum::Bool(false),
+        T::FLOAT => Datum::Float(0.0),
+        T::DOUBLE => Datum::Double(0.0),
+        T::CHAR | T::VARCHAR | T::STRING => Datum::Bytes(vec![]),
+        T::ARRAY => Datum::Array(vec![]),
+        _ => Datum::Int(0),
+    }
+}
+
 fn truth(d: &Datum) -> Option<bool> {
     match d {
         Datum::Null => None,
@@ -1179,6 +1260,7 @@ fn truth(d: &Datum) -> Option<bool> {
         Datum::Float(f) => Some(*f != 0.0),
         Datum::Double(f) => Some(*f != 0.0),
         Datum::Bytes(_) => Some(true),
+        Datum::Array(_) => None,
     }
 }
 

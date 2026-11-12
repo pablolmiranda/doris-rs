@@ -811,7 +811,7 @@ fn insert_select(suite: &str) -> (doris_fixtures::replays::Rpc, doris_proto::dor
         .steps
         .iter()
         .find_map(|s| match s {
-            Step::ExecPlanFragment { rpc, request } => plan_list(request)
+            Step::ExecPlanFragment { rpc, request, .. } => plan_list(request)
                 .filter(|l| {
                     let sinks = || l.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()?.output_sink.as_ref());
                     sinks().any(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK)
@@ -1014,4 +1014,21 @@ fn a_virtual_slot_is_computed_from_its_row() {
     got.sort();
     let s = |x: &str| Some(x.to_string());
     assert_eq!(got, vec![vec![s("0"), s("v0!")], vec![s("1"), None], vec![s("2"), s("v2!")]]);
+}
+
+#[test]
+fn a_constant_overflow_fails_exec_plan_fragment() {
+    use doris_fixtures::build::{binary, call, date, int};
+    let env = env();
+    let v = table(&env, 1030, kv(2));
+    let q = qid(30);
+    let mut p = prepared(scan_query(q.clone(), 1030, v, &columns(), 4064));
+    let d = ty(T::DATEV2);
+    let over = call("years_add", d.clone(), vec![date("9999-12-31", d.clone()), int(1, ty(T::INT))]);
+    p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0].conjuncts = Some(vec![binary("eq", over, date("2024-01-01", d))]);
+    let r = env.query.exec_plan_fragment(&exec_request(vec![p]));
+    assert_eq!(r.status.status_code, -218, "{:?}", r.status);
+    assert_eq!(r.status.error_msgs, vec!["(127.0.0.1)[E-218]Operation year_add of 9999-12-31, 1 out of range".to_string()]);
+    // nothing runs
+    assert_ne!(env.query.fetch_data(&fetch_req(&q)).status.status_code, 0);
 }

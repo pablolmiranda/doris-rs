@@ -521,6 +521,11 @@ fn compile(p: &[u8], constant: bool, o: RegexOptions) -> Result<Matcher, ExecErr
     }
 }
 
+/// Compiles a constant pattern as C++ does at open (`FunctionRegexp::open`): its error, if any.
+pub fn check_constant_pattern(p: &[u8], o: RegexOptions) -> Result<(), ExecError> {
+    compile(p, true, o).map(|_| ())
+}
+
 fn compile_re2(text: &str, o: RegexOptions) -> Result<Matcher, ExecError> {
     match gate(text, Mode::Re2) {
         Gate::Ok { pattern, .. } => Ok(Matcher::Re {

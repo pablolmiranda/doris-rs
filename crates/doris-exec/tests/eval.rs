@@ -376,10 +376,15 @@ fn round_needs_constant_digits() {
 
 #[test]
 fn round_digits_out_of_int16_errors() {
+    // all constant: evaluated at prepare, as C++ does at open
     let e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(40000, ty(T::INT))]);
+    assert_eq!(check_read(&e).unwrap_err().to_string(), "Scale argument for function round is out of bound: 40000");
+    // over a column: at the rows
+    let e = call("round", ty(T::DOUBLE), vec![slot(1, ty(T::DOUBLE)), int(40000, ty(T::INT))]);
     check_read(&e).expect("supported");
-    let block = Block { types: vec![], rows: vec![vec![]] };
-    let err = eval_column(&e, &block, &SlotMap::default()).unwrap_err();
+    let block = Block { types: vec![col("x", T::DOUBLE, 0, 0)], rows: vec![vec![Datum::Double(1.5)]] };
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    let err = eval_column(&e, &block, &slots).unwrap_err();
     assert_eq!(err.to_string(), "Scale argument for function round is out of bound: 40000");
 }
 
@@ -575,4 +580,17 @@ fn compact_zero_date_is_null() {
     let mut cast = doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 1);
     cast.opcode = Some(doris_thrift::gen::opcodes::TExprOpcode::CAST);
     assert_eq!(one_row(doris_fixtures::build::over(cast, vec![string("00000000")])), Datum::Null);
+}
+
+#[test]
+fn numbers_cast_to_boolean_are_nonzero() {
+    use doris_fixtures::build::{blank, over};
+    let cast = |e: doris_thrift::gen::exprs::TExpr| one_row(over(blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, ty(T::BOOLEAN), 0), vec![e]));
+    // cast_to_boolean.h: `from != 0` for every integer, float and decimal
+    assert_eq!(cast(int(2, ty(T::INT))), Datum::Bool(true));
+    assert_eq!(cast(int(-7, ty(T::BIGINT))), Datum::Bool(true));
+    assert_eq!(cast(int(0, ty(T::INT))), Datum::Bool(false));
+    assert_eq!(cast(float(0.5, ty(T::DOUBLE))), Datum::Bool(true));
+    assert_eq!(cast(float(0.0, ty(T::DOUBLE))), Datum::Bool(false));
+    assert_eq!(cast(int(5, scalar(T::DECIMAL64, -1, 10, 2))), Datum::Bool(true));
 }

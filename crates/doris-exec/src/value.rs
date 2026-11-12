@@ -22,7 +22,8 @@ pub enum Value {
     Date(String),
 }
 
-/// A column's type as the FE describes it.
+/// A column's type as the FE describes it. An ARRAY of a scalar keeps its element's type in
+/// `len` (the element's `TPrimitiveType`), `precision` and `scale` (see `element`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColType {
     pub name: String,
@@ -48,6 +49,21 @@ impl ColType {
 
     /// The scalar type of a type descriptor; None for nested types.
     pub fn from_type_desc(name: &str, t: &TTypeDesc, nullable: bool) -> Option<ColType> {
+        // ARRAY<scalar>: an ARRAY node, then the element's scalar node
+        if let [array, elem] = t.types.as_deref()? {
+            if array.type_ != doris_thrift::gen::types::TTypeNodeType::ARRAY {
+                return None;
+            }
+            let e = elem.scalar_type.as_ref()?;
+            return Some(ColType {
+                name: name.to_string(),
+                ptype: TPrimitiveType::ARRAY,
+                len: e.type_.0,
+                precision: e.precision.unwrap_or(0),
+                scale: e.scale.unwrap_or(0),
+                nullable,
+            });
+        }
         let node = t.types.as_ref()?.first()?;
         let s = node.scalar_type.as_ref()?;
         if t.types.as_ref()?.len() != 1 {
@@ -63,9 +79,32 @@ impl ColType {
         })
     }
 
+    /// An ARRAY's element type (always nullable), None for a scalar.
+    pub fn element(&self) -> Option<ColType> {
+        (self.ptype == TPrimitiveType::ARRAY).then(|| ColType {
+            name: self.name.clone(),
+            ptype: TPrimitiveType(self.len),
+            len: -1,
+            precision: self.precision,
+            scale: self.scale,
+            nullable: true,
+        })
+    }
+
+    /// An ARRAY doris-rs carries and prints: of an integer or text element.
+    pub fn supported_array(&self) -> bool {
+        use TPrimitiveType as T;
+        self.element().is_some_and(|e| {
+            matches!(e.ptype, T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::CHAR | T::VARCHAR | T::STRING)
+        })
+    }
+
     /// The name the C++ BE prints for the column's type (`IDataType::get_name`).
     pub fn type_name(&self) -> String {
         let p = self.ptype;
+        if let Some(e) = self.element() {
+            return format!("Array({})", e.type_name());
+        }
         match p {
             TPrimitiveType::BOOLEAN => "BOOL".into(),
             TPrimitiveType::TINYINT => "TINYINT".into(),
@@ -124,7 +163,8 @@ pub fn datum_value(d: &Datum, c: &ColType) -> Value {
     use doris_segment::values::{unpack_datetimev2, unpack_datev2};
     use TPrimitiveType as T;
     match d {
-        Datum::Null => Value::Null,
+        // an ARRAY is never written or cast: refused at prepare
+        Datum::Null | Datum::Array(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),

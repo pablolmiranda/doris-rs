@@ -86,6 +86,12 @@ pub fn row_key(row: &[Datum]) -> Vec<u8> {
                 out.extend((b.len() as u64).to_le_bytes());
                 out.extend(b);
             }
+            Datum::Array(a) => {
+                let inner = row_key(a);
+                out.push(6);
+                out.extend((inner.len() as u64).to_le_bytes());
+                out.extend(inner);
+            }
         }
     }
     out

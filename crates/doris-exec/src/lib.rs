@@ -5,11 +5,13 @@
 pub mod aggregate;
 pub mod analytic;
 pub mod arith;
+pub mod bits;
 pub mod block;
 pub mod clock;
 pub mod columnar;
 pub mod cond;
 pub mod datagen;
+pub mod datetime;
 pub mod error_log;
 pub mod eval;
 pub mod exchange;
@@ -17,8 +19,10 @@ pub mod expr;
 pub mod file_scan;
 pub mod fragment;
 pub mod funnel;
+pub mod geo;
 pub mod hash_join;
 pub mod hll;
+pub mod moments;
 pub mod nested_loop;
 pub mod partition_sort;
 pub mod pipeline;
@@ -33,6 +37,7 @@ pub mod schema_scan;
 pub mod set_op;
 pub mod sink;
 pub mod strings;
+pub mod table_function;
 pub mod value;
 
 #[derive(Debug, thiserror::Error)]

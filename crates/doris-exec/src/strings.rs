@@ -354,3 +354,49 @@ pub fn length_column(a: &[Datum]) -> Vec<Datum> {
         })
         .collect()
 }
+
+/// `split_by_string(str, sep)` (`function_split_by_string.cpp`): an empty string gives no parts;
+/// an empty separator splits into UTF-8 characters; otherwise a left-to-right search keeping
+/// every empty part, leading and trailing ones included.
+pub fn split_by_string(s: &[u8], sep: &[u8]) -> Vec<Vec<u8>> {
+    if s.is_empty() {
+        return vec![];
+    }
+    if sep.is_empty() {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < s.len() {
+            // the UTF-8 lead byte's length, as `get_utf8_byte_length`
+            let len = match s[i] {
+                b if b >= 0xF0 => 4,
+                b if b >= 0xE0 => 3,
+                b if b >= 0xC0 => 2,
+                _ => 1,
+            };
+            let end = (i + len).min(s.len());
+            out.push(s[i..end].to_vec());
+            i = end;
+        }
+        return out;
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    while let Some(at) = s[start..].windows(sep.len()).position(|w| w == sep) {
+        out.push(s[start..start + at].to_vec());
+        start += at + sep.len();
+    }
+    out.push(s[start..].to_vec());
+    out
+}
+
+/// `split_by_string` over a block: NULL in either argument gives NULL.
+pub fn split_column(values: &[Datum], seps: &[Datum]) -> Vec<Datum> {
+    values
+        .iter()
+        .zip(seps)
+        .map(|(v, s)| match (v, s) {
+            (Datum::Bytes(v), Datum::Bytes(s)) => Datum::Array(split_by_string(v, s).into_iter().map(Datum::Bytes).collect()),
+            _ => Datum::Null,
+        })
+        .collect()
+}

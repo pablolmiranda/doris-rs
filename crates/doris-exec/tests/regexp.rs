@@ -195,3 +195,18 @@ fn options_come_from_the_query_options() {
     let o = TQueryOptions { enable_extended_regex: Some(true), enable_hyperscan_fallback: Some(false), ..Default::default() };
     assert_eq!(RegexOptions::from_query_options(Some(&o)), RegexOptions { extended: true, hyperscan_fallback: false });
 }
+
+/// C++ compiles a constant pattern at open (`FunctionRegexp::open`): a bad one fails the
+/// fragment before any row is read, even over no rows.
+#[test]
+fn a_bad_constant_pattern_fails_at_prepare() {
+    use doris_exec::eval::check_constants;
+    use doris_fixtures::build::{call, slot, string, ty};
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    let e = call("regexp", ty(T::BOOLEAN), vec![slot(1, ty(T::VARCHAR)), string("(?<=foo)bar")]);
+    let err = check_constants(&e).unwrap_err().to_string();
+    assert!(err.starts_with("Invalid regex expression: (?<=foo)bar. Error: invalid perl operator: (?<"), "{err}");
+    // a per-row pattern waits for the rows
+    check_constants(&call("regexp", ty(T::BOOLEAN), vec![slot(1, ty(T::VARCHAR)), slot(2, ty(T::VARCHAR))])).unwrap();
+    check_constants(&call("regexp", ty(T::BOOLEAN), vec![slot(1, ty(T::VARCHAR)), string("^a.c$")])).unwrap();
+}

@@ -111,6 +111,18 @@ fn leaf(n: TExprNode) -> TExpr {
 }
 
 /// A node over child expressions, in pre-order.
+/// `ARRAY<elem>`, as the FE describes it: an ARRAY node, then the element's.
+pub fn array_of(elem: TTypeDesc) -> TTypeDesc {
+    let mut nodes = vec![doris_thrift::gen::types::TTypeNode::new(doris_thrift::gen::types::TTypeNodeType::ARRAY, None, None, Some(true), None)];
+    nodes.extend(elem.types.unwrap_or_default());
+    TTypeDesc { types: Some(nodes), ..elem }
+}
+
+/// An ARRAY_LITERAL of `elems` (each already of the element type).
+pub fn array_literal(elem: TTypeDesc, elems: Vec<TExpr>) -> TExpr {
+    over(blank(N::ARRAY_LITERAL, array_of(elem), 0), elems)
+}
+
 pub fn over(mut n: TExprNode, children: Vec<TExpr>) -> TExpr {
     n.num_children = children.len() as i32;
     let mut nodes = vec![n];

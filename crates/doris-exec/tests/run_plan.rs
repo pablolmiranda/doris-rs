@@ -37,6 +37,7 @@ fn int(nullable: bool) -> ColType {
     }
 }
 
+/// Tuple 5: slot 9, a partial aggregate state (VARCHAR).
 /// Tuple 0: slot 1 (probe k); tuple 1: slot 2 (build k); tuple 2: slots 3, 4 (a join's
 /// intermediate); tuple 3: slot 5 (a semi join's intermediate). All INT, not nullable. Tuple 4:
 /// slots 6, 7 (INT, nullable) and 8 (a nullable BOOLEAN mark): a mark join's intermediate.
@@ -59,9 +60,22 @@ fn desc() -> DescTable {
         ptype: T::BOOLEAN,
         ..int(true)
     };
+    let mut state = s(9, 5);
+    state.1.ty = ColType {
+        ptype: T::VARCHAR,
+        len: 65533,
+        ..int(true)
+    };
     DescTable {
-        slots: HashMap::from([s(1, 0), s(2, 1), s(3, 2), s(4, 2), s(5, 3), s(6, 4), s(7, 4), mark]),
-        tuples: HashMap::from([(0, vec![1]), (1, vec![2]), (2, vec![3, 4]), (3, vec![5]), (4, vec![6, 7, 8])]),
+        slots: HashMap::from([s(1, 0), s(2, 1), s(3, 2), s(4, 2), s(5, 3), s(6, 4), s(7, 4), mark, state]),
+        tuples: HashMap::from([
+            (0, vec![1]),
+            (1, vec![2]),
+            (2, vec![3, 4]),
+            (3, vec![5]),
+            (4, vec![6, 7, 8]),
+            (5, vec![9]),
+        ]),
     }
 }
 
@@ -604,4 +618,63 @@ fn a_right_semi_mark_join_runs_with_both_sides_and_its_mark() {
     // (1 <= 1), 3 matches probe 3 (3 <= 1 fails)
     let b = |k: i128, m: bool| vec![Datum::Null, Datum::Int(k), Datum::Bool(m)];
     assert_eq!(rows, [b(2, false), b(1, true), b(3, false)]);
+}
+
+/// C++ scans an instance's tablets in parallel tasks, each with its own first-phase state: a
+/// scalar first phase over three tablets sends three partial states (the `regr_*` replays'
+/// last digits depend on it).
+#[test]
+fn a_scalar_first_phase_keeps_a_state_per_tablet() {
+    use doris_fixtures::build::aggregate;
+    use doris_thrift::gen::plan_nodes::TAggregationNode;
+    let (blank, scan, sink) = templates();
+    let mut scan = node(scan.clone(), P::OLAP_SCAN_NODE, 1, 0, vec![0]);
+    scan.olap_scan_node.as_mut().unwrap().tuple_id = 0;
+    let first_phase = |group_by: Option<Vec<doris_thrift::gen::exprs::TExpr>>| {
+        let mut agg = node(blank.clone(), P::AGGREGATION_NODE, 2, 1, vec![5]);
+        let count = aggregate("count", ty(T::BIGINT), vec![], false, vec![]);
+        agg.agg_node = Some(TAggregationNode::new(
+            group_by,
+            vec![count],
+            5,
+            5,
+            false,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+        ));
+        PlanTree {
+            node: agg,
+            children: vec![PlanTree {
+                node: scan.clone(),
+                children: vec![],
+            }],
+        }
+    };
+    let rows_of = |root: PlanTree| {
+        let f = fragment(
+            root,
+            stream_sink(&sink, OUT),
+            vec![TUniqueId {
+                hi: OUT_INSTANCE.0,
+                lo: OUT_INSTANCE.1,
+            }],
+            vec![instance(1, &[(1, vec![(100, 1), (101, 1), (102, 1)])])],
+            &[],
+            RunMode::Each,
+        );
+        let plan = query(vec![f]);
+        let ex = Exchanges::default();
+        for r in run(&plan, 0, &ex) {
+            r.unwrap();
+        }
+        ex.receive(&out_key(), 1).unwrap().into_iter().flat_map(|c| c.block.rows).count()
+    };
+    assert_eq!(rows_of(first_phase(None)), 3);
+    // review M2: a scan limit counts across tablets, so the scan runs once
+    let mut limited = first_phase(None);
+    limited.children[0].node.limit = 1;
+    assert_eq!(rows_of(limited), 1);
 }

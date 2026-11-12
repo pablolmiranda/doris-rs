@@ -60,5 +60,7 @@ fn encode_value(spec: &ColumnSpec, d: &Datum, short: bool, out: &mut Vec<u8>) {
         (_, Datum::Bytes(b)) => out.extend_from_slice(b),
         (_, Datum::Bool(v)) => out.push(u8::from(*v)),
         (_, Datum::Null) => unreachable!("NULL is a marker"),
+        // an ARRAY is never a key column; array columns are refused before a write
+        (_, Datum::Array(_)) => unreachable!("an ARRAY key"),
     }
 }

@@ -223,7 +223,8 @@ impl Driver<'_> {
         self.out.push(Mismatch { suite: self.r.suite.clone(), query, what });
     }
 
-    fn exec(&mut self, rpc: Rpc, request: &doris_proto::doris::PExecPlanFragmentRequest) {
+    /// `reference`: the reference's own answer to this request, when recorded.
+    fn exec(&mut self, rpc: Rpc, request: &doris_proto::doris::PExecPlanFragmentRequest, reference: Option<&doris_proto::doris::PExecPlanFragmentResult>) {
         if is_write(request) {
             let reply = self.be.load.exec_plan_fragment(request);
             if reply.status.status_code != 0 {
@@ -246,9 +247,15 @@ impl Driver<'_> {
                 assert!(self.be.query.wait_idle(Duration::from_secs(60)), "{}: a write never finished", self.r.suite);
             }
         }
-        if reply.status.status_code != 0 {
-            let q = self.plans.get(&query_id(&plan)).map_or(usize::MAX, |(n, _)| *n);
+        // C++ fails exec_plan_fragment when a constant does
+        let qid = query_id(&plan);
+        let reference = reference.map(|r| r.status.clone());
+        let q = self.plans.get(&qid).map_or(usize::MAX, |(n, _)| *n);
+        let failed_alike = reference.as_ref().is_some_and(|st| st.status_code == reply.status.status_code && st.error_msgs == reply.status.error_msgs);
+        if reply.status.status_code != 0 && !failed_alike {
             self.mismatch(q, format!("refused: {:?}", reply.status.error_msgs));
+        } else if reply.status.status_code == 0 && reference.as_ref().is_some_and(|st| st.status_code != 0) {
+            self.mismatch(q, format!("accepted what the reference refused: {:?}", reference.map(|st| st.error_msgs)));
         }
     }
 
@@ -278,11 +285,11 @@ impl Driver<'_> {
         let r = self.r;
         if !self.executed.contains(&qid) {
             let exec = r.steps.iter().find_map(|s| match s {
-                Step::ExecPlanFragment { rpc, request } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone())),
+                Step::ExecPlanFragment { rpc, request, reply } if plan_list(request).is_some_and(|p| query_id(&p) == qid) => Some((*rpc, request.clone(), reply.clone())),
                 _ => None,
             });
-            if let Some((rpc, req)) = exec {
-                self.exec(rpc, &req);
+            if let Some((rpc, req, reply)) = exec {
+                self.exec(rpc, &req, reply.as_ref());
             }
         }
         self.start(qid);
@@ -394,7 +401,7 @@ pub fn replay_writes(r: &Replay) -> (Vec<Mismatch>, Vec<((i64, i64), i32, String
                 d.be.agent.submit_tasks(tasks.clone());
                 assert!(d.be.agent.wait_idle(Duration::from_secs(60)), "{}: agent tasks never finished", r.suite);
             }
-            Step::ExecPlanFragment { rpc, request } => d.exec(*rpc, request),
+            Step::ExecPlanFragment { rpc, request, reply } => d.exec(*rpc, request, reply.as_ref()),
             Step::Start(req) => d.start(req.query_id.as_ref().map(|q| (q.hi, q.lo)).unwrap_or_default()),
             Step::Fetch { request, .. } => d.fetch(request),
             Step::Cancel(req) => {
@@ -822,6 +829,8 @@ fn joins_match_the_reference() {
 /// result sink) but not at the result fragment's top: `ordered` compares their rows unordered.
 /// Listed so that a change to the set shows in review.
 const COMPARED_UNORDERED: &[&str] = &[
+    // a window's sort over a lateral view, with no ORDER BY on the query (M6 s7 batch 2)
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview",
     // a scalar subquery's ORDER BY … LIMIT 1 under a join
     "correctness_p0.test_join_with_projection.test_join_with_projection",
     "correctness_p0.test_no_grouping_window.test_no_grouping_window",
@@ -896,6 +905,61 @@ const BATCH1: [&str; 16] = [
 fn batch1_matches_the_reference() {
     let mut bad = Vec::new();
     for s in BATCH1 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// M6 story 7 batch 2 (geo, table functions, moments, dates, bits).
+const BATCH2: [&str; 39] = [
+    "correctness_p0.test_agg_materialize.test_agg_materialize",
+    "correctness_p0.test_bit_function.test_bit_functions",
+    "correctness_p0.test_bit_shift_lagency.test_bit_shift",
+    "correctness_p0.test_bit_shift_nereids.test_bit_shift_nereids",
+    "correctness_p0.test_bit_test_function.test_bit_test_function",
+    "correctness_p0.test_case_when_date.test_case_when_date",
+    "correctness_p0.test_date_diff.test_date_diff",
+    "correctness_p0.test_inlineview_with_lateralview.test_inlineview_with_lateralview",
+    "correctness_p0.test_nested_lateral_view.test_nested_lateral_view",
+    "correctness_p0.test_outer_join_sort.test_outer_join_sort",
+    "correctness_p0.test_probe_clean.test_probe_clean",
+    "correctness_p0.test_select_constant.test_select_constant",
+    "correctness_p0.test_table_function_with_subquery.test_table_function_with_subquery",
+    "correctness_p0.test_window_function_with_project.test_window_function_with_project",
+    "correctness_p0.test_xor_pred.test_xor_pred",
+    "datatype_p0.date.test_weekofyear.test_weekofyear",
+    "nereids_p0.expression.operator_precedence.operator_precedence",
+    "nereids_p0.legacy.test_clone_legacy_nullable_from_nereids.test_clone_legacy_nullable_from_nereids",
+    "nereids_p0.sql_functions.datetime_functions.test_date_or_datetime_computation_negative.test_date_or_datetime_computation_negative",
+    "nereids_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "nereids_p0.sql_functions.string_functions.test_split_by_string.test_split_by_string",
+    "nereids_p0.stats.col_stats.estimate_string_as_date.estimate_string_as_date",
+    "nereids_p0.test_generate_subquery_output.test_generate_subquery_output",
+    "nereids_p0.test_select_constant.test_select_constant",
+    "query_p0.aggregate.aggregate_function_kurt.aggregate_function_kurt",
+    "query_p0.aggregate.aggregate_function_skew.aggregate_function_skew",
+    "query_p0.aggregate.support_type.avg_weighted.avg_weighted.avg_weighted",
+    "query_p0.aggregate.support_type.corr.corr.corr",
+    "query_p0.aggregate.support_type.corr_welford.corr_welford.corr_welford",
+    "query_p0.aggregate.support_type.covar.covar.covar",
+    "query_p0.aggregate.support_type.covar_samp.covar_samp.covar_samp",
+    "query_p0.aggregate.support_type.regr_intercept.regr_intercept.regr_intercept",
+    "query_p0.aggregate.support_type.regr_slope.regr_slope.regr_slope",
+    "query_p0.join.left_anti_with_other.left_anti_with_other.left_anti_with_other",
+    "query_p0.join.test_ignore.test_ignore.test_ignore",
+    "query_p0.lateral_view.test_with_view.lateral_view_with_inline_view",
+    "query_p0.sort_spill.sort_spill.sort_spill",
+    "query_p0.sql_functions.spatial_functions.test_st_astext.test_st_astext",
+    "query_p0.sql_functions.test_years_add.test_years_add",
+];
+
+#[test]
+fn batch2_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH2 {
         let m = replay(&replays::load(s));
         if !m.is_empty() {
             bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));

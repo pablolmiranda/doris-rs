@@ -22,7 +22,10 @@ pub struct SlotMap(pub HashMap<i32, usize>);
 
 const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 /// The aggregate functions an aggregation node computes.
-pub const AGGREGATES: &[&str] = &["count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2"];
+pub const AGGREGATES: &[&str] = &[
+    "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
+    "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
+];
 
 fn function_name(n: &TExprNode) -> Option<String> {
     n.fn_
@@ -42,6 +45,29 @@ fn arithmetic_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
     crate::arith::arithmetic_supported(&name, &args, &to)
 }
+
+/// A call `bits::supported` accepts, by its name and signature.
+fn bit_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::bits::supported(&name, &args, &to)
+}
+
+/// A call `datetime::supported` accepts, by its name and signature.
+fn date_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::datetime::supported(&name, &args, &to)
+}
+
+/// A call `geo::supported` accepts, by its name and signature.
+fn geo_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::geo::supported(&name, &args, &to)
+}
+
+/// The bit functions, as ARITHMETIC_EXPR (`bitand` …) or FUNCTION_CALL (`bit_count` …).
+const BIT_FUNCTIONS: &[&str] = &[
+    "bitand", "bitor", "bitxor", "bitnot", "bit_count", "bit_shift_left", "bit_shift_right", "bit_test", "bit_test_all", "xor",
+];
 
 /// `if`, `ifnull`, `coalesce` over supported scalar types, `if`'s condition BOOLEAN.
 fn conditional_call(n: &TExprNode) -> bool {
@@ -66,6 +92,7 @@ fn string_call(n: &TExprNode) -> bool {
         "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
         "regexp" | "rlike" => args.len() == 2 && args.iter().all(text) && to.ptype == T::BOOLEAN,
         "concat_ws" => args.len() >= 2 && args.iter().all(text) && text(&to),
+        "split_by_string" => args.len() == 2 && args.iter().all(text) && to.element().is_some_and(|e| text(&e)),
         _ => false,
     }
 }
@@ -180,7 +207,8 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             | N::NULL_LITERAL
             | N::SLOT_REF
             | N::CAST_EXPR
-            | N::IN_PRED => true,
+            | N::IN_PRED
+            | N::ARRAY_LITERAL => true,
             N::BINARY_PRED => comparison(n).is_some() || n.opcode == Some(TExprOpcode::EQ_FOR_NULL),
             N::COMPOUND_PRED => matches!(
                 n.opcode,
@@ -190,20 +218,23 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                         | TExprOpcode::COMPOUND_NOT
                 )
             ),
-            N::ARITHMETIC_EXPR => arithmetic_call(n),
+            N::ARITHMETIC_EXPR => arithmetic_call(n) || bit_call(n),
             // the FE sends the searched form; `has_case_expr` is ignored, as C++ ignores it
             N::CASE_EXPR => n.case_expr.is_some(),
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
-                Some("nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
+                Some("nullable" | "non_nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
                 Some("round") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
-                Some("concat_ws" | "regexp" | "rlike") => string_call(n),
+                Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
+                Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
+                Some(f) if crate::datetime::is_date_function(f) => date_call(n),
+                Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 _ => false,
             },
             N::AGG_EXPR => {
@@ -221,6 +252,14 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
         match ColType::from_type_desc("", &n.type_, true) {
             Some(c)
                 if c.supported() || n.node_type == N::NULL_LITERAL || c.ptype == T::NULL_TYPE => {}
+            // an ARRAY is only carried: the expression itself, or a table function's argument;
+            // no comparison, cast or other function takes one
+            Some(c) if c.supported_array() && array_carried(&e.nodes, i) => {}
+            Some(c) if c.ptype == T::ARRAY => {
+                return Err(ExecError::Unsupported {
+                    what: format!("an ARRAY value as an operand ({})", describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
+                })
+            }
             Some(c) => {
                 return Err(ExecError::Unsupported {
                     what: format!("type {}", c.type_name()),
@@ -233,17 +272,92 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             }
         }
     }
+    // C++ opens every expression: its all-constant subtrees are evaluated now
+    check_constants(e)
+}
+
+/// Evaluates every all-constant call subtree once, as C++ does at open
+/// (`VExpr::get_const_col`, vexpr.cpp:819-845), so a coded error (a date out of range, an
+/// overflow) fails the fragment at prepare. Other errors are left for the run; the clock
+/// functions are skipped (no query clock exists yet).
+pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
+    let literal = |n: &TExprNode| {
+        matches!(
+            n.node_type,
+            N::INT_LITERAL | N::LARGE_INT_LITERAL | N::STRING_LITERAL | N::BOOL_LITERAL | N::FLOAT_LITERAL | N::DECIMAL_LITERAL | N::DATE_LITERAL | N::NULL_LITERAL
+        )
+    };
+    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
+    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
+    // a regexp's constant pattern is compiled at open
+    for (i, n) in e.nodes.iter().enumerate() {
+        if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("regexp" | "rlike")) {
+            let pattern = i + 1 + subtree_len(&e.nodes, i + 1);
+            if let Some(p) = e.nodes.get(pattern).filter(|p| p.node_type == N::STRING_LITERAL).and_then(|p| p.string_literal.as_ref()) {
+                crate::regexp::check_constant_pattern(p.value.as_bytes(), crate::regexp::options())?;
+            }
+        }
+    }
+    let mut i = 0;
+    while i < e.nodes.len() {
+        let len = subtree_len(&e.nodes, i);
+        let Some(sub) = e.nodes.get(i..i + len) else { break };
+        let constant = call(&sub[0]) && sub[1..].iter().all(|n| literal(n) || call(n)) && sub.iter().any(literal) && !sub.iter().any(clock);
+        if !constant {
+            i += 1;
+            continue;
+        }
+        let one = Block { types: vec![], rows: vec![vec![]] };
+        match eval_column(&TExpr { nodes: sub.to_vec() }, &one, &SlotMap::default()) {
+            Err(err @ ExecError::Coded { .. }) => return Err(err),
+            _ => i += len,
+        }
+    }
     Ok(())
+}
+
+/// The index of node `i`'s parent (pre-order, `num_children` each).
+fn parent(nodes: &[TExprNode], i: usize) -> Option<usize> {
+    // (node, children not yet seen) for each open node
+    let mut stack: Vec<(usize, i32)> = Vec::new();
+    for (j, n) in nodes.iter().enumerate() {
+        while stack.last().is_some_and(|(_, left)| *left == 0) {
+            stack.pop();
+        }
+        if j == i {
+            return stack.last().map(|(p, _)| *p);
+        }
+        if let Some((_, left)) = stack.last_mut() {
+            *left -= 1;
+        }
+        if n.num_children > 0 {
+            stack.push((j, n.num_children));
+        }
+    }
+    None
+}
+
+/// The table functions, whose arguments may be ARRAYs.
+pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
+
+/// Whether an ARRAY at node `i` is carried, not operated on: the whole expression, or an
+/// argument of a table function.
+fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
+    match parent(nodes, i) {
+        None => true,
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str())),
+    }
 }
 
 fn bad(msg: impl Into<String>) -> ExecError {
     ExecError::BadRequest(msg.into())
 }
 
-/// A stored value as the expression value M4's casts take.
+/// A stored value as the expression value M4's casts take (an ARRAY, which no cast takes, as
+/// NULL: `check_nodes` refuses an array operand).
 pub fn datum_value(d: &Datum, t: &ColType) -> Value {
     match d {
-        Datum::Null => Value::Null,
+        Datum::Null | Datum::Array(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),
@@ -291,7 +405,7 @@ fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
 
 fn truth(d: &Datum) -> Option<bool> {
     match d {
-        Datum::Null => None,
+        Datum::Null | Datum::Array(_) => None,
         Datum::Bool(b) => Some(*b),
         Datum::Int(v) => Some(*v != 0),
         Datum::Float(f) => Some(*f != 0.0),
@@ -328,6 +442,17 @@ fn eval_at(
         nullable: true,
     };
     Ok(match n.node_type {
+        // the elements, in the element type (`VArrayLiteral`)
+        N::ARRAY_LITERAL => {
+            let to = node_type(n)?;
+            let elem = to.element().ok_or_else(|| bad("an ARRAY_LITERAL that is not an ARRAY"))?;
+            let cols = kids
+                .iter()
+                .map(|(t, v)| v.iter().map(|d| coerce(d.clone(), t, &elem)).collect::<Result<Vec<_>, _>>())
+                .collect::<Result<Vec<_>, _>>()?;
+            let out = (0..rows).map(|r| Datum::Array(cols.iter().map(|c| c[r].clone()).collect())).collect();
+            (to, out)
+        }
         N::CASE_EXPR => {
             let c = n.case_expr.as_ref().ok_or_else(|| bad("CASE without its parameters"))?;
             let mut to = node_type(n)?;
@@ -400,6 +525,9 @@ fn eval_at(
                         return Ok(r);
                     }
                     if let Some(r) = float_to_number(d, &to) {
+                        return Ok(r);
+                    }
+                    if let Some(r) = number_to_bool(d, &from, &to) {
                         return Ok(r);
                     }
                     // a FLOAT as text is the float's own shortest text, not its double's
@@ -513,6 +641,24 @@ fn eval_at(
                 }
             });
             (boolean(), bools(out))
+        }
+        N::FUNCTION_CALL | N::ARITHMETIC_EXPR if function_name(n).is_some_and(|f| BIT_FUNCTIONS.contains(&f.as_str())) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
+            (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::geo::is_geo_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::geo::eval(&function_name(n).unwrap_or_default(), &args, rows))
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            (to, out)
         }
         N::ARITHMETIC_EXPR => {
             let to = node_type(n)?;
@@ -631,6 +777,11 @@ fn eval_at(
                 }
                 (boolean(), vec![Datum::Bool(true); rows])
             }
+            Some("split_by_string") => {
+                let (_, v) = kids.first().ok_or_else(|| bad("split_by_string without its value"))?;
+                let (_, s) = kids.get(1).ok_or_else(|| bad("split_by_string without its separator"))?;
+                (node_type(n)?, crate::strings::split_column(v, s))
+            }
             Some("length") => {
                 let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
                 (node_type(n)?, crate::strings::length_column(v))
@@ -639,6 +790,18 @@ fn eval_at(
             Some("nullable") => {
                 let (t, v) = kids.into_iter().next().ok_or_else(|| bad("nullable without its argument"))?;
                 (ColType { nullable: true, ..t }, v)
+            }
+            // `non_nullable(x)`: a NULL fails the query (`function_nullables.cpp:69-104`)
+            Some("non_nullable") => {
+                let (t, v) = kids.into_iter().next().ok_or_else(|| bad("non_nullable without its argument"))?;
+                if v.contains(&Datum::Null) {
+                    return Err(ExecError::Coded {
+                        code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
+                        name: "INVALID_ARGUMENT",
+                        msg: format!("There's NULL value in column {} which is illegal for non_nullable", t.name),
+                    });
+                }
+                (ColType { nullable: false, ..t }, v)
             }
             Some(f @ ("if" | "ifnull" | "coalesce")) => {
                 let to = node_type(n)?;
@@ -700,7 +863,8 @@ enum Key<'a> {
 
 fn key<'a>(d: &'a Datum, t: &ColType) -> Option<Key<'a>> {
     Some(match d {
-        Datum::Null => return None,
+        // an ARRAY never reaches a comparison: `check_nodes` refuses it
+        Datum::Null | Datum::Array(_) => return None,
         Datum::Bool(b) => Key::Fixed(i128::from(*b), 0),
         Datum::Float(f) => Key::Float(f64::from(*f)),
         Datum::Double(f) => Key::Float(*f),
@@ -797,6 +961,27 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A number cast to BOOLEAN, as `cast_to_boolean.h` does it: true unless the value is zero (for a
+/// decimal, its unscaled value).
+fn number_to_bool(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
+    if to.ptype != T::BOOLEAN {
+        return None;
+    }
+    let numeric = matches!(
+        from.ptype,
+        T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::FLOAT | T::DOUBLE | T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I | T::DECIMAL256
+    );
+    if !numeric {
+        return None;
+    }
+    Some(match d {
+        Datum::Int(v) => Datum::Bool(*v != 0),
+        Datum::Float(f) => Datum::Bool(*f != 0.0),
+        Datum::Double(f) => Datum::Bool(*f != 0.0),
+        _ => return None,
+    })
 }
 
 /// A FLOAT or DOUBLE cast to an integer or a decimal, numerically (the non-strict cast; None

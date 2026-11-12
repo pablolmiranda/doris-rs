@@ -109,6 +109,20 @@ pub fn cell_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
             T::BOOLEAN => u8::from(*v != 0).to_string(),
             _ => v.to_string(),
         },
+        // `DataTypeArraySerDe`: `[` elements `, ` `]`, strings in unescaped quotes, NULL as `null`
+        Datum::Array(a) => {
+            let elem = t.element().unwrap_or_else(|| t.clone());
+            let text_elem = matches!(elem.ptype, T::CHAR | T::VARCHAR | T::STRING);
+            let parts: Vec<String> = a
+                .iter()
+                .map(|v| match cell_text(v, &elem) {
+                    None => "null".to_string(),
+                    Some(b) if text_elem => format!("\"{}\"", String::from_utf8_lossy(&b)),
+                    Some(b) => String::from_utf8_lossy(&b).into_owned(),
+                })
+                .collect();
+            format!("[{}]", parts.join(", "))
+        }
     };
     Some(text.into_bytes())
 }

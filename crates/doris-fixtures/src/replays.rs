@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 
 use doris_proto::doris::{
-    PCancelPlanFragmentRequest, PExecPlanFragmentRequest, PExecPlanFragmentStartRequest,
+    PCancelPlanFragmentRequest, PExecPlanFragmentRequest, PExecPlanFragmentResult, PExecPlanFragmentStartRequest,
     PFetchDataRequest, PFetchDataResult,
 };
 use doris_thrift::gen::agent_service::{TAgentTaskRequest, TCreateTabletReq, TTabletSchema};
@@ -40,6 +40,8 @@ pub enum Step {
     ExecPlanFragment {
         rpc: Rpc,
         request: PExecPlanFragmentRequest,
+        /// The reference's answer, when recorded: C++ fails here when a constant does.
+        reply: Option<PExecPlanFragmentResult>,
     },
     Start(PExecPlanFragmentStartRequest),
     /// A fetch the reference answered (unanswered long polls, dropped by the FE, are left out).
@@ -142,6 +144,7 @@ pub fn load(suite: &str) -> Replay {
                     Rpc::Prepare
                 },
                 request: PExecPlanFragmentRequest::decode(bytes.as_slice()).expect("exec request"),
+                reply: e.reply.as_ref().map(|r| PExecPlanFragmentResult::decode(read(r).as_slice()).expect("exec reply")),
             },
             "exec_plan_fragment_start" => {
                 Step::Start(PExecPlanFragmentStartRequest::decode(bytes.as_slice()).expect("start"))
