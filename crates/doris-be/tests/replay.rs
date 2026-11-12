@@ -1034,3 +1034,23 @@ fn batch5_matches_the_reference() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+const BATCH6: [&str; 5] = [
+    "nereids_p0.multi_distinct.multi_distinct_window.multi_distinct_window",
+    "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
+    "nereids_p0.sql_functions.encryption_digest.test_encryption_function.test_encryption_function",
+    "nereids_p0.system.test_query_sys.test_query_sys",
+    "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive",
+];
+
+#[test]
+fn batch6_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH6 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}

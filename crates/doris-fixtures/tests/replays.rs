@@ -528,3 +528,26 @@ fn batch5_replays_hold_their_features() {
     }
     assert!(seen.len() >= 13, "batch 5 replays hold only {seen:?}");
 }
+
+const BATCH6: [&str; 5] = [
+    "nereids_p0.multi_distinct.multi_distinct_window.multi_distinct_window",
+    "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
+    "nereids_p0.sql_functions.encryption_digest.test_encryption_function.test_encryption_function",
+    "nereids_p0.system.test_query_sys.test_query_sys",
+    "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive",
+];
+
+#[test]
+fn batch6_replays_hold_their_features() {
+    let wanted = ["aes_decrypt", "aes_encrypt", "from_base64", "multi_distinct_group_concat", "multi_distinct_sum", "random", "sleep", "sm3", "sm3sum", "sm4_decrypt", "sm4_encrypt", "to_base64"];
+    let mut seen = BTreeSet::new();
+    for s in BATCH6 {
+        let mut mine = BTreeSet::new();
+        for q in replays::load(s).queries() {
+            mine.extend(replays::functions(&q).into_iter().filter(|f| wanted.contains(&f.as_str())));
+        }
+        assert!(!mine.is_empty(), "{s} holds no batch 6 feature");
+        seen.extend(mine);
+    }
+    assert!(seen.len() >= 12, "batch 6 replays hold only {seen:?}");
+}
