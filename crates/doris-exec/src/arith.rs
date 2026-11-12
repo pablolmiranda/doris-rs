@@ -59,6 +59,8 @@ pub fn arithmetic_supported(op: &str, args: &[ColType], to: &ColType) -> bool {
     if op == "abs" {
         return match (args, int_bits(to)) {
             ([a], Some(tb)) => int_bits(a).is_some_and(|ab| ab <= tb),
+            // a decimal keeps its type: the unscaled value's absolute value
+            ([a], None) => decimal_bits(a).is_some() && a.ptype == to.ptype && a.scale == to.scale && a.precision <= to.precision,
             _ => false,
         };
     }

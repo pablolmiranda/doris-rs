@@ -439,6 +439,56 @@ fn batch2_replays_hold_their_features() {
     assert!(seen.len() >= 30, "batch 2 replays hold only {seen:?}");
 }
 
+/// M6 story 7 batch 3 (interval calls, math, strings, aggregates).
+const BATCH3: [&str; 26] = [
+    "correctness_p0.test_grouping_with_alias.test_grouping_with_alias",
+    "correctness_p0.test_keywords.test_keywords",
+    "correctness_p0.test_outer_join_with_null_value.test_outer_join_with_null_value",
+    "correctness_p0.test_partial_const_args_for_function.test_partial_const_args_for_function",
+    "correctness_p0.test_string_pad_function.test_string_pad_function",
+    "datatype_p0.decimalv3.fix-overflow.fix-overflow",
+    "datatype_p0.string.test_string_embedded_nul_zonemap.test_string_embedded_nul_zonemap",
+    "nereids_p0.sql_functions.aggregate_functions.test_aggregate_percentile_no_cast.test_aggregate_percentile_no_cast",
+    "nereids_p0.sql_functions.conditional_functions.test_conditional_function.test_conditional_function",
+    "nereids_p0.sql_functions.width_bucket_fuctions.test_width_bucket_function.test_width_bucket_function",
+    "query_p0.aggregate.exponential_moving_average.exponential_moving_average.exponential_moving_average",
+    "query_p0.aggregate.support_type.percentile.percentile.percentile",
+    "query_p0.aggregate.support_type.percentile_ar.percentile_array.percentile_array",
+    "query_p0.set_operations.set_operation_exprid_reuse.set_operation_exprid_reuse",
+    "query_p0.sql_functions.aggregate_functions.test_aggregate_retention_param_limit.test_aggregate_retention_param_limit",
+    "query_p0.sql_functions.aggregate_functions.test_linear_histogram_boolean.test_linear_histogram_boolean",
+    "query_p0.sql_functions.math_functions.test_function_truncate.test_function_truncate",
+    "query_p0.sql_functions.math_functions.test_math_unary_always_nullable.test_math_unary_alway_nullable",
+    "query_p0.sql_functions.math_functions.test_mod.test_mod",
+    "query_p0.sql_functions.math_functions.test_triangle.test_triangle",
+    "query_p0.sql_functions.string_functions.test_find_in_set.test_find_in_set",
+    "query_p0.sql_functions.string_functions.test_like_whole_string_match.test_like_whole_string_match",
+    "query_p0.sql_functions.string_functions.test_parse_data_size_nullable.test_parse_data_size_nullable",
+    "query_p0.sql_functions.string_functions.test_url_decode.test_url_decode",
+    "query_p0.sql_functions.string_functions.test_url_encode.test_url_encode",
+    "query_p0.sql_functions.string_functions.test_url_functions.test_url_functions",
+];
+
+#[test]
+fn batch3_replays_hold_their_features() {
+    let wanted = ["acos", "acosh", "asin", "atan2", "atanh", "bin", "char", "cot", "crc32", "csc", "cut_to_first_significant_subdomain", "dsqrt", "element_at", "exponential_moving_average", "factorial", "find_in_set", "first_significant_subdomain", "floor", "group_bit_and", "group_bit_or", "group_bit_xor", "hex", "least", "linear_histogram", "ln", "lpad", "ltrim_in", "nullif", "parse_data_size", "percentile", "percentile_array", "pmod", "pow", "replace", "retention", "rpad", "rtrim_in", "sec", "sqrt", "top_level_domain", "trim_in", "truncate", "unhex", "upper", "url_decode", "url_encode", "width_bucket"];
+    let mut seen = BTreeSet::new();
+    for s in BATCH3 {
+        let mut mine = BTreeSet::new();
+        for q in replays::load(s).queries() {
+            mine.extend(replays::functions(&q).into_iter().filter(|f| wanted.contains(&f.as_str())));
+            let cfc = format!("node_type: {:?},", doris_thrift::gen::exprs::TExprNodeType::COMPUTE_FUNCTION_CALL);
+            if format!("{q:?}").contains(&cfc) {
+                mine.insert("COMPUTE_FUNCTION_CALL".to_string());
+            }
+        }
+        assert!(!mine.is_empty(), "{s} holds no batch 3 feature");
+        seen.extend(mine);
+    }
+    assert!(seen.contains("COMPUTE_FUNCTION_CALL"), "no batch 3 replay holds a COMPUTE_FUNCTION_CALL");
+    assert!(seen.len() >= 30, "batch 3 replays hold only {seen:?}");
+}
+
 #[test]
 fn exec_replies_are_loaded() {
     // C++ evaluates constants at open: years_add('9999-12-31', 1) fails exec_plan_fragment itself

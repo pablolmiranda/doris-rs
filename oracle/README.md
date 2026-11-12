@@ -203,6 +203,19 @@ constant regexp pattern fails `exec_plan_fragment` rather than the first fetch. 
 `m6-s7b2-full-1` ran the binary from before the final review and found one bug: a number cast
 to BOOLEAN gave NULL for anything but 0 and 1.
 
+After Milestone 6 story 7 batch 3 (four families: `COMPUTE_FUNCTION_CALL` for the date add/sub
+calls; 19 math functions, with the transcendental ones from the `core-math` crate, correctly
+rounded as glibc is; 19 string and url functions, with the domain functions over the TLD table;
+`percentile`, `percentile_array`, `element_at`, `retention`, `linear_histogram`,
+`exponential_moving_average` and `group_bit_and`/`or`/`xor`; run `m6-s7b3-full-2`, 2026-11-11):
+652 eligible suites, all passing both gates; 704 Epic 1 suites pass the out gate (537 of those
+that reach the BE) and 586 the strict gate (506). The out ratchet gains 35 suites, the strict
+ratchet 33 (`agg_with_distinct_project` stays off it). The supplement now blocks
+`test_keywords` and `set_operation_exprid_reuse` too (`result:cpp_instance_order`): their rows
+come from several instances with no ORDER BY, and C++ returns them in the order the instances
+finish. Run `m6-s7b3-full-1` ran the binary from before the final review; it failed only those
+two in the strict gate.
+
 The older directory-level gate also works against any target:
 
 ```

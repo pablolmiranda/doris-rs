@@ -228,3 +228,42 @@ fn sub_of_int_min_prints_int_min() {
 fn str_to_date_skips_a_vertical_tab_in_the_format() {
     assert_eq!(str_to_date("2024-02-03", "%Y\u{b}-%m-%d"), day("2024-02-03"));
 }
+
+/// `x + INTERVAL n UNIT` arrives as a COMPUTE_FUNCTION_CALL; C++ builds the same
+/// `VectorizedFnCall` from its `fn` (vexpr.cpp:543-548). See
+/// `docs/superpowers/research/2026-11-10-m6-s7b3-compute-fn.md`.
+fn interval(mut e: TExpr) -> TExpr {
+    e.nodes[0].node_type = doris_thrift::gen::exprs::TExprNodeType::COMPUTE_FUNCTION_CALL;
+    e
+}
+
+#[test]
+fn interval_call_is_its_function_call() {
+    let e = interval(call("hours_add", dt(0), vec![date("2024-02-28 23:00:00", dt(0)), int(2, ty(T::INT))]));
+    assert_eq!(one_row(e), at("2024-02-29 01:00:00", 0));
+    let e = interval(call("hours_sub", dt(0), vec![date("2024-03-01 00:30:00", dt(0)), int(1, ty(T::INT))]));
+    assert_eq!(one_row(e), at("2024-02-29 23:30:00", 0));
+    let inner = interval(call("minutes_add", dt(0), vec![date("2024-01-01 00:00:00", dt(0)), int(90, ty(T::BIGINT))]));
+    let e = interval(call("minutes_add", dt(0), vec![inner, int(-30, ty(T::BIGINT))]));
+    assert_eq!(one_row(e), at("2024-01-01 01:00:00", 0));
+    // its constant errors fail at prepare, as a FUNCTION_CALL's do
+    let e = interval(call("hours_add", dt(0), vec![date("9999-12-31 23:00:00", dt(0)), int(1, ty(T::INT))]));
+    assert!(matches!(check_read(&e), Err(ExecError::Coded { .. })));
+}
+
+#[test]
+fn interval_call_of_other_function_is_refused() {
+    let e = interval(call("abs", ty(T::INT), vec![int(-1, ty(T::INT))]));
+    let err = check_read(&e).unwrap_err().to_string();
+    assert!(err.contains("function abs"), "{err}");
+}
+
+#[test]
+fn asof_match_with_an_interval_call() {
+    use doris_exec::hash_join::check_asof_condition;
+    use doris_fixtures::build::{binary, slot};
+    let side = interval(call("hours_add", dt(0), vec![slot(2, dt(0)), int(1, ty(T::INT))]));
+    let cond = binary("ge", slot(1, dt(0)), side);
+    check_asof_condition(&cond).unwrap();
+    check_read(&cond).unwrap();
+}

@@ -25,6 +25,7 @@ const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 pub const AGGREGATES: &[&str] = &[
     "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
+    "percentile", "percentile_array", "retention", "linear_histogram", "exponential_moving_average", "group_bit_and", "group_bit_or", "group_bit_xor",
 ];
 
 fn function_name(n: &TExprNode) -> Option<String> {
@@ -50,6 +51,23 @@ fn arithmetic_call(n: &TExprNode) -> bool {
 fn bit_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
     crate::bits::supported(&name, &args, &to)
+}
+
+/// A date add/sub function: the only ones the FE sends as a COMPUTE_FUNCTION_CALL.
+fn interval_function(f: &str) -> bool {
+    crate::datetime::is_date_function(f) && (f.ends_with("_add") || f.ends_with("_sub"))
+}
+
+/// A call `strfn::supported` accepts, by its name and signature.
+fn strfn_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::strfn::supported(&name, &args, &to)
+}
+
+/// A call `math::supported` accepts, by its name and signature.
+fn math_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::math::supported(&name, &args, &to)
 }
 
 /// A call `datetime::supported` accepts, by its name and signature.
@@ -116,6 +134,8 @@ fn subtree_len(nodes: &[TExprNode], i: usize) -> usize {
 }
 
 /// `round(x[, d])` of a DOUBLE or a DECIMAL32/64/128I into the same type, `d` an INT constant.
+/// `round`/`truncate`/`floor`/`ceil(x[, d])` on DOUBLE or a decimal. `d` may be a column
+/// (`apply_vec_vec`, round.h:519-670) only for `truncate`, the one the corpus sends so.
 fn round_call(nodes: &[TExprNode], i: usize) -> bool {
     let n = &nodes[i];
     let Some((args, to)) = signature(n) else { return false };
@@ -129,8 +149,11 @@ fn round_call(nodes: &[TExprNode], i: usize) -> bool {
         2 => {
             let start = i + 1 + subtree_len(nodes, i + 1);
             // a node list shorter than its num_children claim is malformed: not accepted
+            let column_ok = function_name(n).as_deref() == Some("truncate");
             args[1].ptype == T::INT
-                && nodes.get(start..start + subtree_len(nodes, start)).is_some_and(|d| d.iter().all(|k| k.node_type != N::SLOT_REF))
+                && nodes
+                    .get(start..start + subtree_len(nodes, start))
+                    .is_some_and(|d| column_ok || d.iter().all(|k| k.node_type != N::SLOT_REF))
         }
         _ => false,
     };
@@ -146,7 +169,7 @@ fn assert_true_call(nodes: &[TExprNode], i: usize) -> bool {
 
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
-        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
+        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
             format!("function {f}")
         }
         _ => format!("expression {}", node_name(n)),
@@ -163,6 +186,7 @@ pub fn node_name(n: &TExprNode) -> String {
         (N::IN_PRED, "IN_PRED"),
         (N::ARITHMETIC_EXPR, "ARITHMETIC_EXPR"),
         (N::FUNCTION_CALL, "FUNCTION_CALL"),
+        (N::COMPUTE_FUNCTION_CALL, "COMPUTE_FUNCTION_CALL"),
         (N::LIKE_PRED, "LIKE_PRED"),
         (N::IS_NULL_PRED, "IS_NULL_PRED"),
     ];
@@ -227,16 +251,25 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("abs") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
-                Some("round") => round_call(&e.nodes, i),
+                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
+                // `element_at(ARRAY<T>, INT) -> T` (function_array_element.h:293-330)
+                Some("element_at") => signature(n).is_some_and(|(a, to)| {
+                    a.len() == 2 && a[0].element().is_some_and(|el| el.ptype == to.ptype && el.scale == to.scale) && a[1].ptype == T::INT
+                }),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
+                Some(f) if crate::math::is_math_function(f) => math_call(n),
+                Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 _ => false,
             },
+            // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
+            // its `fn` names, ignoring the node type and opcode
+            N::COMPUTE_FUNCTION_CALL => function_name(n).is_some_and(|f| interval_function(&f)) && date_call(n),
             N::AGG_EXPR => {
                 aggregates && AGGREGATES.contains(&function_name(n).unwrap_or_default().as_str())
             }
@@ -287,7 +320,7 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
             N::INT_LITERAL | N::LARGE_INT_LITERAL | N::STRING_LITERAL | N::BOOL_LITERAL | N::FLOAT_LITERAL | N::DECIMAL_LITERAL | N::DATE_LITERAL | N::NULL_LITERAL
         )
     };
-    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
+    let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
     let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
     // a regexp's constant pattern is compiled at open
     for (i, n) in e.nodes.iter().enumerate() {
@@ -345,7 +378,11 @@ pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
     match parent(nodes, i) {
         None => true,
-        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str())),
+        // percentile_array's levels (its second argument), `element_at`'s array
+        Some(p) if nodes[p].node_type == N::AGG_EXPR => {
+            function_name(&nodes[p]).as_deref() == Some("percentile_array") && i != p + 1
+        }
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || f == "element_at"),
     }
 }
 
@@ -530,6 +567,9 @@ fn eval_at(
                     if let Some(r) = number_to_bool(d, &from, &to) {
                         return Ok(r);
                     }
+                    if let Some(r) = date_to_number(d, &from, &to) {
+                        return Ok(r);
+                    }
                     // a FLOAT as text is the float's own shortest text, not its double's
                     if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
                         return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
@@ -649,11 +689,21 @@ fn eval_at(
             let out = crate::bits::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?;
             (to, out)
         }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::strfn::is_string_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::math::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::geo::is_geo_function(&f)) => {
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::geo::eval(&function_name(n).unwrap_or_default(), &args, rows))
         }
-        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
+        N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL if function_name(n).is_some_and(|f| crate::datetime::is_date_function(&f)) => {
             let to = node_type(n)?;
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
@@ -668,6 +718,24 @@ fn eval_at(
             (to, out)
         }
         N::FUNCTION_CALL => match function_name(n).as_deref() {
+            // 1-based; negative from the end; 0, out of range or a NULL array is NULL
+            Some("element_at") => {
+                let to = node_type(n)?;
+                let [(_, arrays), (_, idx)] = <[_; 2]>::try_from(kids).map_err(|_| bad("element_at needs two arguments"))?;
+                let out = arrays
+                    .iter()
+                    .zip(&idx)
+                    .map(|(a, i)| match (a, i) {
+                        (Datum::Array(v), Datum::Int(i)) => {
+                            let len = v.len() as i128;
+                            let at = if *i > 0 && *i <= len { Some(*i - 1) } else if *i < 0 && -*i <= len { Some(len + *i) } else { None };
+                            at.map_or(Datum::Null, |k| v[k as usize].clone())
+                        }
+                        _ => Datum::Null,
+                    })
+                    .collect();
+                (to, out)
+            }
             Some("abs") => {
                 let to = node_type(n)?;
                 let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
@@ -691,7 +759,37 @@ fn eval_at(
                 };
                 (to, out)
             }
-            Some("round") => {
+            Some(name) if crate::round::Mode::of(name).is_some() && !constant.get(1).copied().unwrap_or(true) => {
+                // a column scale: each row's own, checked on every row first (round.h:519-534)
+                let to = node_type(n)?;
+                let mode = crate::round::Mode::of(name).unwrap_or(crate::round::Mode::Round);
+                let (tx, x) = kids.first().ok_or_else(|| bad("truncate without its argument"))?;
+                let (_, ds) = kids.get(1).ok_or_else(|| bad("truncate without its scale"))?;
+                for d in ds {
+                    if let Datum::Int(d) = d {
+                        if *d > i128::from(i16::MAX) || *d < i128::from(i16::MIN) {
+                            return Err(ExecError::Coded {
+                                code: -218,
+                                name: "E-218",
+                                msg: format!("Scale argument for function is out of bound: {d}"),
+                            });
+                        }
+                    }
+                }
+                let out = x
+                    .iter()
+                    .zip(ds)
+                    .map(|(v, d)| match (v, d) {
+                        (Datum::Null, _) | (_, Datum::Null) => Datum::Null,
+                        (Datum::Double(f), Datum::Int(d)) => Datum::Double(crate::round::round_double_mode(*f, *d as i32, mode)),
+                        (Datum::Int(r), Datum::Int(d)) => Datum::Int(crate::round::round_decimal_mode(*r, tx.scale, *d as i32, to.scale, mode)),
+                        (other, _) => other.clone(),
+                    })
+                    .collect();
+                (to, out)
+            }
+            Some(name) if crate::round::Mode::of(name).is_some() => {
+                let mode = crate::round::Mode::of(name).unwrap_or(crate::round::Mode::Round);
                 let to = node_type(n)?;
                 let (tx, x) = kids.first().ok_or_else(|| bad("round without its argument"))?;
                 let d = match kids.get(1).map(|(_, d)| d.first()) {
@@ -707,7 +805,7 @@ fn eval_at(
                         return Err(ExecError::Coded {
                             code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
                             name: "INVALID_ARGUMENT",
-                            msg: format!("Scale argument for function round is out of bound: {d}"),
+                            msg: format!("Scale argument for function {name} is out of bound: {d}"),
                         })
                     }
                     Some(d) => {
@@ -715,8 +813,8 @@ fn eval_at(
                         let out = x
                             .iter()
                             .map(|v| match v {
-                                Datum::Double(f) => Datum::Double(crate::round::round_double(*f, d)),
-                                Datum::Int(r) => Datum::Int(crate::round::round_decimal(*r, tx.scale, d, to.scale)),
+                                Datum::Double(f) => Datum::Double(crate::round::round_double_mode(*f, d, mode)),
+                                Datum::Int(r) => Datum::Int(crate::round::round_decimal_mode(*r, tx.scale, d, to.scale, mode)),
                                 other => other.clone(),
                             })
                             .collect();
@@ -961,6 +1059,27 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A DATEV2 or DATETIMEV2 cast to a number: `YYYYMMDD` or `YYYYMMDDhhmmss`, its `to_int64()`
+/// (`cast_to_basic_number_common.h:358-362`).
+fn date_to_number(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
+    let datetime = match from.ptype {
+        T::DATEV2 => false,
+        T::DATETIMEV2 => true,
+        _ => return None,
+    };
+    let Datum::Int(v) = d else { return None };
+    let t = crate::datetime::Dt::unpack(*v, datetime);
+    let mut n = (t.year * 100 + t.month) * 100 + t.day;
+    if datetime {
+        n = ((n * 100 + t.hour) * 100 + t.minute) * 100 + t.second;
+    }
+    Some(match to.ptype {
+        T::DOUBLE => Datum::Double(n as f64),
+        T::BIGINT | T::LARGEINT => Datum::Int(i128::from(n)),
+        _ => return None,
+    })
 }
 
 /// A number cast to BOOLEAN, as `cast_to_boolean.h` does it: true unless the value is zero (for a

@@ -68,6 +68,15 @@ fn array_prints_as_doris_does() {
         cell_text(&Datum::Array(vec![Datum::Int(1), Datum::Int(-2)]), &ints),
         Some(b"[1, -2]".to_vec())
     );
+    // percentile_array's and retention's results, as recorded
+    let doubles = ColType::from_type_desc("", &array_of(ty(T::DOUBLE)), true).unwrap();
+    let v = Datum::Array(vec![Datum::Double(61.0), Datum::Double(66.30000000000001), Datum::Double(1e20)]);
+    assert_eq!(cell_text(&v, &doubles), Some(b"[61, 66.30000000000001, 1e+20]".to_vec()));
+    let bools = ColType::from_type_desc("", &array_of(ty(T::BOOLEAN)), true).unwrap();
+    assert_eq!(
+        cell_text(&Datum::Array(vec![Datum::Bool(true), Datum::Bool(false)]), &bools),
+        Some(b"[1, 0]".to_vec())
+    );
 }
 
 #[test]
@@ -76,7 +85,7 @@ fn an_array_compared_is_refused() {
     let err = check_read(&binary("eq", a(), a())).unwrap_err().to_string();
     assert!(err.contains("an ARRAY value"), "{err}");
     // an array of a type the printer does not know is refused
-    assert!(ColType::from_type_desc("", &array_of(ty(T::DOUBLE)), true).is_some_and(|t| !t.supported_array()));
+    assert!(ColType::from_type_desc("", &array_of(ty(T::DATEV2)), true).is_some_and(|t| !t.supported_array()));
 }
 
 #[test]
