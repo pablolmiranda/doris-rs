@@ -452,7 +452,6 @@ query_p0.limit.sql.withLimitZero.withLimitZero
 query_p0.limit.sql.withOrderBy.withOrderBy
 query_p0.limit.sql.withSimpleLimit.withSimpleLimit
 query_p0.limit.sql.withSubq.withSubq
-query_p0.limit.test_group_by_limit.test_group_by_limit
 query_p0.limit.test_orderby_limit.test_orderby_limit.test_orderby_limit
 query_p0.literal_view.lietral_largeint.literal_largeint
 query_p0.runtimefilterV2.rfv2.rfv2

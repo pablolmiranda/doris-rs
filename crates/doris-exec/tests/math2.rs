@@ -301,3 +301,18 @@ fn the_fold_suites_casts() {
     let c = cast(large(170141183460469231731687303715884105726), ty(T::SMALLINT));
     assert_eq!(eval(c).unwrap(), Datum::Null);
 }
+
+/// glibc's `e_acosh.c` and `e_atanh.c` round these off by one ulp from the correctly rounded
+/// value; the reference rows are glibc's (batch 6 run 1).
+#[test]
+fn acosh_and_atanh_round_as_glibc() {
+    assert_eq!(f1("acosh", 1.0), dd(0.0));
+    assert_eq!(f1("acosh", 2.0), dd(1.3169578969248166));
+    assert_eq!(f1("acosh", 10.0), dd(2.993222846126381));
+    assert_eq!(f1("atanh", 0.0), dd(0.0));
+    assert_eq!(f1("atanh", 0.5), dd(0.5493061443340548));
+    assert_eq!(f1("atanh", -0.5), dd(-0.5493061443340548));
+    // the out-of-domain inputs stay NULL
+    assert_eq!(f1("acosh", 0.5), Datum::Null);
+    assert_eq!(f1("atanh", 1.0), Datum::Null);
+}

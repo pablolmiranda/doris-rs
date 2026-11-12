@@ -247,3 +247,18 @@ fn a_nan_level_is_accepted() {
     };
     assert!(v.is_nan());
 }
+
+/// The x86 BE is built with GCC's default `-ffp-contract=fast`, so the interpolation
+/// `s[i] + (u-i)·(s[i+1]-s[i])` is one fused multiply-add: test_select_stddev_variance_window
+/// recorded -6349.399999999999 for SMALLINT (-32767, 255) at 0.8, where two roundings give
+/// -6349.399999999998.
+#[test]
+fn percentile_interpolates_with_one_rounding() {
+    let t = ty(T::SMALLINT);
+    assert_eq!(
+        one_phase("percentile", &t, &[0.8], &ints(&[-32767, 255])).unwrap(),
+        Datum::Double(-6349.399999999999)
+    );
+    // the same rows' other recorded values are unchanged
+    assert_eq!(one_phase("percentile", &t, &[0.8], &ints(&[1989, 1991])).unwrap(), Datum::Double(1990.6));
+}

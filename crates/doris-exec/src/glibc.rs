@@ -269,6 +269,47 @@ pub fn asinh(x: f64) -> f64 {
     w.copysign(x)
 }
 
+/// `e_acosh.c` (glibc 2.35, 64-bit words). The `x < 1 → NULL` rule is the caller's.
+pub fn acosh(x: f64) -> f64 {
+    let hx = x.to_bits() as i64;
+    if hx > 0x4000_0000_0000_0000 {
+        if hx >= 0x41b0_0000_0000_0000 {
+            if hx >= 0x7ff0_0000_0000_0000 {
+                return x + x;
+            }
+            return log(x) + 6.93147180559945286227e-01;
+        }
+        let t = x * x;
+        log(2.0 * x - 1.0 / (x + (t - 1.0).sqrt()))
+    } else if hx > 0x3ff0_0000_0000_0000 {
+        let t = x - 1.0;
+        libm::log1p(t + (2.0 * t + t * t).sqrt())
+    } else if hx == 0x3ff0_0000_0000_0000 {
+        0.0
+    } else {
+        f64::NAN
+    }
+}
+
+/// `e_atanh.c` (glibc 2.35). The `|x| >= 1 → NULL` rule is the caller's.
+pub fn atanh(x: f64) -> f64 {
+    let xa = x.abs();
+    let t = if xa < 0.5 {
+        if xa < f64::from_bits(0x3e30_0000_0000_0000) {
+            return x;
+        }
+        let t = xa + xa;
+        0.5 * libm::log1p(t + t * xa / (1.0 - xa))
+    } else if xa < 1.0 {
+        0.5 * libm::log1p((xa + xa) / (1.0 - xa))
+    } else if xa > 1.0 {
+        return f64::NAN;
+    } else {
+        return x / 0.0;
+    };
+    t.copysign(x)
+}
+
 /// `e_log10.c` (fdlibm). The `x <= 0 → NULL` rule is the caller's (`function_math_log.h`).
 pub fn log10(mut x: f64) -> f64 {
     const TWO54: f64 = 1.80143985094819840000e+16;

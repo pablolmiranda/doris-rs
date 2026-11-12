@@ -172,7 +172,8 @@ fn at_level(sorted: &[f64], q: f64) -> f64 {
     if i + 1 >= n {
         return sorted[n - 1];
     }
-    sorted[i] + (u - i as f64) * (sorted[i + 1] - sorted[i])
+    // one rounding: GCC contracts C++'s `a + t * (b - a)` into an FMA on the x86 build
+    (u - i as f64).mul_add(sorted[i + 1] - sorted[i], sorted[i])
 }
 
 impl Stats {

@@ -678,3 +678,31 @@ fn a_scalar_first_phase_keeps_a_state_per_tablet() {
     limited.children[0].node.limit = 1;
     assert_eq!(rows_of(limited), 1);
 }
+
+/// A UNION_NODE's constant rows come from the fragment's first instance only (sender id 0, C++'s
+/// `per_fragment_instance_idx`), not once per instance (test_window_fn's `sql_cte_3`).
+#[test]
+fn union_constants_come_from_the_first_instance_only() {
+    let (blank, _, sink) = templates();
+    let mut u = node(blank.clone(), P::UNION_NODE, 40, 0, vec![0]);
+    let c = |v: i64| vec![doris_fixtures::build::int(v, ty(T::INT))];
+    u.union_node = Some(doris_thrift::gen::plan_nodes::TUnionNode::new(0, vec![], vec![c(1), c(2)], 0));
+    let f = fragment(
+        PlanTree { node: u, children: vec![] },
+        stream_sink(&sink, OUT),
+        vec![TUniqueId {
+            hi: OUT_INSTANCE.0,
+            lo: OUT_INSTANCE.1,
+        }],
+        vec![instance(0, &[]), instance(1, &[]), instance(2, &[])],
+        &[],
+        RunMode::Each,
+    );
+    let plan = query(vec![f]);
+    let ex = Exchanges::default();
+    for r in run(&plan, 0, &ex) {
+        r.unwrap();
+    }
+    let rows: Vec<Vec<Datum>> = ex.receive(&out_key(), 3).unwrap().into_iter().flat_map(|c| c.block.rows).collect();
+    assert_eq!(ints(&rows), vec![vec![1], vec![2]]);
+}

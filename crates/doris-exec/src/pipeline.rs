@@ -322,7 +322,10 @@ impl Instance<'_> {
             },
             slots: vec![],
         };
-        for row in &u.const_expr_lists {
+        // the constant rows: only the fragment's first instance (union_source_operator.cpp,
+        // `per_fragment_instance_idx() == 0`, which is the sender id)
+        let consts = if self.instance.sender_id == 0 { &u.const_expr_lists[..] } else { &[] };
+        for row in consts {
             let b = self.typed(project(row, &one)?, &out.slots)?;
             out.block.rows.extend(b.rows);
         }
