@@ -122,6 +122,12 @@
     "be:profile_counters"
    ],
    "reason": "It reads the query profile and asserts ExprZoneMapFilteredSegments and other scan counters, which doris-rs does not report. Its query features (starts_with) are supported from M6 story 7 batch 5; the counters are not."
+  },
+  "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode": {
+   "needs": [
+    "be:sql_cache"
+   ],
+   "reason": "Its explain physical plan at exchange 18 shows PhysicalSqlCache with cost 0.0 on the reference: the same select ran just before (order_qt_exec_agg_join) and was stored in the BE's SQL cache, which the FE's explain reads back. doris-rs keeps no SQL cache, so the FE plans afresh and the explain has 13 rows, not 14 (doris-rs run m6-s7b5-full-1, 2026-11-11). The suite's own assertions pass; the out gate passes."
   }
  },
  "groups": []

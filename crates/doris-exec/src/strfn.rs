@@ -55,7 +55,6 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     match name {
         "upper"
         | "ucase"
-        | "hex"
         | "unhex"
         | "url_encode"
         | "url_decode"
@@ -63,6 +62,8 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         | "first_significant_subdomain"
         | "cut_to_first_significant_subdomain" => all_text(1) && is_text(to),
         "replace" => all_text(3) && is_text(to),
+        // text, or a BIGINT (`HexIntImpl`)
+        "hex" => matches!(args, [a] if is_text(a) || a.ptype == T::BIGINT) && is_text(to),
         "find_in_set" => all_text(2) && to.ptype == T::INT,
         "crc32" => all_text(1) && to.ptype == T::BIGINT,
         "parse_data_size" => all_text(1) && to.ptype == T::LARGEINT,
@@ -445,6 +446,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Resul
         "replace" => rows(args, n, |r| text(replace(bytes(r[0]), bytes(r[1]), bytes(r[2])))),
         "find_in_set" => rows(args, n, |r| Ok(Datum::Int(find_in_set(bytes(r[0]), bytes(r[1]))))),
         "crc32" => rows(args, n, |r| Ok(Datum::Int(i128::from(crc32fast::hash(bytes(r[0])))))),
+        "hex" if types.first().is_some_and(|t| t.ptype == T::BIGINT) => rows(args, n, |r| text(format!("{:X}", int(r[0]) as i64 as u64).into_bytes())),
         "hex" => rows(args, n, |r| text(hex(bytes(r[0])))),
         "unhex" => rows(args, n, |r| text(unhex(bytes(r[0])))),
         "url_encode" => rows(args, n, |r| text(crate::url::url_encode(bytes(r[0])))),

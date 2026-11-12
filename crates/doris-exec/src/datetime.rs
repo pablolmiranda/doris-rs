@@ -413,7 +413,7 @@ pub fn check_format(format: &[u8]) -> Result<(), ExecError> {
     while let Some(c) = spec.next() {
         if *c == b'%' {
             match spec.next() {
-                Some(b'Y' | b'y' | b'm' | b'c' | b'b' | b'M' | b'd' | b'e' | b'H' | b'k' | b'i' | b's' | b'S' | b'%') | None => {}
+                Some(b'Y' | b'y' | b'm' | b'c' | b'b' | b'M' | b'd' | b'e' | b'H' | b'k' | b'h' | b'I' | b'l' | b'p' | b'i' | b's' | b'S' | b'%') | None => {}
                 Some(other) => {
                     return Err(ExecError::Unsupported {
                         what: format!("str_to_date with the format specifier %{}", *other as char),
@@ -442,6 +442,8 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     const TIME: u32 = 8;
     let (mut ptr, mut val) = (0usize, 0usize);
     let mut used = 0u32;
+    // a 12-hour field was read, and the AM/PM it was given
+    let (mut hour12, mut half_day) = (false, 0i64);
     let mut t = Dt {
         year: 0,
         month: 0,
@@ -462,6 +464,20 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
             let c = format[ptr + 1];
             ptr += 2;
             let rest = &value[val..];
+            // AM/PM: after a 12-hour field only
+            if c == b'p' {
+                if rest.len() < 2 || !rest[1].eq_ignore_ascii_case(&b'M') || !hour12 {
+                    return Ok(None);
+                }
+                if rest[0].eq_ignore_ascii_case(&b'P') {
+                    half_day = 12;
+                }
+                val += 2;
+                continue;
+            }
+            if matches!(c, b'h' | b'I' | b'l') {
+                hour12 = true;
+            }
             if c == b'b' || c == b'M' {
                 let names: &[&str] = if c == b'b' { &AB_MONTH_NAMES } else { &MONTH_NAMES };
                 let Some((month, len)) = check_word(names, rest) else { return Ok(None) };
@@ -474,7 +490,7 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
                 b'Y' | b'y' => (Some(&mut t.year), if c == b'Y' { 4 } else { 2 }, YEAR),
                 b'm' | b'c' => (Some(&mut t.month), 2, MONTH),
                 b'd' | b'e' => (Some(&mut t.day), 2, DAY),
-                b'H' | b'k' => (Some(&mut t.hour), 2, TIME),
+                b'H' | b'k' | b'h' | b'I' | b'l' => (Some(&mut t.hour), 2, TIME),
                 b'i' => (Some(&mut t.minute), 2, TIME),
                 b's' | b'S' => (Some(&mut t.second), 2, TIME),
                 _ => (None, 0, 0),
@@ -510,7 +526,7 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     // time specifiers left in the format still count as time parts
     while ptr < format.len() {
         if format[ptr] == b'%' && ptr + 1 < format.len() {
-            if matches!(format[ptr + 1], b'H' | b'k' | b'i' | b's' | b'S') {
+            if matches!(format[ptr + 1], b'H' | b'k' | b'h' | b'I' | b'l' | b'p' | b'i' | b's' | b'S') {
                 used |= TIME;
             }
             ptr += 2;
@@ -520,6 +536,12 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     }
     if used == 0 || (used & TIME != 0 && !datetime) {
         return Ok(None);
+    }
+    if hour12 {
+        if !(1..=12).contains(&t.hour) {
+            return Ok(None);
+        }
+        t.hour = t.hour % 12 + half_day;
     }
     if used & TIME == 0 && used & DAY == 0 {
         t.day = 1;

@@ -193,6 +193,24 @@ fn str_to_date_reads_month_names() {
     assert_eq!(str_to_date("5 Foo 2024", "%e %b %Y"), Datum::Null);
 }
 
+/// `%h`/`%I`/`%l` read a 1..12 hour, `%p` AM or PM after one; the hour is then
+/// `hour % 12 + (PM ? 12 : 0)` (`from_date_format_str`).
+#[test]
+fn str_to_date_reads_a_twelve_hour_clock() {
+    let at = |v: &str, f: &str| one_row(call("str_to_date", dt(0), vec![string(v), string(f)]));
+    // the recorded fold row
+    assert_eq!(at("31/12/2020 11:59 PM", "%d/%m/%Y %h:%i %p"), at_text("2020-12-31 23:59:00"));
+    assert_eq!(at("31/12/2020 12:05 am", "%d/%m/%Y %I:%i %p"), at_text("2020-12-31 00:05:00"));
+    assert_eq!(at("31/12/2020 12:05 PM", "%d/%m/%Y %l:%i %p"), at_text("2020-12-31 12:05:00"));
+    // an hour past 12, or AM/PM without a 12-hour field, is no date
+    assert_eq!(at("31/12/2020 13:05 PM", "%d/%m/%Y %h:%i %p"), Datum::Null);
+    assert_eq!(at("31/12/2020 11:05 PM", "%d/%m/%Y %H:%i %p"), Datum::Null);
+}
+
+fn at_text(s: &str) -> Datum {
+    Datum::Int(i128::from(parse_datetimev2(s, 0).unwrap()))
+}
+
 #[test]
 fn str_to_date_refuses_unported_specifiers() {
     let e = call("str_to_date", d(), vec![string("Monday"), string("%W")]);

@@ -199,3 +199,13 @@ fn number_formatting_is_refused_in_insert_values() {
     // the text ones run there
     doris_exec::expr::check(&call("sub_replace", vc(), vec![string("abc"), string("x"), i(0)])).unwrap();
 }
+
+/// `hex(BIGINT)` (`HexIntImpl`): the 64-bit pattern in upper-case hex, no leading zeros.
+#[test]
+fn hex_of_an_integer() {
+    let h = |v: i64| text(call("hex", vc(), vec![int(v, ty(T::BIGINT))])).unwrap();
+    assert_eq!(h(12), "C");
+    assert_eq!(h(-1), "FFFFFFFFFFFFFFFF");
+    assert_eq!(h(0), "0");
+    assert_eq!(h(255), "FF");
+}
