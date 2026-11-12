@@ -239,6 +239,21 @@ supplement now blocks `test_expr_zonemap_pruning` (`be:profile_counters`), `push
 `curdate()`, which the FE folds to the day it runs). `convert_tz` uses chrono-tz and is refused
 past 2099 in a zone with DST rules, where chrono-tz stops applying them.
 
+After Milestone 6 story 7 batch 6 (the math tail, with `acosh`, `atanh` and other glibc results
+ported bit for bit, plus `conv` and `round_bankers`; `random`/`rand` (mt19937_64, one generator
+per expression per instance) and `sleep`; the statistics and ranking windows `stddev_samp`,
+`variance`, `variance_samp`, `percentile_approx`, `percent_rank` and `cume_dist`, and
+`multi_distinct_sum`/`_group_concat` over frames; `aes_*`, `sm4_*`, `sm3`, `sm3sum` and base64;
+run `m6-s7b6-full-2`, 2026-11-12): 680 eligible suites, all passing both gates; 741 Epic 1 suites
+pass the out gate (574 of those that reach the BE) and 620 the strict gate (540). Each ratchet
+gains 15 suites. Run 1 found three causes, each fixed test-first: a union's constant rows came
+from every instance (C++ emits them only from sender 0); `acosh` and `atanh` were 1 ulp off
+glibc; and `percentile` interpolation must round once, as the x86 build's fused multiply-add
+does. `test_group_by_limit` leaves the strict ratchet: its reference explains say "planned with
+unknown column statistics", and whether the FE's auto-analyze has run before the suite is FE
+timing. A full run can lose up to two hours to `nereids_p0 test_use_mv`, which polls a rollup
+job the FE cancelled until its timeout; the suite is not eligible.
+
 The older directory-level gate also works against any target:
 
 ```
