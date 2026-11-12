@@ -362,7 +362,8 @@ fn float_keys_equal_in_value_but_not_in_bits_are_found() {
 
 #[test]
 fn batch1_aggregates_are_not_window_aggregates() {
-    for (f, t) in [("sum0", T::BIGINT), ("stddev", T::DOUBLE), ("group_concat", T::VARCHAR), ("ndv", T::INT), ("window_funnel_v2", T::INT)] {
+    // stddev runs over windows since batch 6 (tests/window2.rs)
+    for (f, t) in [("sum0", T::BIGINT), ("group_concat", T::VARCHAR), ("ndv", T::INT), ("window_funnel_v2", T::INT)] {
         let e = build::aggregate(f, build::ty(t), vec![build::ty(t)], false, vec![build::slot(1, build::ty(t))]);
         let err = WindowFn::from_expr(&e).unwrap_err().to_string();
         assert!(err.contains(&format!("{f} over a window")), "{err}");
@@ -425,14 +426,14 @@ fn multi_distinct_count_over_the_whole_partition() {
     assert_eq!(got, [1, 1, 1, 1].map(i).to_vec());
     let values = vec![s("x"), s("z"), Datum::Null, s("y")];
     assert_eq!(run(&part, &[], Frame::Partition, &f, &[(T::VARCHAR, values)]), [2, 2, 2, 1].map(i).to_vec());
-    // its sliding-frame semantics are not ported
-    assert!(check_frame(&f, &TO_CURRENT).is_err());
-    assert!(check_frame(&f, &Frame::RangeToCurrent).is_err());
+    // a plain set: every frame since batch 6 (multi_distinct_window's sliding frame)
+    check_frame(&f, &TO_CURRENT).unwrap();
+    check_frame(&f, &Frame::RangeToCurrent).unwrap();
     check_frame(&f, &Frame::Partition).unwrap();
     // the FE sends `OVER ()` as RANGE to the current row: without an ORDER BY every row is a
     // peer, so that frame is the whole partition
     check_window(&f, &Frame::RangeToCurrent, false).unwrap();
-    assert!(check_window(&f, &Frame::RangeToCurrent, true).is_err());
+    check_window(&f, &Frame::RangeToCurrent, true).unwrap();
     // rank keeps the frame the FE forces
     check_window(&win(WindowKind::Rank, T::BIGINT), &Frame::RangeToCurrent, false).unwrap();
     let e = build::aggregate("multi_distinct_count", build::ty(T::BIGINT), vec![build::ty(T::VARCHAR)], false, vec![build::slot(1, build::ty(T::VARCHAR))]);

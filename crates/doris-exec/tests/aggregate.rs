@@ -219,9 +219,10 @@ fn sum_overflow_is_an_error() {
 #[test]
 fn an_unknown_aggregate_is_refused() {
     let int = ty(T::INT);
-    let e = aggregate("percentile_approx", ty(T::DOUBLE), vec![int.clone()], false, vec![slot(1, int)]);
-    let err = AggSpec::from_expr(&e).expect_err("percentile_approx is not supported").to_string();
-    assert!(err.contains("function percentile_approx"), "{err}");
+    // (percentile_approx, the earlier example, runs since batch 6)
+    let e = aggregate("histogram", ty(T::VARCHAR), vec![int.clone()], false, vec![slot(1, int)]);
+    let err = AggSpec::from_expr(&e).expect_err("histogram is not supported").to_string();
+    assert!(err.contains("function histogram"), "{err}");
 }
 
 #[test]

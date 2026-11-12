@@ -27,6 +27,7 @@ doris-fixtures = { path = "crates/doris-fixtures" }
 doris-rocks = { path = "crates/doris-rocks" }
 doris-segment = { path = "crates/doris-segment" }
 doris-exec = { path = "crates/doris-exec" }
+doris-wire = { path = "crates/doris-wire" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"

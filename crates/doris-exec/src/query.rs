@@ -904,6 +904,30 @@ fn window_input(t: &PlanTree, keys: Vec<i32>, plan: &QueryPlan, n: usize) -> Res
                 .ok_or_else(|| unsupported(format!("an {name} over a sort it can't see its partition keys through in {n} instances")))?;
             window_input(child, mapped, plan, n)
         }
+        // a grouping aggregation: its output's grouping slots are its grouping exprs' input
+        // slots, and each group is in the instance its input's hash sends it to
+        P::AGGREGATION_NODE => {
+            let a = t.node.agg_node.as_ref().ok_or_else(|| ExecError::BadRequest("AGGREGATION_NODE without its parameters".into()))?;
+            // a projection on the node first: a key must be a projected slot of the aggregation's own
+            let keys = match (&t.node.projections, t.node.output_tuple_id) {
+                (Some(p), Some(out)) => {
+                    let projected = plan.desc.tuple_slots(out)?;
+                    keys.iter()
+                        .map(|k| projected.iter().position(|s| s == k).and_then(|i| p.get(i)).and_then(|e| slot_ids(std::slice::from_ref(e)).map(|v| v[0])))
+                        .collect::<Option<Vec<i32>>>()
+                        .ok_or_else(|| unsupported(format!("an {name} over an aggregation it can't see its partition keys through in {n} instances")))?
+                }
+                _ => keys,
+            };
+            let tuple = plan.desc.tuple_slots(a.output_tuple_id)?;
+            let group = a.grouping_exprs.as_deref().unwrap_or_default();
+            let mapped = keys
+                .iter()
+                .map(|k| tuple.iter().position(|s| s == k).filter(|i| *i < group.len()).and_then(|i| slot_ids(std::slice::from_ref(&group[i])).map(|v| v[0])))
+                .collect::<Option<Vec<i32>>>()
+                .ok_or_else(|| unsupported(format!("an {name} over an aggregation it can't see its partition keys through in {n} instances")))?;
+            window_input(next()?, mapped, plan, n)
+        }
         P::EXCHANGE_NODE => {
             for (p, exprs) in feeding_sinks(plan, t.node.node_id) {
                 if p != TPartitionType::HASH_PARTITIONED {
@@ -924,8 +948,12 @@ fn window_input(t: &PlanTree, keys: Vec<i32>, plan: &QueryPlan, n: usize) -> Res
     }
 }
 
-/// A node's output slots: the slots of its row tuples, in order.
+/// A node's output slots: its projection's tuple, or the slots of its row tuples, in order.
 fn output_slots(t: &PlanTree, plan: &QueryPlan) -> Result<Vec<i32>, ExecError> {
+    // a projected node outputs its projection's tuple
+    if let (Some(_), Some(out)) = (&t.node.projections, t.node.output_tuple_id) {
+        return Ok(plan.desc.tuple_slots(out)?.to_vec());
+    }
     let mut out = Vec::new();
     for tuple in &t.node.row_tuples {
         out.extend_from_slice(plan.desc.tuple_slots(*tuple)?);

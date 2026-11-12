@@ -23,6 +23,7 @@ pub const NAMES: &[&str] = &[
     "group_bit_and",
     "group_bit_or",
     "group_bit_xor",
+    "percentile_approx",
 ];
 
 /// Those without researched window semantics: refused over a window.
@@ -56,6 +57,57 @@ pub enum Stats {
     Ema { value: f64, time: f64, half_decay: f64 },
     /// `group_bit_*` in two's complement
     Bit { op: BitOp, acc: i128 },
+    /// `percentile_approx` (`aggregate_function_percentile.h:52-245`, `util/tdigest.h`): the
+    /// first row's quantile and the values as f32 (NaN dropped). Below `APPROX_LIMIT` values the
+    /// t-digest never merges two points, so its answer is a formula over the sorted values.
+    Approx { quantile: Option<f64>, values: Vec<f32> },
+}
+
+/// The count of values from which a `percentile_approx` state is refused: its t-digest first
+/// merges two points at about 4·δ/π values, 2608 for the smallest compression (2048).
+pub const APPROX_LIMIT: usize = 2048;
+
+/// `TDigest::weightedAverage` (`x1 <= x2` order, then `max(x1, min(x, x2))`), in f32.
+fn weighted_average(x1: f32, w1: f32, x2: f32, w2: f32) -> f32 {
+    let sorted = |x1: f32, w1: f32, x2: f32, w2: f32| {
+        let x = (x1 * w1 + x2 * w2) / (w1 + w2);
+        x1.max(x.min(x2))
+    };
+    if x1 <= x2 {
+        sorted(x1, w1, x2, w2)
+    } else {
+        sorted(x2, w2, x1, w1)
+    }
+}
+
+/// `TDigest::quantile(q)` over unit-weight centroids, one per value (research
+/// "When it is exactly reproducible"). NaN when there are none.
+fn digest_quantile(values: &[f32], q: f64) -> f32 {
+    let mut v = values.to_vec();
+    v.sort_by(f32::total_cmp);
+    let n = v.len();
+    match n {
+        0 => return f32::NAN,
+        1 => return v[0],
+        _ => {}
+    }
+    let index = (q as f32) * n as f32;
+    // the first centroid's half: the `_min` formula, with `_min` its mean
+    if f64::from(index) <= 0.5 {
+        return v[0];
+    }
+    // cumulative weights: c[i] = i + 0.5 for each centroid, c[n] = n
+    let c = |i: usize| if i < n { i as f32 + 0.5 } else { n as f32 };
+    let i = (0..=n).find(|i| c(*i) >= index).unwrap_or(n);
+    if (1..n).contains(&i) {
+        let z1 = index - c(i - 1);
+        let z2 = c(i) - index;
+        return weighted_average(v[i - 1], z2, v[i], z1);
+    }
+    // the last centroid's half, with `_max` (which starts at FLT_MIN)
+    let z1 = (f64::from(index) - n as f64 - 0.5) as f32;
+    let z2 = (0.5 - f64::from(z1)) as f32;
+    weighted_average(v[n - 1], z1, v[n - 1].max(f32::MIN_POSITIVE), z2)
 }
 
 fn invalid(msg: String) -> ExecError {
@@ -149,6 +201,10 @@ impl Stats {
                     acc: if op == BitOp::And { -1 } else { 0 },
                 }
             }
+            "percentile_approx" if (2..=3).contains(&params.len()) && params.iter().all(double) => Stats::Approx {
+                quantile: None,
+                values: Vec::new(),
+            },
             _ => return None,
         })
     }
@@ -185,6 +241,25 @@ impl Stats {
                     *levels = Some(qs);
                 }
                 values.push(x);
+            }
+            Stats::Approx { quantile, values } => {
+                let (Some(x), Some(q)) = (arg(0), arg(1)) else {
+                    return Ok(false);
+                };
+                if quantile.is_none() {
+                    *quantile = Some(check_quantile(q)?);
+                }
+                // the value this row adds would be the APPROX_LIMIT-th
+                if values.len() + 1 >= APPROX_LIMIT {
+                    return Err(ExecError::Unsupported {
+                        what: format!("percentile_approx over {APPROX_LIMIT} or more values"),
+                    });
+                }
+                // the value goes in as a float; a NaN one is dropped (tdigest.h add)
+                let x = x as f32;
+                if !x.is_nan() {
+                    values.push(x);
+                }
             }
             Stats::Retention { events, .. } => {
                 for (i, d) in args.iter().enumerate() {
@@ -246,6 +321,12 @@ impl Stats {
                 values.extend_from_slice(rv);
             }
             (Stats::Retention { events, .. }, Stats::Retention { events: r, .. }) => *events |= r,
+            (Stats::Approx { quantile, values }, Stats::Approx { quantile: rq, values: rv }) => {
+                if quantile.is_none() {
+                    *quantile = *rq;
+                }
+                values.extend_from_slice(rv);
+            }
             // an empty side (interval 0) adds nothing (linear_histogram.h:87-98)
             (
                 Stats::Histogram { buckets, interval, offset },
@@ -317,6 +398,11 @@ impl Stats {
                 value / (1.0 / (1.0 - core_math::exp2(-1.0 / half_decay)))
             }),
             Stats::Bit { acc, .. } => Datum::Int(*acc),
+            // a NaN result is written as 0 (insert_default)
+            Stats::Approx { quantile, values } => {
+                let v = digest_quantile(values, quantile.unwrap_or(0.0));
+                Datum::Double(if v.is_nan() { 0.0 } else { f64::from(v) })
+            }
         }
     }
 
@@ -333,6 +419,20 @@ impl Stats {
                     }
                 }
                 put_f64s(out, values);
+            }
+            Stats::Approx { quantile, values } => {
+                out.push(5);
+                match quantile {
+                    None => out.push(0),
+                    Some(q) => {
+                        out.push(1);
+                        out.extend(q.to_bits().to_le_bytes());
+                    }
+                }
+                out.extend((values.len() as u64).to_le_bytes());
+                for v in values {
+                    out.extend(f64::from(*v).to_bits().to_le_bytes());
+                }
             }
             Stats::Retention { events, n } => {
                 out.push(1);
@@ -372,6 +472,13 @@ impl Stats {
                     levels,
                     values: r.f64s()?,
                     array,
+                }
+            }
+            5 => {
+                let quantile = if r.u8()? == 1 { Some(f64::from_bits(r.u64()?)) } else { None };
+                Stats::Approx {
+                    quantile,
+                    values: r.f64s()?.into_iter().map(|v| v as f32).collect(),
                 }
             }
             1 => {

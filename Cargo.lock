@@ -494,6 +494,7 @@ dependencies = [
  "doris-segment",
  "doris-storage",
  "doris-thrift",
+ "doris-wire",
  "flate2",
  "http",
  "http-body-util",

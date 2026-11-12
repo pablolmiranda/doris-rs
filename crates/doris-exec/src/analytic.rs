@@ -78,6 +78,10 @@ pub enum WindowKind {
     },
     /// `ntile(n)`: the frame is ignored, the bucket comes from the partition's size.
     Ntile(i64),
+    /// `percent_rank()`: the peer group's rank, from 0 to 1 (aggregate_function_window.h).
+    PercentRank,
+    /// `cume_dist()`: the share of the partition up to the end of the peer group.
+    CumeDist,
     /// An aggregate over the frame.
     Agg(AggSpec),
 }
@@ -125,6 +129,8 @@ impl WindowFn {
                 what: "an ntile bucket count that is not a positive literal".into(),
             })?),
             "rank" => WindowKind::Rank,
+            "percent_rank" => WindowKind::PercentRank,
+            "cume_dist" => WindowKind::CumeDist,
             "dense_rank" => WindowKind::DenseRank,
             "lead" | "lag" => {
                 let off = args
@@ -151,7 +157,7 @@ impl WindowFn {
                 }
             }
             // the M6 s7 aggregates' window semantics were not researched
-            f @ ("sum0" | "stddev" | "group_concat" | "ndv" | "window_funnel_v2") => {
+            f @ ("sum0" | "group_concat" | "ndv" | "window_funnel_v2") => {
                 return Err(ExecError::Unsupported {
                     what: format!("{f} over a window"),
                 })
@@ -166,6 +172,8 @@ impl WindowFn {
                 if spec.merge {
                     return Err(ExecError::BadRequest(format!("a merging {f} in a window")));
                 }
+                // its argument types are checked now, not at the first row
+                crate::aggregate::Accumulator::new(&spec)?;
                 WindowKind::Agg(spec)
             }
             other => {
@@ -188,6 +196,8 @@ impl WindowFn {
             WindowKind::First { .. } => "first_value",
             WindowKind::Last { .. } => "last_value",
             WindowKind::Ntile(_) => "ntile",
+            WindowKind::PercentRank => "percent_rank",
+            WindowKind::CumeDist => "cume_dist",
             WindowKind::Agg(a) => &a.function,
         }
     }
@@ -208,7 +218,7 @@ pub fn check_window(f: &WindowFn, frame: &Frame, ordered: bool) -> Result<(), Ex
 pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
     let ok = match f.kind {
         WindowKind::RowNumber => *frame == Frame::Rows { start: None, end: Some(0) },
-        WindowKind::Rank | WindowKind::DenseRank => *frame == Frame::RangeToCurrent,
+        WindowKind::Rank | WindowKind::DenseRank | WindowKind::PercentRank | WindowKind::CumeDist => *frame == Frame::RangeToCurrent,
         // lead and lag read their offset's row, which is the end of the frame the FE forces
         WindowKind::Lead(off) | WindowKind::Lag(off) => {
             let end = if matches!(f.kind, WindowKind::Lead(_)) { off } else { -off };
@@ -219,9 +229,12 @@ pub fn check_frame(f: &WindowFn, frame: &Frame) -> Result<(), ExecError> {
             }
             true
         }
-        // a set state: only over the whole partition, where it is the partition's distinct count
-        // (its sliding-frame semantics are not ported)
-        WindowKind::Agg(ref a) if a.function == "multi_distinct_count" => *frame == Frame::Partition,
+        // the distinct combinator clears only its set when it outputs, so in a frame C++ does not
+        // reset (a cumulative one) each output re-adds the values its step brought: refused there
+        // (multi_distinct_count is a plain set, right in every frame)
+        WindowKind::Agg(ref a) if matches!(a.function.as_str(), "multi_distinct_sum" | "multi_distinct_group_concat") => {
+            matches!(frame, Frame::Partition | Frame::Rows { start: Some(_), .. })
+        }
         _ => true,
     };
     if ok {
@@ -323,6 +336,12 @@ fn partition(
             WindowKind::RowNumber => Datum::Int((cur - ps + 1) as i128),
             WindowKind::Rank => Datum::Int((gs - ps + 1) as i128),
             WindowKind::DenseRank => Datum::Int((gi + 1) as i128),
+            // aggregate_function_window.h:203-334, over the peer group [gs, ge)
+            WindowKind::PercentRank => {
+                let n = pe - ps;
+                Datum::Double(if n <= 1 { 0.0 } else { (gs - ps) as f64 / (n - 1) as f64 })
+            }
+            WindowKind::CumeDist => Datum::Double((ge - ps) as f64 / (pe - ps) as f64),
             // WindowFunctionNTile::add_range_single_place
             WindowKind::Ntile(n) => {
                 // C++ sizes a partition from the rows received so far: past the first input block
