@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 pub mod build;
+pub mod group_commit;
 pub mod replays;
 pub mod stream_loads;
 pub mod values;

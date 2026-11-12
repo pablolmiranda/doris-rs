@@ -211,6 +211,7 @@
   "schema_table:session_variables",
   "schema_table:tables",
   "sink:DATA_STREAM_SINK",
+  "sink:GROUP_COMMIT_BLOCK_SINK",
   "sink:MULTI_CAST_DATA_STREAM_SINK",
   "sink:OLAP_TABLE_SINK",
   "sink:RESULT_SINK",

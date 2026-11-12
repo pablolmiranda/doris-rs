@@ -46,6 +46,13 @@ pub struct FakeFe {
     recorded: Mutex<Option<Recorded>>,
     loads: Mutex<Vec<LoadCall>>,
     script: Mutex<LoadScript>,
+    /// Answers to the next `streamLoadPut` calls, in order, before the script's.
+    puts: Mutex<std::collections::VecDeque<TStreamLoadPutResult>>,
+    /// Answers to the next `loadTxnCommit` calls, in order, before the script's.
+    commits: Mutex<std::collections::VecDeque<TLoadTxnCommitResult>>,
+    /// While true, `loadTxnCommit` calls are recorded, then held.
+    commits_held: Mutex<bool>,
+    commits_released: Condvar,
     finishes: Mutex<Vec<TFinishTaskRequest>>,
     reports: Mutex<Vec<TReportRequest>>,
     attempts: AtomicUsize,
@@ -92,6 +99,22 @@ impl FakeFe {
 
     pub fn load_calls(&self) -> Vec<LoadCall> {
         self.loads.lock().unwrap().clone()
+    }
+
+    /// Answers the next `streamLoadPut` calls with these, in order; then the script's answer.
+    pub fn queue_puts(&self, puts: Vec<TStreamLoadPutResult>) {
+        self.puts.lock().unwrap().extend(puts);
+    }
+
+    /// Answers the next `loadTxnCommit` calls with these, in order; then the script's answer.
+    pub fn queue_commits(&self, commits: Vec<TLoadTxnCommitResult>) {
+        self.commits.lock().unwrap().extend(commits);
+    }
+
+    /// Holds `loadTxnCommit` calls (after recording them) until released.
+    pub fn hold_commits(&self, hold: bool) {
+        *self.commits_held.lock().unwrap() = hold;
+        self.commits_released.notify_all();
     }
 
     pub fn script(&self, script: LoadScript) {
@@ -163,11 +186,18 @@ impl FeClient for FakeFe {
 
     fn stream_load_put(&self, req: TStreamLoadPutRequest) -> Result<TStreamLoadPutResult, FeError> {
         self.load(LoadCall::Put(req));
+        if let Some(r) = self.puts.lock().unwrap().pop_front() {
+            return Ok(r);
+        }
         self.script.lock().unwrap().put.clone().ok_or_else(unscripted)
     }
 
     fn load_txn_commit(&self, req: TLoadTxnCommitRequest) -> Result<TLoadTxnCommitResult, FeError> {
         self.load(LoadCall::Commit(req));
+        drop(self.commits_released.wait_while(self.commits_held.lock().unwrap(), |h| *h).unwrap());
+        if let Some(r) = self.commits.lock().unwrap().pop_front() {
+            return Ok(r);
+        }
         self.script.lock().unwrap().commit.clone().ok_or_else(unscripted)
     }
 

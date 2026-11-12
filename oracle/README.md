@@ -216,6 +216,15 @@ come from several instances with no ORDER BY, and C++ returns them in the order 
 finish. Run `m6-s7b3-full-1` ran the binary from before the final review; it failed only those
 two in the strict gate.
 
+After Milestone 6 story 7 batch 4 (group commit: `GROUP_COMMIT_BLOCK_SINK` for `INSERT … VALUES`
+in sync and async mode and for stream loads with the `group_commit` header; per-table queues
+that commit through the FE's internal load when their interval passes or their bytes reach the
+limit; run `m6-s7b4-full-2`, 2026-11-11): 656 eligible suites, all passing both gates; 709 Epic 1
+suites pass the out gate (542 of those that reach the BE) and 591 the strict gate (511). Each
+ratchet gains 5, among them `test_group_commit_stream_load_high_concurrency_async`, still blocked
+by its supplement need. `set_operation_exprid_reuse` passed strict in this run but stays off the
+strict ratchet (instance order). Queued rows are held in memory: there is no write-ahead log.
+
 The older directory-level gate also works against any target:
 
 ```

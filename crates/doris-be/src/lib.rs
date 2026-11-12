@@ -6,6 +6,7 @@ mod be;
 pub mod brpc;
 pub mod config;
 pub mod fe_client;
+pub mod group_commit;
 pub mod heartbeat;
 pub mod http;
 pub mod load;

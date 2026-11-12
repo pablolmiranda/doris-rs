@@ -402,3 +402,202 @@ fn empty_jsonpaths_match_columns_by_name() {
         assert_eq!(reply_value(&r.reply, key), reply_value(&plain.reply, key), "{key}: {}", r.reply);
     }
 }
+
+// group commit (`insert_group_commit_with_large_data`'s stream load)
+
+mod group_commit {
+    use super::*;
+    use doris_fixtures::group_commit::{sequence, Msg, LARGE_DATA};
+    use doris_thrift::gen::frontend_service::{TLoadTxnCommitResult, TStreamLoadPutRequest};
+    use doris_thrift::gen::status::{TStatus, TStatusCode};
+    use doris_thrift::gen::types::TTaskType;
+    use std::time::{Duration, Instant};
+
+    struct Recorded {
+        headers: BTreeMap<String, String>,
+        body: Vec<u8>,
+        put: TStreamLoadPutRequest,
+        reply: String,
+        svc: LoadService,
+        fe: Arc<FakeFe>,
+        _tmp: tempfile::TempDir,
+    }
+
+    /// The recorded load, ready to run: the suite's tablets, the FE's two put replies.
+    fn recorded() -> Recorded {
+        let seq = sequence(LARGE_DATA);
+        let h = seq.iter().position(|m| matches!(m, Msg::HttpRequest { .. })).unwrap();
+        let Msg::HttpRequest { headers, body } = seq[h].clone() else {
+            unreachable!()
+        };
+        let put = seq[..h]
+            .iter()
+            .rev()
+            .find_map(|m| if let Msg::Put(p) = m { Some(p.clone()) } else { None })
+            .unwrap();
+        let replies: Vec<_> = seq[h..]
+            .iter()
+            .filter_map(|m| if let Msg::PutReply(r) = m { Some(r.clone()) } else { None })
+            .take(2)
+            .collect();
+        let reply = seq
+            .iter()
+            .find_map(|m| if let Msg::HttpResponse(r) = m { Some(r.clone()) } else { None })
+            .unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut mgr = TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap();
+        for m in &seq {
+            if let Msg::Create(tasks) = m {
+                for t in tasks.iter().filter(|t| t.task_type == TTaskType::CREATE) {
+                    mgr.create_tablet(t.create_tablet_req.as_ref().unwrap()).unwrap();
+                }
+            }
+        }
+        let fe = Arc::new(FakeFe::default());
+        fe.queue_puts(replies);
+        fe.script(LoadScript {
+            commit: Some(TLoadTxnCommitResult {
+                status: TStatus {
+                    status_code: TStatusCode::OK,
+                    error_msgs: None,
+                },
+            }),
+            ..Default::default()
+        });
+        let master = MasterInfo::new("127.0.0.1");
+        master.set_backend_id_for_tests(put.backend_id.unwrap());
+        let svc = LoadService::new(Arc::new(Mutex::new(mgr)), fe.clone(), master, 8040);
+        Recorded {
+            headers,
+            body,
+            put,
+            reply,
+            svc,
+            fe,
+            _tmp: tmp,
+        }
+    }
+
+    impl Recorded {
+        fn load(&self, headers: BTreeMap<String, String>) -> String {
+            self.svc.stream_load(StreamLoadRequest {
+                db: self.put.db.clone(),
+                table: self.put.tbl.clone(),
+                headers,
+                body: Ok(self.body.clone()),
+                client_ip: "127.0.0.1".into(),
+            })
+        }
+    }
+
+    #[test]
+    fn group_commit_stream_load_skips_begin() {
+        let r = recorded();
+        let got = r.load(r.headers.clone());
+        let calls = r.fe.load_calls();
+        assert!(!calls.iter().any(|c| matches!(c, LoadCall::Begin(_))), "{calls:?}");
+        let LoadCall::Put(mut put) = calls[0].clone() else { panic!("{calls:?}") };
+        put.load_id = r.put.load_id.clone();
+        assert_eq!(put, r.put);
+        // the reply: the recorded keys in order, and values but for times, the label and load id
+        let (got_keys, mut got_values) = reply_shape(&got);
+        let (want_keys, mut want_values) = reply_shape(&r.reply);
+        assert_eq!(got_keys, want_keys, "{got}");
+        let label = got_values["Label"].trim_matches('"').to_string();
+        assert!(label.starts_with("group_commit_"), "{got}");
+        for k in ["Label", "LoadId"] {
+            got_values.remove(k);
+            want_values.remove(k);
+        }
+        assert_eq!(got_values, want_values, "{got}");
+        // the queue (interval 40 ms) commits the rows
+        let end = Instant::now() + Duration::from_secs(5);
+        while !r.fe.load_calls().iter().any(|c| matches!(c, LoadCall::Commit(c) if c.txn_id == 9062)) {
+            assert!(Instant::now() < end, "no commit");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn the_load_id_is_the_puts() {
+        let r = recorded();
+        let got = r.load(r.headers.clone());
+        let LoadCall::Put(put) = r.fe.load_calls()[0].clone() else { panic!() };
+        let id = format!("\"{:016x}-{:016x}\"", put.load_id.hi as u64, put.load_id.lo as u64);
+        assert_eq!(reply_shape(&got).1["LoadId"], id);
+    }
+
+    #[test]
+    fn group_commit_header_errors() {
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("group_commit".into(), "bad".into());
+        let got = r.load(h);
+        assert!(
+            got.contains("[INVALID_ARGUMENT]group_commit can only be [async_mode, sync_mode, off_mode]"),
+            "{got}"
+        );
+        let mut h = r.headers.clone();
+        h.insert("label".into(), "l1".into());
+        let got = r.load(h);
+        assert!(
+            got.contains("[INVALID_ARGUMENT]label and group_commit can't be set at the same time"),
+            "{got}"
+        );
+        assert!(r.fe.load_calls().is_empty());
+    }
+
+    /// The header asked for group commit but the FE planned an ordinary table sink: refused by
+    /// name, not loaded into a queue.
+    #[test]
+    fn a_group_commit_load_planned_without_its_sink_is_refused() {
+        let r = recorded();
+        let seq = sequence(LARGE_DATA);
+        let h = seq.iter().position(|m| matches!(m, Msg::HttpRequest { .. })).unwrap();
+        let mut reply = seq[h..].iter().find_map(|m| if let Msg::PutReply(r) = m { Some(r.clone()) } else { None }).unwrap();
+        let sink = reply.pipeline_params.as_mut().unwrap().fragment.as_mut().unwrap().output_sink.as_mut().unwrap();
+        sink.type_ = doris_thrift::gen::data_sinks::TDataSinkType::OLAP_TABLE_SINK;
+        sink.olap_table_sink.as_mut().unwrap().group_commit_mode = None;
+        // the recorded replies were queued by `recorded`: start over with this one
+        let fe = Arc::new(FakeFe::default());
+        fe.queue_puts(vec![reply]);
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = LoadService::new(Arc::new(Mutex::new(TabletManager::open(vec![DataDir::open(tmp.path(), "127.0.0.1").unwrap()], TabletOptions::default()).unwrap())), fe.clone(), MasterInfo::new("127.0.0.1"), 8040);
+        let got = svc.stream_load(StreamLoadRequest { db: r.put.db.clone(), table: r.put.tbl.clone(), headers: r.headers.clone(), body: Ok(r.body.clone()), client_ip: "127.0.0.1".into() });
+        assert!(got.contains("\"Status\": \"Fail\""), "{got}");
+        assert!(got.contains("GROUP_COMMIT_BLOCK_SINK"), "{got}");
+        assert_eq!(fe.load_calls().len(), 1, "{:?}", fe.load_calls());
+    }
+
+    /// `_can_group_commit`: an empty header is no header; a Content-Length that is not a
+    /// number, or is negative, fails.
+    #[test]
+    fn group_commit_header_edges() {
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("group_commit".into(), "".into());
+        let _ = r.load(h);
+        assert!(matches!(r.fe.load_calls().first(), Some(LoadCall::Begin(_))), "{:?}", r.fe.load_calls());
+
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("content-length".into(), "abc".into());
+        let got = r.load(h);
+        assert!(got.contains("[INVALID_ARGUMENT]invalid HTTP header CONTENT_LENGTH=abc: stoll"), "{got}");
+        let mut h = r.headers.clone();
+        h.insert("content-length".into(), "-5".into());
+        let got = r.load(h);
+        assert!(got.contains("[INVALID_ARGUMENT]This stream load content length <0 (-5), please check your content length."), "{got}");
+        assert!(r.fe.load_calls().is_empty());
+    }
+
+    #[test]
+    fn off_mode_loads_as_before() {
+        let r = recorded();
+        let mut h = r.headers.clone();
+        h.insert("group_commit".into(), "OFF_MODE".into());
+        let _ = r.load(h);
+        // a transaction of its own (the FE here answers no begin)
+        assert!(matches!(r.fe.load_calls().first(), Some(LoadCall::Begin(_))), "{:?}", r.fe.load_calls());
+    }
+}

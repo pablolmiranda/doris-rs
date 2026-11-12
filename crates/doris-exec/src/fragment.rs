@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use doris_proto::doris::PExecPlanFragmentRequest;
-use doris_thrift::gen::data_sinks::{TDataSinkType, TOlapTableSink};
+use doris_thrift::gen::data_sinks::{TDataSinkType, TGroupCommitMode, TOlapTableSink};
 use doris_thrift::gen::descriptors::{TColumn, TSlotDescriptor};
 use doris_thrift::gen::exprs::TExpr;
 use doris_thrift::gen::palo_internal_service::{TPipelineFragmentParams, TPipelineFragmentParamsList};
@@ -43,6 +43,9 @@ pub enum WritePlan {
     Stream,
     /// `INSERT … SELECT`: rows come from the fragment's plan, run by the query pipeline.
     Select,
+    /// A group commit's internal load (`GROUP_COMMIT_SCAN_NODE`, from the FE's put reply): its
+    /// rows are those the group-commit loads queued.
+    GroupCommit,
 }
 
 /// A write fragment, ready to run.
@@ -61,6 +64,9 @@ pub struct WriteFragment {
     pub insert_strict: bool,
     /// `load_zero_tolerance` (`TQueryGlobals`): too many error rows stop the load.
     pub zero_tolerance: bool,
+    /// A GROUP_COMMIT_BLOCK_SINK's mode: its rows go to a group commit queue, not to a
+    /// transaction of their own.
+    pub group_commit: Option<TGroupCommitMode>,
     dest: Vec<ColType>,
 }
 
@@ -117,6 +123,7 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
     let plan = match nodes {
         [n] if n.node_type == TPlanNodeType::UNION_NODE => WritePlan::Values,
         [n] if n.node_type == TPlanNodeType::FILE_SCAN_NODE => WritePlan::Stream,
+        [n] if n.node_type == TPlanNodeType::GROUP_COMMIT_SCAN_NODE => WritePlan::GroupCommit,
         [] => return Err(ExecError::BadRequest("an empty plan".into())),
         _ => {
             let other = nodes.iter().find(|n| !matches!(n.node_type, TPlanNodeType::UNION_NODE | TPlanNodeType::FILE_SCAN_NODE));
@@ -143,14 +150,16 @@ pub fn plan_write(params: &TPipelineFragmentParams) -> Result<WriteFragment, Exe
 }
 
 /// Whether a request is a write the load service runs: one fragment of one node, constant rows
-/// (`INSERT … VALUES`) or a file scan, into an OLAP_TABLE_SINK. Every other plan with a table
-/// sink (`INSERT … SELECT`) is a query's.
+/// (`INSERT … VALUES`) or a file scan, into an OLAP_TABLE_SINK or a GROUP_COMMIT_BLOCK_SINK.
+/// Every other plan with a table sink (`INSERT … SELECT`) is a query's.
 pub fn is_load_plan(list: &TPipelineFragmentParamsList) -> bool {
     let params = list.params_list.as_deref().unwrap_or_default();
     let [p] = params else { return false };
     let Some(f) = p.fragment.as_ref() else { return false };
     let nodes = f.plan.as_ref().map(|p| p.nodes.as_slice()).unwrap_or_default();
-    f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::OLAP_TABLE_SINK)
+    f.output_sink
+        .as_ref()
+        .is_some_and(|s| matches!(s.type_, TDataSinkType::OLAP_TABLE_SINK | TDataSinkType::GROUP_COMMIT_BLOCK_SINK))
         && matches!(nodes, [n] if matches!(n.node_type, TPlanNodeType::UNION_NODE | TPlanNodeType::FILE_SCAN_NODE))
 }
 
@@ -159,15 +168,37 @@ pub fn is_load_plan(list: &TPipelineFragmentParamsList) -> bool {
 pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<WriteFragment, ExecError> {
     let fragment = params.fragment.as_ref().ok_or_else(|| ExecError::BadRequest("no fragment".into()))?;
     let sink = fragment.output_sink.as_ref().ok_or_else(|| ExecError::BadRequest("no sink".into()))?;
-    if sink.type_ != TDataSinkType::OLAP_TABLE_SINK {
-        return Err(ExecError::Unsupported { what: format!("data sink type {}", sink.type_.0) });
-    }
-    let sink = sink.olap_table_sink.clone().ok_or_else(|| ExecError::BadRequest("OLAP_TABLE_SINK without its params".into()))?;
+    // a GROUP_COMMIT_BLOCK_SINK carries its params in `olap_table_sink`
+    let is_group_commit = match sink.type_ {
+        TDataSinkType::OLAP_TABLE_SINK => false,
+        TDataSinkType::GROUP_COMMIT_BLOCK_SINK => true,
+        other => {
+            return Err(ExecError::Unsupported {
+                what: format!("data sink type {}", other.0),
+            })
+        }
+    };
+    let sink = sink
+        .olap_table_sink
+        .clone()
+        .ok_or_else(|| ExecError::BadRequest("OLAP_TABLE_SINK without its params".into()))?;
     if sink.schema.is_partial_update == Some(true) {
         return Err(ExecError::Unsupported { what: "partial update".into() });
     }
-    if sink.group_commit_mode.is_some() {
-        return Err(ExecError::Unsupported { what: "group commit".into() });
+    let group_commit = match (is_group_commit, sink.group_commit_mode) {
+        (false, None) => None,
+        (true, Some(m @ (TGroupCommitMode::SYNC_MODE | TGroupCommitMode::ASYNC_MODE))) => Some(m),
+        (true, m) => return Err(ExecError::BadRequest(format!("a group commit sink of mode {:?}", m.map(|m| m.0)))),
+        (false, Some(_)) => {
+            return Err(ExecError::Unsupported {
+                what: "group commit through an OLAP_TABLE_SINK".into(),
+            })
+        }
+    };
+    if group_commit.is_some() && plan == WritePlan::Select {
+        return Err(ExecError::Unsupported {
+            what: "a group commit of a query's rows".into(),
+        });
     }
     if sink.partition.enable_automatic_partition == Some(true) {
         return Err(ExecError::Unsupported { what: "automatic partitions".into() });
@@ -204,6 +235,7 @@ pub fn table_sink(params: &TPipelineFragmentParams, plan: WritePlan) -> Result<W
         backend_id: params.backend_id.unwrap_or(0),
         insert_strict: params.query_options.as_ref().and_then(|q| q.enable_insert_strict).unwrap_or(true),
         zero_tolerance: params.query_globals.as_ref().and_then(|g| g.load_zero_tolerance).unwrap_or(false),
+        group_commit,
         sink,
         dest,
     };
