@@ -127,6 +127,26 @@ fn ordered(plan: &TPipelineFragmentParamsList) -> bool {
         })
 }
 
+/// Whether the result fragment's top node is an exchange taking a LIMIT of rows it does not
+/// sort, from more than one sender: which rows it keeps is the senders' arrival order (C++'s
+/// varied across reference runs: the marks mask them), so such a reply is compared by its row
+/// count, as the readback check compares `*_head_unordered`. With one sender the rows are fixed.
+fn head_unordered(plan: &TPipelineFragmentParamsList) -> bool {
+    use doris_thrift::gen::data_sinks::TDataSinkType;
+    !ordered(plan)
+        && plan.params_list.iter().flatten().any(|p| {
+            let Some(f) = p.fragment.as_ref().filter(|f| f.output_sink.as_ref().is_some_and(|s| s.type_ == TDataSinkType::RESULT_SINK)) else {
+                return false;
+            };
+            let keeps_order = |n: &&doris_thrift::gen::plan_nodes::TPlanNode| {
+                matches!(n.node_type, TPlanNodeType::MATERIALIZATION_NODE | TPlanNodeType::SELECT_NODE) && n.num_children == 1
+            };
+            f.plan.iter().flat_map(|pl| pl.nodes.iter().find(|n| !keeps_order(n))).any(|n| {
+                n.node_type == TPlanNodeType::EXCHANGE_NODE && n.limit >= 0 && p.per_exch_num_senders.get(&n.node_id).is_some_and(|s| *s > 1)
+            })
+        })
+}
+
 fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
     let mut out = Vec::new();
     for p in plan.params_list.iter().flatten() {
@@ -136,13 +156,18 @@ fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
     out
 }
 
-fn compare(suite: &str, query: usize, ordered: bool, got: &Outcome, want: &Outcome) -> Option<Mismatch> {
+fn compare(suite: &str, query: usize, ordered: bool, by_count: bool, got: &Outcome, want: &Outcome) -> Option<Mismatch> {
     let m = |what: String| Some(Mismatch { suite: suite.to_string(), query, what });
     if let Some(e) = &want.error {
         return if got.error.is_some() { None } else { m(format!("the reference failed ({e}); doris-rs returned {} rows", got.rows.len())) };
     }
     if let Some(e) = &got.error {
         return m(format!("doris-rs failed: {e}"));
+    }
+    if by_count {
+        // the reference may have stopped early (LIMIT_REACH): then it has at most our rows
+        let ok = if want.eos { got.rows.len() == want.rows.len() } else { got.rows.len() >= want.rows.len() };
+        return if ok { None } else { m(format!("{} rows, the reference {} (compared by count)", got.rows.len(), want.rows.len())) };
     }
     let (mut g, mut w) = (got.rows.clone(), want.rows.clone());
     if !ordered {
@@ -167,7 +192,7 @@ fn compare(suite: &str, query: usize, ordered: bool, got: &Outcome, want: &Outco
             }))
         };
         if !ok {
-            return m(format!("the reference's first {} rows are not in doris-rs's {}", w.len(), g.len()));
+            return m(format!("the reference's first {} rows are not in doris-rs's {}: got {:?}, want {:?}", w.len(), g.len(), text(&g), text(&w)));
         }
     }
     None
@@ -268,7 +293,7 @@ impl Driver<'_> {
         let reference = outcome(&want);
         // REPLAY_EXACT: compare every query's row order too (the strict gate compares it)
         let exact = std::env::var_os("REPLAY_EXACT").is_some();
-        let m = compare(&r.suite, query, exact || ordered(&plan), &got, &reference);
+        let m = compare(&r.suite, query, exact || ordered(&plan), !exact && head_unordered(&plan), &got, &reference);
         self.out.extend(m);
     }
 }
@@ -722,14 +747,110 @@ fn scalar_functions_match_the_reference() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
+/// The M6 story 6 replays (joins, ASSERT_NUM_ROWS, CASE, `nullable`), as in the fixtures test.
+const JOINS: [&str; 55] = [
+    "correctness_p0.test_bucket_join_with_colocate_table.test_bucket_join_with_colocate_table",
+    "correctness_p0.test_bugfix_block_reuse.test_bugfix_block_reuse",
+    "correctness_p0.test_colocate_join_with_different_tablets.test_colocate_join_with_different_tablets",
+    "correctness_p0.test_column_prune_in_hash_join.test_column_prune_in_hash_join",
+    "correctness_p0.test_distinct_streaming_agg_local_shuffle.test_distinct_streaming_agg_local_shuffle",
+    "correctness_p0.test_having_subquery_with_nullliteral.test_having_subquery_with_nullliteral",
+    "correctness_p0.test_join_with_projection.test_join_with_projection",
+    "correctness_p0.test_join_without_condition.test_join_without_condition",
+    "correctness_p0.test_null_aware_left_anti_join.test_null_aware_left_anti_join",
+    "correctness_p0.test_outer_join_with_cross_join.test_outer_join_with_cross_join",
+    "correctness_p0.test_outer_join_with_empty_node.test_outer_join_with_empty_node",
+    "correctness_p0.test_outer_join_with_order_by.test_outer_join_with_order_by",
+    "correctness_p0.test_outer_join_with_subquery.test_outer_join_with_subquery",
+    "correctness_p0.test_rf_in_list_not_erased_by_scope_range.test_rf_in_list_not_erased_by_scope_range",
+    "correctness_p0.test_runtime_filter.test_runtime_filter",
+    "correctness_p0.test_runtime_filter_outer_join_nullable_side.test_runtime_filter_outer_join_nullable_side",
+    "datatype_p0.decimalv3.test_decimalv3_cast_to_string.test_decimalv3_cast_to_string",
+    "datatype_p0.decimalv3.test_predicate_with_implicit_cast.test_predicate_with_implicit_cast",
+    "nereids_p0.colocate.test_multi_cast_colocate.test_multi_cast_colocate",
+    "nereids_p0.colocate.test_set_operation_colocate.test_set_operation_colocate",
+    "nereids_p0.cte.costbasedrewrite_producer.costbasedrewrite_producer.costbasedrewrite_producer",
+    "nereids_p0.cte.subquery_in_cte.subquery_in_cte.subquery_in_cte",
+    "nereids_p0.eager_agg.scalar_agg_pushdown.scalar_agg_pushdown",
+    "nereids_p0.join.asof.test_asof_join_large_bucket.test_asof_join_large_bucket",
+    "nereids_p0.join.outer_join_with_empty_node.nereids_outer_join_with_empty_node",
+    "nereids_p0.join.test_join2.test_join2",
+    "nereids_p0.join.test_join3.test_join3",
+    "nereids_p0.join.test_join4.test_join4",
+    "nereids_p0.join.test_join_local_shuffle.test_join_local_shuffle",
+    "nereids_p0.join.test_limit_join.test_limit_join",
+    "nereids_p0.join.test_mark_join.test_mark_join",
+    "nereids_p0.join.test_nestedloop_outer_join.test_nestedloop_outer_join",
+    "nereids_p0.join.test_nestedloop_semi_anti_join.test_nestedloop_semi_anti_join",
+    "nereids_p0.join.test_other_conjuncts_nullable.test_other_conjuncts_nullable",
+    "nereids_p0.join.test_runtimefilter_on_datev2.test_runtimefilter_on_datev2",
+    "nereids_p0.join.test_runtimefilter_on_decimal.test_runtimefilter_on_decimal",
+    "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
+    "nereids_p0.runtime_filter.expr-target.expr-target",
+    "nereids_p0.runtime_filter.set_operator_in_filter.set_operator_in_filter",
+    "nereids_p0.sql_functions.test_in_expr.test_in_expr",
+    "nereids_p0.subquery.test_subquery_in_simple_case.test_subquery_in_simple_case",
+    "query_p0.join.eliminate_const_join_condition.eliminate_const_join_condition",
+    "query_p0.join.rqg.doris8317.doris8317.doris8317",
+    "query_p0.join.rqg.doris9100.doris9100.doris9100",
+    "query_p0.join.rqg.rqg4265.rqg4265.rqg4265",
+    "query_p0.join.test_full_join_batch_size.test_full_join_batch_size",
+    "query_p0.join.test_hash_join_probe_early_eos.test_hash_join_probe_early_eos",
+    "query_p0.join.test_join3.test_join3",
+    "query_p0.join.test_join4.test_join4",
+    "query_p0.join.test_join6.test_join6",
+    "query_p0.join.test_join_result_count.test_join_result_count",
+    "query_p0.join.test_left_join_batch_size.test_left_join_batch_size",
+    "query_p0.join.test_nestedloop_semi_anti_join.test_nestedloop_semi_anti_join",
+    "query_p0.join.test_runtimefilter_2.test_runtimefilter_2",
+    "query_p0.sql_functions.window_functions.test_qualify_query.test_qualify_query",
+];
+
+#[test]
+fn joins_match_the_reference() {
+    let mut bad = Vec::new();
+    for s in JOINS {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
 /// The replays whose result queries sort somewhere (a window's sort, a sort under a parallel
 /// result sink) but not at the result fragment's top: `ordered` compares their rows unordered.
 /// Listed so that a change to the set shows in review.
 const COMPARED_UNORDERED: &[&str] = &[
+    // a scalar subquery's ORDER BY … LIMIT 1 under a join
+    "correctness_p0.test_join_with_projection.test_join_with_projection",
     "correctness_p0.test_no_grouping_window.test_no_grouping_window",
     "nereids_p0.aggregate.agg_window_project.agg_window_project",
+    // a subquery's ORDER BY … OFFSET under a join
+    "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
+    // QUALIFY's window sort, with no ORDER BY on the query
+    "query_p0.sql_functions.window_functions.test_qualify_query.test_qualify_query",
     "query_p0.sql_functions.window_functions.test_window_float_sliding_frame.test_window_float_sliding_frame",
 ];
+
+/// The replays with a result query whose top exchange takes a LIMIT of unsorted rows from several
+/// senders: `head_unordered` compares those replies by row count. Listed so that a change to the set shows in review.
+const COMPARED_BY_COUNT: &[&str] = &[
+    // `GROUP BY t2.c1 LIMIT 1 OFFSET 1` (no ORDER BY) gathered from 10 instances: the group kept
+    // is whichever instance's arrives first; the reference varied too (exchanges 29 and 31)
+    "nereids_p0.join.test_limit_join.test_limit_join",
+];
+
+#[test]
+fn replays_compared_by_count_are_listed() {
+    let mut got: Vec<String> = replays::all()
+        .iter()
+        .filter(|r| r.queries().iter().filter(|q| replays::is_result_query(q)).any(head_unordered))
+        .map(|r| r.suite.clone())
+        .collect();
+    got.sort();
+    assert_eq!(got, COMPARED_BY_COUNT, "{got:#?}");
+}
 
 #[test]
 fn replays_compared_unordered_are_listed() {

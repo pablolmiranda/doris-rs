@@ -15,6 +15,8 @@ pub mod exchange;
 pub mod expr;
 pub mod file_scan;
 pub mod fragment;
+pub mod hash_join;
+pub mod nested_loop;
 pub mod partition_sort;
 pub mod pipeline;
 pub mod query;

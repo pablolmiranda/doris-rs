@@ -6,7 +6,10 @@
 //!   (`F/multiply.cpp:428-496`); a quotient is the raw dividend over the raw divisor, truncated,
 //!   the FE having scaled the dividend so the scales line up (`F/divide.cpp:433-440`).
 //!
-//! Only the signatures the FE plans for this story's suites are accepted (`arithmetic_supported`).
+//! - decimal add and subtract work on the raw values at the result's scale, checked against its
+//!   width and precision (`binary_arithmetic.h:346-369`).
+//!
+//! Only the signatures the FE plans for the eligible suites are accepted (`arithmetic_supported`).
 use doris_segment::writer::Datum;
 use doris_thrift::gen::status::TStatusCode;
 use doris_thrift::gen::types::TPrimitiveType as T;
@@ -71,6 +74,8 @@ pub fn arithmetic_supported(op: &str, args: &[ColType], to: &ColType) -> bool {
             // the rescale multiplier 10^(sa+sb-sr) and the bound 10^p - 1 must fit i128
             "multiply" => a.scale + b.scale >= to.scale && a.scale + b.scale - to.scale <= 38 && to.precision <= 38,
             "divide" => a.scale - b.scale == to.scale,
+            // the FE casts both sides to the result's scale; C++ adds the raw values
+            "add" | "subtract" => a.scale == to.scale && b.scale == to.scale && to.precision <= 38,
             _ => false,
         };
     }
@@ -159,9 +164,41 @@ fn overflow(ta: &ColType, x: i128, tb: &ColType, y: i128, result: String, to: &C
     }
 }
 
+/// C++'s type name for a decimal result's primitive type (`type_to_string`).
+fn decimal_type_name(t: &ColType) -> &'static str {
+    match t.ptype {
+        T::DECIMAL32 => "DECIMAL32",
+        T::DECIMAL64 => "DECIMAL64",
+        _ => "DECIMAL128I",
+    }
+}
+
 fn decimal_op(op: &str, a: (&ColType, i128), b: (&ColType, i128), to: &ColType) -> Result<Datum, ExecError> {
     let ((ta, x), (tb, y)) = (a, b);
     let bits = decimal_bits(to).ok_or_else(|| unsupported(op))?;
+    if matches!(op, "add" | "subtract") {
+        // both sides cast to the result's native type, then checked against its width and
+        // precision; the message says "add" for both and prints the result's type for its value
+        // (`binary_arithmetic.h:346-369`)
+        let (xa, yb) = (wrap(x, bits), wrap(y, bits));
+        let r = if op == "add" { xa.checked_add(yb) } else { xa.checked_sub(yb) };
+        let max = 10i128.pow(to.precision as u32) - 1;
+        return match r.filter(|r| wrap(*r, bits) == *r && (-max..=max).contains(r)) {
+            Some(r) => Ok(Datum::Int(r)),
+            None => Err(ExecError::Coded {
+                code: TStatusCode::INTERNAL_ERROR.0,
+                name: "ARITHMETIC_OVERFLOW_ERRROR",
+                msg: format!(
+                    "Arithmetic overflow: {} add {} = {}, result type: Decimal({}, {})",
+                    decimal_text(x, ta.scale),
+                    decimal_text(y, tb.scale),
+                    decimal_type_name(to),
+                    to.precision,
+                    to.scale
+                ),
+            }),
+        };
+    }
     if op == "divide" {
         if y == 0 {
             return Ok(Datum::Null);

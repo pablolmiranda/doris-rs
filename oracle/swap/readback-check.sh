@@ -4,8 +4,8 @@
 # does, over the C++ BE's writes and over its own (M5).
 #   1. a fresh swap cluster with the C++ BE: the M4 load dataset (load-dataset.sql: INSERT ...
 #      VALUES and CSV/JSON stream loads), then the readback queries -> replies R1. The C++ BE
-#      stops, doris-rs starts on its root and runs the queries but the join -> RS1 (round b)
-#   2. a fresh swap cluster with doris-rs: the same loads, then the queries but the join -> RS2
+#      stops, doris-rs starts on its root and runs the queries -> RS1 (round b)
+#   2. a fresh swap cluster with doris-rs: the same loads, then the queries -> RS2
 #      (round c); doris-rs stops, the C++ BE starts on its root, reports every tablet (no DROP or
 #      CLONE, nothing deleted from FE metadata), and runs the same queries -> replies R2
 #   3. R1 == R2 (round a), R1 == RS1 and R1 == RS2 for every query they ran (those named
@@ -27,11 +27,6 @@ trap cleanup EXIT
 
 dataset() { python3 "${ORACLE}/swap/run_dataset.py" load "${ORACLE}/swap/load-dataset.sql" "${ORACLE}/swap/load-dataset"; }
 queries() { python3 "${ORACLE}/swap/run_dataset.py" query "${ORACLE}/swap/readback-queries.sql" "$1"; }
-# The queries doris-rs answers: all but the join (M6).
-rs_queries() {
-  grep -v '^join:' "${ORACLE}/swap/readback-queries.sql" > "${SWAP_LOGS%/*}/rs-queries.sql"
-  python3 "${ORACLE}/swap/run_dataset.py" query "${SWAP_LOGS%/*}/rs-queries.sql" "$1"
-}
 
 cargo build --release -p doris-rs --manifest-path "${REPO}/Cargo.toml" >&2
 rm -rf "${OUT}" && mkdir -p "${OUT}"
@@ -47,7 +42,7 @@ say "R1: $(ls "${OUT}/R1" | wc -l | tr -d ' ') replies from the C++ BE's own loa
 : > "${SWAP_LOGS}/rs.err"
 start_rs
 sleep "${REPORTS}"
-rs_queries "${OUT}/RS1" || fail "doris-rs could not answer the queries over the C++ BE's root (see ${SWAP_LOGS}/rs.err)"
+queries "${OUT}/RS1" || fail "doris-rs could not answer the queries over the C++ BE's root (see ${SWAP_LOGS}/rs.err)"
 stop_rs
 say "RS1: $(ls "${OUT}/RS1" | wc -l | tr -d ' ') replies from doris-rs over the C++ BE's loads"
 
@@ -57,7 +52,7 @@ swap_up
 start_rs
 dataset || fail "doris-rs could not load the dataset (see ${SWAP_LOGS}/rs.err)"
 sleep "${REPORTS}"
-rs_queries "${OUT}/RS2" || fail "doris-rs could not answer the queries over its own loads (see ${SWAP_LOGS}/rs.err)"
+queries "${OUT}/RS2" || fail "doris-rs could not answer the queries over its own loads (see ${SWAP_LOGS}/rs.err)"
 stop_rs
 mark_fe_log
 start_cpp
@@ -95,9 +90,9 @@ done
 compare a "${OUT}/R2"
 compare b "${OUT}/RS1"
 compare c "${OUT}/RS2"
-# doris-rs answers every query but the join, in both rounds
+# doris-rs answers every query, the join included (M6), in both rounds
 for round in b:RS1 c:RS2; do
-  [[ "$(ls "${OUT}/${round#*:}" | wc -l)" -eq "$(($(ls "${OUT}/R1" | wc -l) - 1))" ]] ||
+  [[ "$(ls "${OUT}/${round#*:}" | wc -l)" -eq "$(ls "${OUT}/R1" | wc -l)" ]] ||
     fail "${round%%:*}: doris-rs answered $(ls "${OUT}/${round#*:}" | wc -l | tr -d ' ') queries"
 done
 say "the C++ BE read doris-rs's writes as its own, and doris-rs answered as the C++ BE"

@@ -218,3 +218,105 @@ fn scalar_replays_hold_their_functions() {
         assert!(seen.contains(f), "no replay calls {f}");
     }
 }
+
+/// The M6 story 6 replays: suites the joins (with ASSERT_NUM_ROWS, CASE and `nullable`) make eligible.
+/// No replayable suite has a RIGHT_OUTER, RIGHT_SEMI or RIGHT_ANTI hash join: those are in
+/// suites that do not extract, which the full run checks.
+const JOINS: [&str; 55] = [
+    "correctness_p0.test_bucket_join_with_colocate_table.test_bucket_join_with_colocate_table",
+    "correctness_p0.test_bugfix_block_reuse.test_bugfix_block_reuse",
+    "correctness_p0.test_colocate_join_with_different_tablets.test_colocate_join_with_different_tablets",
+    "correctness_p0.test_column_prune_in_hash_join.test_column_prune_in_hash_join",
+    "correctness_p0.test_distinct_streaming_agg_local_shuffle.test_distinct_streaming_agg_local_shuffle",
+    "correctness_p0.test_having_subquery_with_nullliteral.test_having_subquery_with_nullliteral",
+    "correctness_p0.test_join_with_projection.test_join_with_projection",
+    "correctness_p0.test_join_without_condition.test_join_without_condition",
+    "correctness_p0.test_null_aware_left_anti_join.test_null_aware_left_anti_join",
+    "correctness_p0.test_outer_join_with_cross_join.test_outer_join_with_cross_join",
+    "correctness_p0.test_outer_join_with_empty_node.test_outer_join_with_empty_node",
+    "correctness_p0.test_outer_join_with_order_by.test_outer_join_with_order_by",
+    "correctness_p0.test_outer_join_with_subquery.test_outer_join_with_subquery",
+    "correctness_p0.test_rf_in_list_not_erased_by_scope_range.test_rf_in_list_not_erased_by_scope_range",
+    "correctness_p0.test_runtime_filter.test_runtime_filter",
+    "correctness_p0.test_runtime_filter_outer_join_nullable_side.test_runtime_filter_outer_join_nullable_side",
+    "datatype_p0.decimalv3.test_decimalv3_cast_to_string.test_decimalv3_cast_to_string",
+    "datatype_p0.decimalv3.test_predicate_with_implicit_cast.test_predicate_with_implicit_cast",
+    "nereids_p0.colocate.test_multi_cast_colocate.test_multi_cast_colocate",
+    "nereids_p0.colocate.test_set_operation_colocate.test_set_operation_colocate",
+    "nereids_p0.cte.costbasedrewrite_producer.costbasedrewrite_producer.costbasedrewrite_producer",
+    "nereids_p0.cte.subquery_in_cte.subquery_in_cte.subquery_in_cte",
+    "nereids_p0.eager_agg.scalar_agg_pushdown.scalar_agg_pushdown",
+    "nereids_p0.join.asof.test_asof_join_large_bucket.test_asof_join_large_bucket",
+    "nereids_p0.join.outer_join_with_empty_node.nereids_outer_join_with_empty_node",
+    "nereids_p0.join.test_join2.test_join2",
+    "nereids_p0.join.test_join3.test_join3",
+    "nereids_p0.join.test_join4.test_join4",
+    "nereids_p0.join.test_join_local_shuffle.test_join_local_shuffle",
+    "nereids_p0.join.test_limit_join.test_limit_join",
+    "nereids_p0.join.test_mark_join.test_mark_join",
+    "nereids_p0.join.test_nestedloop_outer_join.test_nestedloop_outer_join",
+    "nereids_p0.join.test_nestedloop_semi_anti_join.test_nestedloop_semi_anti_join",
+    "nereids_p0.join.test_other_conjuncts_nullable.test_other_conjuncts_nullable",
+    "nereids_p0.join.test_runtimefilter_on_datev2.test_runtimefilter_on_datev2",
+    "nereids_p0.join.test_runtimefilter_on_decimal.test_runtimefilter_on_decimal",
+    "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
+    "nereids_p0.runtime_filter.expr-target.expr-target",
+    "nereids_p0.runtime_filter.set_operator_in_filter.set_operator_in_filter",
+    "nereids_p0.sql_functions.test_in_expr.test_in_expr",
+    "nereids_p0.subquery.test_subquery_in_simple_case.test_subquery_in_simple_case",
+    "query_p0.join.eliminate_const_join_condition.eliminate_const_join_condition",
+    "query_p0.join.rqg.doris8317.doris8317.doris8317",
+    "query_p0.join.rqg.doris9100.doris9100.doris9100",
+    "query_p0.join.rqg.rqg4265.rqg4265.rqg4265",
+    "query_p0.join.test_full_join_batch_size.test_full_join_batch_size",
+    "query_p0.join.test_hash_join_probe_early_eos.test_hash_join_probe_early_eos",
+    "query_p0.join.test_join3.test_join3",
+    "query_p0.join.test_join4.test_join4",
+    "query_p0.join.test_join6.test_join6",
+    "query_p0.join.test_join_result_count.test_join_result_count",
+    "query_p0.join.test_left_join_batch_size.test_left_join_batch_size",
+    "query_p0.join.test_nestedloop_semi_anti_join.test_nestedloop_semi_anti_join",
+    "query_p0.join.test_runtimefilter_2.test_runtimefilter_2",
+    "query_p0.sql_functions.window_functions.test_qualify_query.test_qualify_query",
+];
+
+#[test]
+fn join_replays_hold_their_nodes() {
+    use doris_thrift::gen::plan_nodes::{TJoinOp, TPlanNodeType as P};
+    let mut ops = BTreeSet::new();
+    let (mut cross, mut assert_rows, mut bucket_shuffle) = (false, false, false);
+    for s in JOINS {
+        for q in replays::load(s).queries() {
+            for f in q.params_list.iter().flatten().filter_map(|p| p.fragment.as_ref()) {
+                let sink = f.output_sink.as_ref().and_then(|s| s.stream_sink.as_ref());
+                bucket_shuffle |= sink.is_some_and(|s| s.output_partition.type_ == doris_thrift::gen::partitions::TPartitionType::BUCKET_SHFFULE_HASH_PARTITIONED);
+                for n in f.plan.iter().flat_map(|p| &p.nodes) {
+                    match n.node_type {
+                        P::HASH_JOIN_NODE => {
+                            ops.insert(n.hash_join_node.as_ref().expect("hash_join_node").join_op.0);
+                        }
+                        P::CROSS_JOIN_NODE => cross = true,
+                        P::ASSERT_NUM_ROWS_NODE => assert_rows = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    for op in [
+        TJoinOp::INNER_JOIN,
+        TJoinOp::LEFT_OUTER_JOIN,
+        TJoinOp::FULL_OUTER_JOIN,
+        TJoinOp::LEFT_SEMI_JOIN,
+        TJoinOp::LEFT_ANTI_JOIN,
+        TJoinOp::NULL_AWARE_LEFT_ANTI_JOIN,
+        TJoinOp::NULL_AWARE_LEFT_SEMI_JOIN,
+        TJoinOp::ASOF_LEFT_INNER_JOIN,
+        TJoinOp::ASOF_LEFT_OUTER_JOIN,
+    ] {
+        assert!(ops.contains(&op.0), "no replay has a hash join {op:?} (ops seen: {ops:?})");
+    }
+    assert!(cross, "no replay has a CROSS_JOIN_NODE");
+    assert!(assert_rows, "no replay has an ASSERT_NUM_ROWS_NODE");
+    assert!(bucket_shuffle, "no replay has a bucket-shuffle sink");
+}

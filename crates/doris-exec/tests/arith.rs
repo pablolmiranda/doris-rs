@@ -196,8 +196,12 @@ fn refuses_unlisted_signatures() {
     assert!(!arithmetic_supported("multiply", &[d256.clone(), d256.clone()], &d256));
     assert!(!arithmetic_supported("add", &[big.clone(), dbl.clone()], &dbl));
     assert!(!arithmetic_supported("divide", &[big.clone(), big.clone()], &big));
-    // decimal add/subtract/mod are not in this story's suites
-    assert!(!arithmetic_supported("add", &[d128.clone(), d128.clone()], &d128));
+    // decimal add/subtract only at the result's scale (the FE casts both sides to it); decimal
+    // and DOUBLE mod are not in any eligible suite
+    assert!(arithmetic_supported("add", &[d128.clone(), d128.clone()], &d128));
+    assert!(arithmetic_supported("subtract", &[d128.clone(), d128.clone()], &d128));
+    assert!(!arithmetic_supported("add", &[ty(T::DECIMAL128I, 38, 2), d128.clone()], &d128));
+    assert!(!arithmetic_supported("mod", &[d128.clone(), d128.clone()], &d128));
     assert!(!arithmetic_supported("mod", &[dbl.clone(), dbl.clone()], &dbl));
 }
 
@@ -218,4 +222,24 @@ fn decimal_scales_past_38_digits_are_refused() {
     assert!(!arithmetic_supported("multiply", &[d(38, 38), d(38, 38)], &d(38, 0)));
     assert!(!arithmetic_supported("multiply", &[d(38, 2), d(38, 2)], &d(39, 4)));
     assert!(arithmetic_supported("multiply", &[d(38, 20), d(38, 18)], &d(38, 0)));
+}
+
+#[test]
+fn decimal_add_subtract_at_one_scale() {
+    // (38,18): raw values at the result's scale, no rescale (`binary_arithmetic.h:346-369`)
+    let t = ty(T::DECIMAL128I, 38, 18);
+    let e18 = 10i128.pow(18);
+    assert_eq!(arithmetic("subtract", (&t, &ints(&[3 * e18 / 2])), (&t, &ints(&[e18 / 4])), &t).unwrap(), ints(&[5 * e18 / 4]));
+    assert_eq!(arithmetic("add", (&t, &ints(&[-e18])), (&t, &ints(&[e18 / 4])), &t).unwrap(), ints(&[-3 * e18 / 4]));
+    assert_eq!(arithmetic("add", (&t, &[Datum::Null]), (&t, &ints(&[1])), &t).unwrap(), vec![Datum::Null]);
+    // past 10^p - 1: C++'s message says "add" for subtract too, and prints the result's type
+    // where the value would go
+    let small = ty(T::DECIMAL32, 3, 1);
+    let err = arithmetic("subtract", (&small, &ints(&[-999])), (&small, &ints(&[1])), &small).unwrap_err();
+    assert_eq!(err.to_string(), "Arithmetic overflow: -99.9 add 0.1 = DECIMAL32, result type: Decimal(3, 1)");
+    assert!(matches!(err, ExecError::Coded { name: "ARITHMETIC_OVERFLOW_ERRROR", .. }), "{err:?}");
+    // past the native width
+    let wide = ty(T::DECIMAL128I, 38, 0);
+    let err = arithmetic("add", (&wide, &ints(&[i128::MAX])), (&wide, &ints(&[1])), &wide).unwrap_err();
+    assert!(err.to_string().starts_with("Arithmetic overflow: "), "{err}");
 }

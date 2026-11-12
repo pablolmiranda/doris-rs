@@ -190,6 +190,18 @@ fn render(c: &ColType, d: &Datum) -> String {
     }
 }
 
+/// The bucket hash of a row's values (`RawValue::zlib_crc32` chained from 0), as a load
+/// buckets a row and a bucket-shuffle sink routes one.
+pub fn bucket_hash(values: &[(ColType, Datum)]) -> u32 {
+    let mut hash = 0u32;
+    for (c, d) in values {
+        let mut h = crc32fast::Hasher::new_with_initial(hash);
+        h.update(&hash_bytes(c, d));
+        hash = h.finalize();
+    }
+    hash
+}
+
 /// The bytes `RawValue::zlib_crc32` hashes for a value of the column's type.
 fn hash_bytes(c: &ColType, d: &Datum) -> Vec<u8> {
     use TPrimitiveType as T;

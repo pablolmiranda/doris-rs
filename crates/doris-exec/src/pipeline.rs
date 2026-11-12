@@ -50,6 +50,8 @@ struct Instance<'a> {
     fragment: &'a FragmentPlan,
     instance: &'a InstancePlan,
     ctx: &'a ExecCtx<'a>,
+    /// Exchange node → its chunks, received before the tree runs (shared broadcast builds).
+    prefetched: std::cell::RefCell<std::collections::HashMap<i32, Vec<Chunk>>>,
 }
 
 fn qid(plan: &QueryPlan) -> (i64, i64) {
@@ -77,14 +79,34 @@ pub fn project(exprs: &[TExpr], input: &Chunk) -> Result<Block, ExecError> {
 /// Runs one instance of one fragment of the query to its end.
 pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &ExecCtx) -> Result<(), ExecError> {
     let f = &plan.fragments[fragment];
+    // a merged fragment (`RunMode::Merged`): the first instance scans every instance's ranges
+    let merged;
+    let me_plan = if f.mode == crate::query::RunMode::Merged && instance == 0 {
+        let mut all = f.instances[0].clone();
+        all.scan_ranges.clear();
+        for i in &f.instances {
+            for (node, ranges) in &i.scan_ranges {
+                all.scan_ranges.entry(*node).or_default().extend(ranges.iter().cloned());
+            }
+        }
+        merged = all;
+        &merged
+    } else {
+        &f.instances[instance]
+    };
     let me = Instance {
         plan,
         at: (fragment, instance),
         fragment: f,
-        instance: &f.instances[instance],
+        instance: me_plan,
         ctx,
+        prefetched: Default::default(),
     };
     crate::clock::with_clock(&plan.clock, || {
+        if f.mode == crate::query::RunMode::Merged && instance > 0 {
+            return me.idle();
+        }
+        me.prefetch_shared_builds()?;
         let out = me.node(&f.root)?;
         me.sink(out)
     })
@@ -106,6 +128,9 @@ impl Instance<'_> {
             P::SELECT_NODE => self.child(t, 0)?,
             P::UNION_NODE => self.constants(t)?,
             P::INTERSECT_NODE | P::EXCEPT_NODE => self.set_op(t)?,
+            P::HASH_JOIN_NODE => self.hash_join(t)?,
+            P::CROSS_JOIN_NODE => self.cross_join(t)?,
+            P::ASSERT_NUM_ROWS_NODE => self.assert_num_rows(t)?,
             P::EXCHANGE_NODE => self.exchange(t)?,
             P::SORT_NODE => self.sort(t)?,
             P::AGGREGATION_NODE => self.aggregate(t)?,
@@ -302,6 +327,178 @@ impl Instance<'_> {
         Ok(out)
     }
 
+    /// The slots of a join's intermediate tuples, in order.
+    fn intermediate(&self, tuples: Option<&Vec<i32>>, name: &str) -> Result<Vec<i32>, ExecError> {
+        let tuples = tuples.filter(|t| !t.is_empty()).ok_or_else(|| ExecError::BadRequest(format!("a {name} without its intermediate tuples")))?;
+        let mut slots = Vec::new();
+        for t in tuples {
+            slots.extend_from_slice(self.plan.desc.tuple_slots(*t)?);
+        }
+        Ok(slots)
+    }
+
+    /// HASH_JOIN_NODE: the build child (1) first; for the ops C++ short-circuits on an empty build
+    /// side the probe child is never run (`hashjoin_build_sink.cpp:318-339`). Then the join, in
+    /// the intermediate tuple's layout.
+    fn hash_join(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::hash_join::{hash_join, join_op, HashJoin, JoinOp, Side};
+        let n = &t.node;
+        let h = n.hash_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("HASH_JOIN_NODE without its parameters".into()))?;
+        let op = join_op(h.join_op).ok_or_else(|| ExecError::Unsupported { what: format!("a HASH_JOIN_NODE {:?}", h.join_op) })?;
+        let mark = h.is_mark == Some(true);
+        let slots = self.intermediate(h.vintermediate_tuple_id_list.as_ref(), "HASH_JOIN_NODE")?;
+        let build = self.child(t, 1)?;
+        let short_circuit = matches!(op, JoinOp::Inner | JoinOp::LeftSemi | JoinOp::RightOuter | JoinOp::RightSemi | JoinOp::RightAnti | JoinOp::AsofLeftInner);
+        if build.block.is_empty() && short_circuit && !mark {
+            return self.chunk_of(Vec::new(), &slots);
+        }
+        // an ASOF join's value is the last key
+        let asof = match (&h.match_condition, matches!(op, JoinOp::AsofLeftInner | JoinOp::AsofLeftOuter)) {
+            (Some(m), true) => Some(crate::hash_join::asof_condition(m)?),
+            (None, true) => return Err(ExecError::BadRequest("an ASOF join without its match condition".into())),
+            _ => None,
+        };
+        let keys = |c: &Chunk, left: bool| -> Result<Vec<Vec<Datum>>, ExecError> {
+            let map = slot_map(&c.slots);
+            let mut cols = Vec::with_capacity(h.eq_join_conjuncts.len() + 1);
+            for e in &h.eq_join_conjuncts {
+                cols.push(eval_column(if left { &e.left } else { &e.right }, &c.block, &map)?.1);
+            }
+            if let Some((_, (p, b))) = &asof {
+                cols.push(eval_column(if left { p } else { b }, &c.block, &map)?.1);
+            }
+            Ok((0..c.block.len()).map(|r| cols.iter().map(|col| col[r].clone()).collect()).collect())
+        };
+        let null_safe: Vec<bool> = h.eq_join_conjuncts.iter().map(|e| e.opcode == Some(doris_thrift::gen::opcodes::TExprOpcode::EQ_FOR_NULL)).collect();
+        let build_keys = keys(&build, false)?;
+        // NULL_AWARE_LEFT_ANTI with a NULL build key leaves no row, and C++ does not run the probe
+        // child (`_short_circuit_for_null_in_build_side`, hashjoin_build_sink.cpp:323-331)
+        let null_key = |k: &Vec<Datum>| k.iter().zip(null_safe.iter().chain(std::iter::repeat(&false))).any(|(d, safe)| *d == Datum::Null && !safe);
+        if op == JoinOp::NullAwareLeftAnti && !mark && build_keys.iter().any(null_key) {
+            return self.chunk_of(Vec::new(), &slots);
+        }
+        let probe = self.child(t, 0)?;
+        let (pw, bw) = (probe.slots.len(), build.slots.len());
+        let has_other = h.other_join_conjuncts.as_ref().is_some_and(|c| !c.is_empty());
+        let has_mark_conj = h.mark_join_conjuncts.as_ref().is_some_and(|c| !c.is_empty());
+        let layout = Layout::new(slots.len(), pw, bw, mark, Layout::sides(op, has_other, mark, has_mark_conj))?;
+        let conjuncts = |exprs: &[TExpr], rows: &[Vec<Datum>]| self.joined_conjuncts(exprs, rows, &layout, &slots, mark);
+        let other_exprs = h.other_join_conjuncts.clone().unwrap_or_default();
+        let mark_exprs = h.mark_join_conjuncts.clone().unwrap_or_default();
+        let other = |rows: &[Vec<Datum>]| conjuncts(&other_exprs, rows);
+        let mark_conj = |rows: &[Vec<Datum>]| conjuncts(&mark_exprs, rows);
+        let j = HashJoin {
+            op,
+            null_safe,
+            mark,
+            other: (!other_exprs.is_empty()).then_some(&other as &crate::hash_join::Cond),
+            mark_conj: (!mark_exprs.is_empty()).then_some(&mark_conj as &crate::hash_join::Cond),
+            asof: asof.as_ref().map(|(how, _)| (*how, h.eq_join_conjuncts.len())),
+        };
+        let probe_side = Side { keys: keys(&probe, true)?, rows: probe.block.rows, width: pw };
+        let build_side = Side { keys: build_keys, rows: build.block.rows, width: bw };
+        let rows = hash_join(&j, probe_side, build_side)?;
+        self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
+    }
+
+    /// A join's conjuncts over joined rows (probe columns, build columns), three-valued; the rows
+    /// are laid out as the intermediate tuple, whose mark slot (if any) reads NULL.
+    fn joined_conjuncts(&self, exprs: &[TExpr], rows: &[Vec<Datum>], layout: &Layout, slots: &[i32], mark: bool) -> Result<Vec<Option<bool>>, ExecError> {
+        let rows = rows
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if mark {
+                    r.push(Datum::Null);
+                }
+                layout.apply(&r)
+            })
+            .collect();
+        let chunk = self.chunk_of(rows, slots)?;
+        let map = slot_map(&chunk.slots);
+        let mut out = vec![Some(true); chunk.block.len()];
+        for e in exprs {
+            let (_, v) = eval_column(e, &chunk.block, &map)?;
+            for (o, d) in out.iter_mut().zip(&v) {
+                *o = and3(*o, truth(d));
+            }
+        }
+        Ok(out)
+    }
+
+    /// CROSS_JOIN_NODE: the build child (1), then the probe child, then the nested-loop join over
+    /// `join_conjuncts` (or the legacy `vjoin_conjunct`); `mark_join_conjuncts` and
+    /// `is_output_left_side_only` are ignored, as C++ ignores them.
+    fn cross_join(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        use crate::hash_join::{join_op, Side};
+        let n = &t.node;
+        let j = n.nested_loop_join_node.as_ref().ok_or_else(|| ExecError::BadRequest("CROSS_JOIN_NODE without its parameters".into()))?;
+        let op = join_op(j.join_op).ok_or_else(|| ExecError::Unsupported { what: format!("a CROSS_JOIN_NODE {:?}", j.join_op) })?;
+        let mark = j.is_mark == Some(true);
+        let slots = self.intermediate(j.vintermediate_tuple_id_list.as_ref(), "CROSS_JOIN_NODE")?;
+        let build = self.child(t, 1)?;
+        let probe = self.child(t, 0)?;
+        let (pw, bw) = (probe.slots.len(), build.slots.len());
+        // the nested-loop join keeps both sides (`nested_loop_join_probe_operator.cpp:407-408`)
+        let layout = Layout::new(slots.len(), pw, bw, mark, Layout::sides(op, true, mark, true))?;
+        let exprs: Vec<TExpr> = match (&j.join_conjuncts, &j.vjoin_conjunct) {
+            (Some(c), _) if !c.is_empty() => c.clone(),
+            (_, Some(v)) => vec![v.clone()],
+            _ => Vec::new(),
+        };
+        let cond = |rows: &[Vec<Datum>]| self.joined_conjuncts(&exprs, rows, &layout, &slots, mark);
+        let rows = crate::nested_loop::nested_loop(
+            op,
+            mark,
+            (!exprs.is_empty()).then_some(&cond as &crate::hash_join::Cond),
+            Side { rows: probe.block.rows, keys: Vec::new(), width: pw },
+            Side { rows: build.block.rows, keys: Vec::new(), width: bw },
+        )?;
+        self.chunk_of(rows.iter().map(|r| layout.apply(r)).collect(), &slots)
+    }
+
+    /// ASSERT_NUM_ROWS_NODE: its child's rows, or one all-NULL row (EQ 1 over none); with
+    /// `should_convert_output_to_nullable` every column becomes nullable.
+    fn assert_num_rows(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
+        let n = &t.node;
+        let a = n.assert_num_rows_node.as_ref().ok_or_else(|| ExecError::BadRequest("ASSERT_NUM_ROWS_NODE without its parameters".into()))?;
+        let child = self.child(t, 0)?;
+        // the child's columns, by position, as the node's own tuple's slots
+        let mut slots = Vec::new();
+        for tuple in &n.row_tuples {
+            slots.extend_from_slice(self.plan.desc.tuple_slots(*tuple)?);
+        }
+        if slots.len() != child.slots.len() {
+            return Err(ExecError::BadRequest(format!(
+                "an ASSERT_NUM_ROWS_NODE of {} slots over {} columns",
+                slots.len(),
+                child.slots.len()
+            )));
+        }
+        let mut rows = child.block.rows;
+        if crate::nested_loop::assert_rows(n.node_id, a, rows.len())? {
+            rows = vec![vec![Datum::Null; slots.len()]];
+        }
+        let mut out = self.chunk_of(rows, &slots)?;
+        // C++ makes the columns nullable for a block with rows (and for the NULL row), so no rows
+        // keep their types (`assert_num_rows_operator.cpp:76-97`)
+        if a.should_convert_output_to_nullable == Some(true) && !out.block.is_empty() {
+            for ty in &mut out.block.types {
+                ty.nullable = true;
+            }
+        }
+        Ok(out)
+    }
+
+    /// Rows typed as the given slots.
+    fn chunk_of(&self, rows: Vec<Vec<Datum>>, slots: &[i32]) -> Result<Chunk, ExecError> {
+        let types = slots.iter().map(|s| self.plan.desc.slot(*s).map(|s| s.ty.clone())).collect::<Result<_, _>>()?;
+        Ok(Chunk {
+            block: self.typed(Block { types, rows }, slots)?,
+            slots: slots.to_vec(),
+        })
+    }
+
     fn exchange(&self, t: &PlanTree) -> Result<Chunk, ExecError> {
         let n = &t.node;
         let e = n
@@ -314,7 +511,7 @@ impl Instance<'_> {
             instance: (self.instance.id.hi, self.instance.id.lo),
             node: n.node_id,
         };
-        let chunks = self.ctx.exchanges.receive(&key, senders)?;
+        let chunks = self.receive_exchange(n.node_id, &key, senders)?;
         let tuple = *e
             .input_row_tuples
             .first()
@@ -335,6 +532,88 @@ impl Instance<'_> {
                 out.block.rows.drain(..offset.min(out.block.rows.len()));
                 Ok(out)
             }
+        }
+    }
+
+    /// An exchange's chunks. A shared broadcast build (`query::shared_build`) reaches only the
+    /// instances the plan sends it to; each of those forwards a copy to the instances of its
+    /// fragment that no sender names, which take it as their one sender.
+    fn receive_exchange(&self, node: i32, key: &ExchangeKey, senders: usize) -> Result<Vec<Chunk>, ExecError> {
+        use crate::query::{plan_senders, shared_build};
+        if let Some(chunks) = self.prefetched.borrow_mut().remove(&node) {
+            return Ok(chunks);
+        }
+        let shared = self.fragment.mode == crate::query::RunMode::Each && shared_build(self.plan, self.at.0, node);
+        if shared && plan_senders(self.plan, node, &self.instance.id) == 0 {
+            return self.ctx.exchanges.receive(key, 1);
+        }
+        self.ctx.exchanges.receive(key, senders)
+    }
+
+    /// The shared broadcast builds this instance receives, taken before its tree runs and
+    /// forwarded to the instances of its fragment that no sender names: they must get them even
+    /// when this instance never reaches the join (an empty build side above it skips its probe
+    /// child).
+    fn prefetch_shared_builds(&self) -> Result<(), ExecError> {
+        use crate::query::{plan_senders, shared_build};
+        if self.fragment.mode != crate::query::RunMode::Each {
+            return Ok(());
+        }
+        for n in self.fragment.root.nodes().into_iter().filter(|n| n.node_type == P::EXCHANGE_NODE) {
+            let node = n.node_id;
+            if !shared_build(self.plan, self.at.0, node) || plan_senders(self.plan, node, &self.instance.id) == 0 {
+                continue;
+            }
+            let senders = self.fragment.per_exch_num_senders.get(&node).copied().unwrap_or(0).max(0) as usize;
+            let key = ExchangeKey { query: qid(self.plan), instance: (self.instance.id.hi, self.instance.id.lo), node };
+            let chunks = self.ctx.exchanges.receive(&key, senders)?;
+            if self.at.1 == 0 {
+                for other in self.fragment.instances.iter().filter(|i| plan_senders(self.plan, node, &i.id) == 0) {
+                    let to = ExchangeKey { query: key.query, instance: (other.id.hi, other.id.lo), node };
+                    for c in &chunks {
+                        self.ctx.exchanges.send(&to, c.clone());
+                    }
+                    self.ctx.exchanges.end(&to);
+                }
+            }
+            self.prefetched.borrow_mut().insert(node, chunks);
+        }
+        Ok(())
+    }
+
+    /// A merged fragment's other instances: no rows, but every stream they feed still gets their
+    /// end, and a result or table sink their empty output.
+    fn idle(&self) -> Result<(), ExecError> {
+        let f = self.fragment;
+        let q = qid(self.plan);
+        let end = |s: &TDataStreamSink, destinations: &[TPlanFragmentDestination]| {
+            for key in stream_keys(q, s, destinations) {
+                self.ctx.exchanges.end(&key);
+            }
+        };
+        match f.sink.type_ {
+            TDataSinkType::DATA_STREAM_SINK => {
+                let s = f.sink.stream_sink.as_ref().ok_or_else(|| ExecError::BadRequest("DATA_STREAM_SINK without its parameters".into()))?;
+                end(s, &f.destinations);
+                Ok(())
+            }
+            TDataSinkType::MULTI_CAST_DATA_STREAM_SINK => {
+                let m = f
+                    .sink
+                    .multi_cast_stream_sink
+                    .as_ref()
+                    .ok_or_else(|| ExecError::BadRequest("MULTI_CAST_DATA_STREAM_SINK without its parameters".into()))?;
+                let (sinks, destinations) = multicast_consumers(m)?;
+                for (s, d) in sinks.iter().zip(destinations) {
+                    end(s, d);
+                }
+                Ok(())
+            }
+            TDataSinkType::RESULT_SINK => (self.ctx.result)(empty_of(&f.output_exprs)?),
+            TDataSinkType::OLAP_TABLE_SINK => (self.ctx.table)(self.at.0, self.at.1, empty_of(&f.output_exprs)?),
+            other => Err(ExecError::Unsupported {
+                what: crate::query::sink_type_name(other),
+            }),
         }
     }
 
@@ -592,11 +871,49 @@ pub fn send_stream(
         .map(|d| ExchangeKey { query, instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id })
         .collect();
     let parts = partition(out, &s.output_partition, keys.len(), sender)?;
-    for (key, part) in keys.iter().zip(parts) {
-        exchanges.send(key, part);
-        exchanges.end(key);
+    // a bucket-shuffle list names an instance once per bucket it scans: each instance gets its
+    // buckets' rows in one send and one end; an unscanned bucket's (-1, -1) rows are dropped
+    let mut merged: Vec<(ExchangeKey, Chunk)> = Vec::new();
+    for (key, part) in keys.into_iter().zip(parts) {
+        if key.instance == (-1, -1) {
+            continue;
+        }
+        match merged.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, c)) => c.block.rows.extend(part.block.rows),
+            None => merged.push((key, part)),
+        }
+    }
+    for (key, part) in merged {
+        exchanges.send(&key, part);
+        exchanges.end(&key);
     }
     Ok(())
+}
+
+/// The receivers a stream sink sends to, each once, without an unscanned bucket's (-1, -1).
+fn stream_keys(query: (i64, i64), s: &TDataStreamSink, destinations: &[TPlanFragmentDestination]) -> Vec<ExchangeKey> {
+    let mut keys: Vec<ExchangeKey> = Vec::new();
+    for d in destinations {
+        let key = ExchangeKey { query, instance: (d.fragment_instance_id.hi, d.fragment_instance_id.lo), node: s.dest_node_id };
+        if key.instance != (-1, -1) && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
+/// No rows, in the types of a sink's output exprs.
+fn empty_of(exprs: &[TExpr]) -> Result<Block, ExecError> {
+    let types = exprs
+        .iter()
+        .map(|e| {
+            e.nodes
+                .first()
+                .and_then(|n| crate::value::ColType::from_type_desc("", &n.type_, true))
+                .ok_or_else(|| ExecError::BadRequest("an output expr of a nested type".into()))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Block::new(types))
 }
 
 /// Values in the types of a tuple's slots.
@@ -727,7 +1044,26 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
             }
             Ok(parts)
         }
-        T::RANDOM => {
+        T::BUCKET_SHFFULE_HASH_PARTITIONED => {
+            // destination i is the instance scanning bucket i; a constant column is not hashed
+            // (`partitioner.cpp:31-66`)
+            let exprs: Vec<TExpr> = p
+                .partition_exprs
+                .iter()
+                .flatten()
+                .filter(|e| e.nodes.iter().any(|n| n.node_type == doris_thrift::gen::exprs::TExprNodeType::SLOT_REF))
+                .cloned()
+                .collect();
+            let values = project(&exprs, &out)?;
+            let mut parts: Vec<Chunk> = (0..n).map(|_| empty()).collect();
+            for (row, key) in out.block.rows.into_iter().zip(values.rows) {
+                let typed: Vec<(crate::value::ColType, Datum)> = values.types.iter().cloned().zip(key).collect();
+                parts[(crate::route::bucket_hash(&typed) % n as u32) as usize].block.rows.push(row);
+            }
+            Ok(parts)
+        }
+        // the receiving table sink routes each row itself, so any split is right
+        T::RANDOM | T::OLAP_TABLE_SINK_HASH_PARTITIONED => {
             let mut parts: Vec<Chunk> = (0..n).map(|_| empty()).collect();
             for (i, row) in out.block.rows.into_iter().enumerate() {
                 parts[(i + sender.max(0) as usize) % n].block.rows.push(row);
@@ -735,5 +1071,87 @@ fn partition(out: Chunk, p: &doris_thrift::gen::partitions::TDataPartition, n: u
             Ok(parts)
         }
         other => Err(ExecError::Unsupported { what: format!("a DATA_STREAM_SINK partitioned as {other:?}") }),
+    }
+}
+
+/// Which sides of a joined row a join's intermediate tuple holds, by its op
+/// (`hashjoin_probe_operator.cpp:618-621`, FE `PhysicalPlanTranslator.java:1895-1915`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sides {
+    /// Right semi and anti joins without other (or mark) conjuncts: the build side only.
+    Build,
+    /// Left semi, anti and null-aware joins: the probe side, or both sides when they have
+    /// other conjuncts.
+    ProbeOrBoth,
+    Both,
+}
+
+/// Where a joined row (probe columns, build columns, then the mark) goes in the join's
+/// intermediate tuple: the sides its op holds, each with the mark if any
+/// (`join_probe_operator.cpp:54-62`).
+#[derive(Debug, Clone, Copy)]
+pub struct Layout {
+    probe: usize,
+    build: usize,
+    keep_probe: bool,
+    keep_build: bool,
+}
+
+impl Layout {
+    /// The sides a join of `op` holds.
+    pub fn sides(op: crate::hash_join::JoinOp, has_other: bool, mark: bool, has_mark_conj: bool) -> Sides {
+        use crate::hash_join::JoinOp::*;
+        match op {
+            RightSemi | RightAnti if !has_other && (!mark || !has_mark_conj) => Sides::Build,
+            LeftSemi | LeftAnti | NullAwareLeftAnti | NullAwareLeftSemi => Sides::ProbeOrBoth,
+            _ => Sides::Both,
+        }
+    }
+
+    pub fn new(slots: usize, probe: usize, build: usize, mark: bool, sides: Sides) -> Result<Layout, ExecError> {
+        let m = usize::from(mark);
+        let (keep_probe, keep_build) = match sides {
+            Sides::Build if slots == build + m => (false, true),
+            Sides::ProbeOrBoth if slots == probe + m => (true, false),
+            Sides::ProbeOrBoth | Sides::Both if slots == probe + build + m => (true, true),
+            _ => {
+                return Err(ExecError::BadRequest(format!(
+                    "a join's intermediate tuple has {slots} slots for {probe} probe and {build} build columns ({sides:?})"
+                )))
+            }
+        };
+        Ok(Layout { probe, build, keep_probe, keep_build })
+    }
+
+    pub fn apply(&self, row: &[Datum]) -> Vec<Datum> {
+        let mut out = Vec::with_capacity(row.len());
+        if self.keep_probe {
+            out.extend_from_slice(&row[..self.probe]);
+        }
+        if self.keep_build {
+            out.extend_from_slice(&row[self.probe..self.probe + self.build]);
+        }
+        out.extend_from_slice(&row[self.probe + self.build..]);
+        out
+    }
+}
+
+fn truth(d: &Datum) -> Option<bool> {
+    match d {
+        Datum::Null => None,
+        Datum::Bool(b) => Some(*b),
+        Datum::Int(i) => Some(*i != 0),
+        Datum::Float(f) => Some(*f != 0.0),
+        Datum::Double(f) => Some(*f != 0.0),
+        Datum::Bytes(_) => Some(true),
+    }
+}
+
+/// Three-valued AND.
+fn and3(a: Option<bool>, b: Option<bool>) -> Option<bool> {
+    match (a, b) {
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (Some(true), Some(true)) => Some(true),
+        _ => None,
     }
 }
