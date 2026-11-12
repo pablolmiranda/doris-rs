@@ -896,3 +896,122 @@ fn a_values_insert_sent_to_prepare_is_refused() {
     assert_eq!(st.status_code, 3, "{st:?}");
     assert!(st.error_msgs.iter().any(|e| e.contains("INSERT … VALUES")), "{st:?}");
 }
+
+/// An ARITHMETIC_EXPR, as the FE sends it: a call node of that type.
+fn arith(name: &str, ret: doris_thrift::gen::types::TTypeDesc, args: Vec<doris_thrift::gen::exprs::TExpr>) -> doris_thrift::gen::exprs::TExpr {
+    let mut e = doris_fixtures::build::call(name, ret, args);
+    e.nodes[0].node_type = doris_thrift::gen::exprs::TExprNodeType::ARITHMETIC_EXPR;
+    e
+}
+
+/// The scan of `columns()` keeping rows where k + 1 > 0, under `check_overflow_for_decimal`.
+fn arithmetic_scan(q: &TUniqueId, tablet: i64, version: i64, check_overflow: bool) -> TPipelineFragmentParams {
+    use doris_fixtures::build::{binary, int, slot};
+    let mut p = prepared(scan_query(q.clone(), tablet, version, &columns(), 4064));
+    p.query_options.as_mut().unwrap().check_overflow_for_decimal = Some(check_overflow);
+    let i = ty(T::INT);
+    let plus = arith("add", i.clone(), vec![slot(0, i.clone()), int(1, i.clone())]);
+    p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0].conjuncts = Some(vec![binary("gt", plus, int(0, i))]);
+    p
+}
+
+#[test]
+fn arithmetic_with_unchecked_decimal_overflow_is_refused() {
+    let env = env();
+    let v = table(&env, 1101, kv(2));
+    let q = qid(11);
+    let r = env.query.prepare(&exec_request(vec![arithmetic_scan(&q, 1101, v, false)]));
+    assert_ne!(r.status.status_code, 0);
+    assert!(r.status.error_msgs.iter().any(|m| m.contains("arithmetic with check_overflow_for_decimal off")), "{:?}", r.status);
+    // checked, as the FE always sends it: the same plan runs
+    let q = qid(12);
+    let r = env.query.prepare(&exec_request(vec![arithmetic_scan(&q, 1101, v, true)]));
+    assert_eq!(r.status.status_code, 0, "{:?}", r.status);
+    start(&env.query, &q);
+    assert_eq!(rows(&fetch_all(&env.query, &q)).len(), 2);
+}
+
+#[test]
+fn intermediate_projections_need_their_tuples() {
+    use doris_fixtures::build::slot;
+    let env = env();
+    let v = table(&env, 1102, kv(2));
+    let q = qid(13);
+    let mut p = prepared(scan_query(q.clone(), 1102, v, &columns(), 4064));
+    p.fragment.as_mut().unwrap().plan.as_mut().unwrap().nodes[0].intermediate_projections_list = Some(vec![vec![slot(0, ty(T::INT))]]);
+    let r = env.query.prepare(&exec_request(vec![p]));
+    assert_ne!(r.status.status_code, 0);
+    assert!(r.status.error_msgs.iter().any(|m| m.contains("intermediate projections")), "{:?}", r.status);
+}
+
+/// `columns()`'s scan with extra slots: (id, tuple, name, type, nullable); new tuples are added.
+fn with_slots(p: &mut TPipelineFragmentParams, slots: &[(i32, i32, &str, doris_thrift::gen::types::TTypeDesc, bool)]) {
+    let desc = p.desc_tbl.as_mut().unwrap();
+    let slot0 = desc.slot_descriptors.as_ref().unwrap()[0].clone();
+    let tuple0 = desc.tuple_descriptors[0].clone();
+    for (id, tuple, name, t, nullable) in slots {
+        if !desc.tuple_descriptors.iter().any(|d| d.id == *tuple) {
+            desc.tuple_descriptors.push(doris_thrift::gen::descriptors::TTupleDescriptor { id: *tuple, ..tuple0.clone() });
+        }
+        desc.slot_descriptors.as_mut().unwrap().push(doris_thrift::gen::descriptors::TSlotDescriptor {
+            id: *id,
+            parent: *tuple,
+            slot_type: t.clone(),
+            col_name: name.to_string(),
+            col_unique_id: Some(-1),
+            null_indicator_bit: if *nullable { 0 } else { -1 },
+            primitive_type: t.types.as_ref().and_then(|x| x[0].scalar_type.as_ref()).map(|s| s.type_),
+            ..slot0.clone()
+        });
+    }
+}
+
+#[test]
+fn a_two_stage_projection_evaluates() {
+    use doris_fixtures::build::{int, slot};
+    let env = env();
+    let v = table(&env, 1103, kv(3));
+    let q = qid(14);
+    let i = ty(T::INT);
+    let mut p = prepared(scan_query(q.clone(), 1103, v, &columns(), 4064));
+    // (k + k) into tuple 1, then that * 2 into tuple 2 (OperatorXBase::do_projections)
+    with_slots(&mut p, &[(10, 1, "kk", i.clone(), false), (20, 2, "kk2", i.clone(), false)]);
+    let frag = p.fragment.as_mut().unwrap();
+    let n = &mut frag.plan.as_mut().unwrap().nodes[0];
+    n.intermediate_projections_list = Some(vec![vec![arith("add", i.clone(), vec![slot(0, i.clone()), slot(0, i.clone())])]]);
+    n.intermediate_output_tuple_id_list = Some(vec![1]);
+    n.projections = Some(vec![arith("multiply", i.clone(), vec![slot(10, i.clone()), int(2, i.clone())])]);
+    n.output_tuple_id = Some(2);
+    frag.output_exprs = Some(vec![slot(20, i.clone())]);
+    let r = env.query.prepare(&exec_request(vec![p]));
+    assert_eq!(r.status.status_code, 0, "{:?}", r.status);
+    start(&env.query, &q);
+    let mut got = rows(&fetch_all(&env.query, &q));
+    got.sort();
+    let s = |x: &str| vec![Some(x.to_string())];
+    assert_eq!(got, vec![s("0"), s("4"), s("8")]);
+}
+
+#[test]
+fn a_virtual_slot_is_computed_from_its_row() {
+    use doris_fixtures::build::{call, slot, string};
+    let env = env();
+    let v = table(&env, 1104, kv(3));
+    let q = qid(15);
+    let vc = ty(T::VARCHAR);
+    let mut p = prepared(scan_query(q.clone(), 1104, v, &columns(), 4064));
+    // slot 2: concat(v, '!'), a virtual column of the scan's tuple (col_unique_id INT32_MAX - 1)
+    with_slots(&mut p, &[(2, 0, "__DORIS_VIRTUAL_COL__1", vc.clone(), true)]);
+    let desc = p.desc_tbl.as_mut().unwrap();
+    let s2 = desc.slot_descriptors.as_mut().unwrap().iter_mut().find(|s| s.id == 2).unwrap();
+    s2.col_unique_id = Some(i32::MAX - 1);
+    s2.virtual_column_expr = Some(call("concat", vc.clone(), vec![slot(1, vc.clone()), string("!")]));
+    p.fragment.as_mut().unwrap().output_exprs = Some(vec![slot(0, ty(T::INT)), slot(2, vc.clone())]);
+    let r = env.query.prepare(&exec_request(vec![p]));
+    assert_eq!(r.status.status_code, 0, "{:?}", r.status);
+    start(&env.query, &q);
+    let mut got = rows(&fetch_all(&env.query, &q));
+    got.sort();
+    let s = |x: &str| Some(x.to_string());
+    assert_eq!(got, vec![vec![s("0"), s("v0!")], vec![s("1"), None], vec![s("2"), s("v2!")]]);
+}

@@ -127,10 +127,6 @@ fn noise(s: &StreamLoadSample) -> bool {
     s.reply.contains("MEM_LIMIT") || s.reply.contains("MEM_ALLOC")
 }
 
-/// Suites whose loads need a function doris-rs does not run yet, by name: replayed, they must
-/// be refused naming it. Remove an entry when the function lands.
-const AWAITING: &[(&str, &str)] = &[("test_json_load_default_value", "now"), ("test_json_load_default_number_value", "now")];
-
 fn replay(format: &str, rolled_back: bool) -> usize {
     let mut n = 0;
     for s in stream_loads() {
@@ -139,11 +135,6 @@ fn replay(format: &str, rolled_back: bool) -> usize {
             continue;
         }
         let Some(r) = run(&s) else { continue };
-        if let Some((_, function)) = AWAITING.iter().find(|(suite, _)| s.suite.ends_with(suite)) {
-            // refused rather than loaded wrong: a JSON key these loads lack defaults to it
-            assert!(r.reply.contains("NOT_IMPLEMENTED") && r.reply.contains(function), "{}: {}", s.dir, r.reply);
-            continue;
-        }
         check(&s, &r);
         n += 1;
     }

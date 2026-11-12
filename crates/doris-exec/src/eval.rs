@@ -30,9 +30,87 @@ fn function_name(n: &TExprNode) -> Option<String> {
         .map(|f| f.name.function_name.to_ascii_lowercase())
 }
 
+/// A call's argument types (from its `TFunction`) and result type (the node's).
+fn signature(n: &TExprNode) -> Option<(Vec<ColType>, ColType)> {
+    let f = n.fn_.as_ref()?;
+    let args = f.arg_types.iter().map(|t| ColType::from_type_desc("", t, true)).collect::<Option<Vec<_>>>()?;
+    Some((args, ColType::from_type_desc("", &n.type_, true)?))
+}
+
+/// A call `arith::arithmetic_supported` accepts, by its name and signature.
+fn arithmetic_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::arith::arithmetic_supported(&name, &args, &to)
+}
+
+/// `if`, `ifnull`, `coalesce` over supported scalar types, `if`'s condition BOOLEAN.
+fn conditional_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    let scalar = |t: &ColType| t.supported() || t.ptype == T::NULL_TYPE;
+    let values = match name.as_str() {
+        "if" if args.len() == 3 && args[0].ptype == T::BOOLEAN => &args[1..],
+        "ifnull" if args.len() == 2 => &args[..],
+        "coalesce" if !args.is_empty() => &args[..],
+        _ => return false,
+    };
+    scalar(&to) && values.iter().all(scalar)
+}
+
+/// `like`, `concat`, `length` over text arguments.
+fn string_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
+    match name.as_str() {
+        "like" => (args.len() == 2 || args.len() == 3) && args.iter().all(text) && to.ptype == T::BOOLEAN,
+        "concat" => !args.is_empty() && args.iter().all(text) && text(&to),
+        "length" => args.len() == 1 && text(&args[0]) && to.ptype == T::INT,
+        _ => false,
+    }
+}
+
+/// `now([INT])` into DATETIMEV2, `current_date()` (`curdate()`) into DATEV2.
+fn clock_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    match name.as_str() {
+        "now" => to.ptype == T::DATETIMEV2 && (args.is_empty() || (args.len() == 1 && args[0].ptype == T::INT)),
+        _ => to.ptype == T::DATEV2 && args.is_empty(),
+    }
+}
+
+/// The number of nodes in the subtree at `i` (pre-order, `num_children` each).
+fn subtree_len(nodes: &[TExprNode], i: usize) -> usize {
+    let mut len = 1;
+    for _ in 0..nodes.get(i).map_or(0, |n| n.num_children.max(0)) {
+        len += subtree_len(nodes, i + len);
+    }
+    len
+}
+
+/// `round(x[, d])` of a DOUBLE or a DECIMAL32/64/128I into the same type, `d` an INT constant.
+fn round_call(nodes: &[TExprNode], i: usize) -> bool {
+    let n = &nodes[i];
+    let Some((args, to)) = signature(n) else { return false };
+    let x_ok = match args.first() {
+        Some(x) if x.ptype == T::DOUBLE => to.ptype == T::DOUBLE,
+        Some(x) => matches!(x.ptype, T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I) && to.ptype == x.ptype,
+        None => false,
+    };
+    let d_ok = match args.len() {
+        1 => true,
+        2 => {
+            let start = i + 1 + subtree_len(nodes, i + 1);
+            // a node list shorter than its num_children claim is malformed: not accepted
+            args[1].ptype == T::INT
+                && nodes.get(start..start + subtree_len(nodes, start)).is_some_and(|d| d.iter().all(|k| k.node_type != N::SLOT_REF))
+        }
+        _ => false,
+    };
+    x_ok && d_ok
+}
+
 fn describe(n: &TExprNode) -> String {
     match function_name(n) {
-        Some(f) if n.node_type == N::FUNCTION_CALL || n.node_type == N::AGG_EXPR => {
+        Some(f) if matches!(n.node_type, N::FUNCTION_CALL | N::AGG_EXPR | N::ARITHMETIC_EXPR) => {
             format!("function {f}")
         }
         _ => format!("expression {}", node_name(n)),
@@ -81,7 +159,7 @@ pub fn check_read(e: &TExpr) -> Result<(), ExecError> {
 
 /// As `check_read`, also accepting the aggregate calls of an aggregation node.
 pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
-    for n in &e.nodes {
+    for (i, n) in e.nodes.iter().enumerate() {
         let ok = match n.node_type {
             N::INT_LITERAL
             | N::LARGE_INT_LITERAL
@@ -103,10 +181,16 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                         | TExprOpcode::COMPOUND_NOT
                 )
             ),
-            N::FUNCTION_CALL => matches!(
-                function_name(n).as_deref(),
-                Some("substring" | "is_null_pred" | "is_not_null_pred")
-            ),
+            N::ARITHMETIC_EXPR => arithmetic_call(n),
+            N::FUNCTION_CALL => match function_name(n).as_deref() {
+                Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
+                Some("abs") => arithmetic_call(n),
+                Some("if" | "ifnull" | "coalesce") => conditional_call(n),
+                Some("like" | "concat" | "length") => string_call(n),
+                Some("round") => round_call(&e.nodes, i),
+                Some("now" | "current_date" | "curdate") => clock_call(n),
+                _ => false,
+            },
             N::AGG_EXPR => {
                 aggregates && AGGREGATES.contains(&function_name(n).unwrap_or_default().as_str())
             }
@@ -212,8 +296,12 @@ fn eval_at(
         .ok_or_else(|| bad("expression ends early"))?;
     *pos += 1;
     let mut kids = Vec::with_capacity(n.num_children.max(0) as usize);
+    // whether each argument is a constant expression (no slot read), as `is_col_constant`
+    let mut constant = Vec::with_capacity(kids.capacity());
     for _ in 0..n.num_children.max(0) {
+        let start = *pos;
         kids.push(eval_at(nodes, pos, block, slots)?);
+        constant.push(nodes[start..*pos].iter().all(|k| k.node_type != N::SLOT_REF));
     }
     let rows = block.len();
     let boolean = || ColType {
@@ -277,6 +365,13 @@ fn eval_at(
                 .map(|d| {
                     if let Some(r) = round_datetime(d, &from, &to) {
                         return Ok(r);
+                    }
+                    if let Some(r) = float_to_number(d, &to) {
+                        return Ok(r);
+                    }
+                    // a FLOAT as text is the float's own shortest text, not its double's
+                    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
+                        return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
                     }
                     let v = expr::cast(datum_value(d, &from), &to);
                     if v == Value::Null {
@@ -371,7 +466,111 @@ fn eval_at(
             });
             (boolean(), bools(out))
         }
+        N::ARITHMETIC_EXPR => {
+            let to = node_type(n)?;
+            let op = function_name(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
+            let [(ta, a), (tb, b)] = <[_; 2]>::try_from(kids).map_err(|_| bad(format!("{op} needs two arguments")))?;
+            let out = crate::arith::arithmetic(&op, (&ta, &a), (&tb, &b), &to)?;
+            (to, out)
+        }
         N::FUNCTION_CALL => match function_name(n).as_deref() {
+            Some("abs") => {
+                let to = node_type(n)?;
+                let (ta, a) = kids.first().ok_or_else(|| bad("abs without its argument"))?;
+                let out = crate::arith::abs((ta, a), &to)?;
+                (to, out)
+            }
+            Some(f @ ("now" | "current_date" | "curdate")) => {
+                let to = node_type(n)?;
+                let clock = crate::clock::current().ok_or_else(|| ExecError::Internal(format!("{f}() without the query's clock")))?;
+                let out = if f == "now" {
+                    // now(n) row by row; a NULL n is a NULL row (the default NULL handling)
+                    (0..rows)
+                        .map(|r| match kids.first().map(|(_, v)| &v[r]) {
+                            None => Datum::Int(clock.now(0).into()),
+                            Some(Datum::Int(s)) => Datum::Int(clock.now(*s as i32).into()),
+                            Some(_) => Datum::Null,
+                        })
+                        .collect()
+                } else {
+                    vec![Datum::Int(clock.today().into()); rows]
+                };
+                (to, out)
+            }
+            Some("round") => {
+                let to = node_type(n)?;
+                let (tx, x) = kids.first().ok_or_else(|| bad("round without its argument"))?;
+                let d = match kids.get(1).map(|(_, d)| d.first()) {
+                    None | Some(None) => Some(0),
+                    Some(Some(Datum::Int(d))) => Some(*d),
+                    Some(Some(_)) => None,
+                };
+                match d {
+                    _ if rows == 0 => (to, vec![]),
+                    // a NULL digits argument: every row NULL
+                    None => (to, vec![Datum::Null; rows]),
+                    Some(d) if d > i128::from(i16::MAX) || d < i128::from(i16::MIN) => {
+                        return Err(ExecError::Coded {
+                            code: doris_thrift::gen::status::TStatusCode::INVALID_ARGUMENT.0,
+                            name: "INVALID_ARGUMENT",
+                            msg: format!("Scale argument for function round is out of bound: {d}"),
+                        })
+                    }
+                    Some(d) => {
+                        let d = d as i32;
+                        let out = x
+                            .iter()
+                            .map(|v| match v {
+                                Datum::Double(f) => Datum::Double(crate::round::round_double(*f, d)),
+                                Datum::Int(r) => Datum::Int(crate::round::round_decimal(*r, tx.scale, d, to.scale)),
+                                other => other.clone(),
+                            })
+                            .collect();
+                        (to, out)
+                    }
+                }
+            }
+            Some("like") => {
+                let (_, values) = kids.first().ok_or_else(|| bad("like without its value"))?;
+                let (_, patterns) = kids.get(1).ok_or_else(|| bad("like without its pattern"))?;
+                // a non-constant ESCAPE is ignored (`FunctionLike::open`)
+                let escape = match (kids.get(2), constant.get(2)) {
+                    _ if rows == 0 => None,
+                    (Some((_, e)), Some(true)) => Some(crate::strings::escape_char(match e.first() {
+                        Some(Datum::Bytes(b)) => b,
+                        _ => &[],
+                    })?),
+                    _ => None,
+                };
+                let out = crate::strings::like_column(values, patterns, constant.get(1) == Some(&true), escape)?;
+                (boolean(), out)
+            }
+            Some("concat") => {
+                let t = node_type(n)?;
+                let args: Vec<(&ColType, &[Datum])> = kids.iter().map(|(t, v)| (t, v.as_slice())).collect();
+                (t, crate::strings::concat_column(&args))
+            }
+            Some("length") => {
+                let (_, v) = kids.first().ok_or_else(|| bad("length without its argument"))?;
+                (node_type(n)?, crate::strings::length_column(v))
+            }
+            Some(f @ ("if" | "ifnull" | "coalesce")) => {
+                let to = node_type(n)?;
+                let values = if f == "if" { kids.get(1..).unwrap_or_default() } else { &kids[..] };
+                let values = values
+                    .iter()
+                    .map(|(t, v)| v.iter().map(|d| coerce(d.clone(), t, &to)).collect::<Result<Vec<_>, _>>())
+                    .collect::<Result<Vec<_>, _>>()?;
+                let out = match (f, &values[..]) {
+                    ("if", [then, else_]) => {
+                        let (_, c) = kids.first().ok_or_else(|| bad("if without its condition"))?;
+                        crate::cond::if_(c, then, else_)
+                    }
+                    ("if", _) => return Err(bad("if needs three arguments")),
+                    _ => crate::cond::coalesce(&values.iter().map(Vec::as_slice).collect::<Vec<_>>()),
+                };
+                (to, out)
+            }
             Some(f @ ("is_null_pred" | "is_not_null_pred")) => {
                 let (_, v) = kids
                     .first()
@@ -512,6 +711,44 @@ pub fn filter(conjuncts: &[TExpr], block: Block, slots: &SlotMap) -> Result<Bloc
 fn same_storage(a: &ColType, b: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     (text(a) && text(b)) || (a.ptype == b.ptype && a.scale == b.scale)
+}
+
+/// A FLOAT or DOUBLE cast to an integer or a decimal, numerically (the non-strict cast; None
+/// for any other cast):
+/// - integers: truncated, NULL when not finite or outside the type
+///   (`cast_to_basic_number_common.h:185-205`);
+/// - decimals: `x * 10^scale` plus ±0.5, truncated; NULL when not finite or at or past the
+///   precision's bound (`cast_to_decimal.h:238-262`).
+fn float_to_number(d: &Datum, to: &ColType) -> Option<Datum> {
+    let x = match d {
+        Datum::Float(f) => f64::from(*f),
+        Datum::Double(f) => *f,
+        _ => return None,
+    };
+    let bits = match to.ptype {
+        T::TINYINT => 8,
+        T::SMALLINT => 16,
+        T::INT => 32,
+        T::BIGINT => 64,
+        T::LARGEINT => 128,
+        T::DECIMAL32 | T::DECIMAL64 | T::DECIMAL128I => 0,
+        _ => return None,
+    };
+    if !x.is_finite() {
+        return Some(Datum::Null);
+    }
+    if bits > 0 {
+        let t = x.trunc();
+        let bound = 2f64.powi(bits - 1);
+        return Some(if t < -bound || t >= bound { Datum::Null } else { Datum::Int(t as i128) });
+    }
+    let max = 10i128.checked_pow(to.precision as u32).map_or(f64::MAX, |m| (m - 1) as f64);
+    // the integer multiplier as a double, as C++ converts it (powi can round differently)
+    let scaled = x * 10i128.checked_pow(to.scale.max(0) as u32).map_or(f64::INFINITY, |m| m as f64);
+    if scaled <= -max || scaled >= max {
+        return Some(Datum::Null);
+    }
+    Some(Datum::Int((scaled + if x >= 0.0 { 0.5 } else { -0.5 }) as i128))
 }
 
 /// A DATETIMEV2 cast to a lower scale: rounded, not cut (`transform_date_scale`).

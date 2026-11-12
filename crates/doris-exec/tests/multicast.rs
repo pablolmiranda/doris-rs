@@ -39,6 +39,7 @@ fn desc() -> DescTable {
                 ty: col(name, ptype),
                 unique_id: -1,
                 name: name.into(),
+                virtual_expr: None,
             },
         )
     };

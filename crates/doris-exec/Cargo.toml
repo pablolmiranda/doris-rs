@@ -28,6 +28,13 @@ orc-rust = { workspace = true }
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true }
 bytes = { workspace = true }
+# decimal products past 128 bits
+ethnum = { workspace = true }
+# LIKE patterns
+regex = { workspace = true }
+# now(), current_date() and named time zones
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 
 [dev-dependencies]
 doris-fixtures = { workspace = true }

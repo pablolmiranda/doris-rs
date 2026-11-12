@@ -233,11 +233,11 @@ fn substring_counts_characters() {
 
 #[test]
 fn unknown_function_is_refused() {
-    let e = call("like", ty(T::BOOLEAN), vec![string("a"), string("%")]);
+    let e = call("md5", ty(T::VARCHAR), vec![string("a")]);
     let err = check_read(&e)
-        .expect_err("like is not supported")
+        .expect_err("md5 is not supported")
         .to_string();
-    assert!(err.contains("function like"), "{err}");
+    assert!(err.contains("function md5"), "{err}");
 }
 
 #[test]
@@ -279,4 +279,144 @@ fn text_against_a_number_is_refused() {
         let err = filter(&[e], block.clone(), &slots).expect_err("text against a number").to_string();
         assert!(err.contains("text against"), "{err}");
     }
+}
+
+/// An ARITHMETIC_EXPR, as the FE sends it: a call node of that type (decimal ones carry no opcode).
+fn arith(name: &str, ret: doris_thrift::gen::types::TTypeDesc, args: Vec<doris_thrift::gen::exprs::TExpr>) -> doris_thrift::gen::exprs::TExpr {
+    let mut e = call(name, ret, args);
+    e.nodes[0].node_type = doris_thrift::gen::exprs::TExprNodeType::ARITHMETIC_EXPR;
+    e
+}
+
+#[test]
+fn arithmetic_and_abs_evaluate() {
+    let big = ty(T::BIGINT);
+    assert_eq!(one_row(arith("add", big.clone(), vec![int(2, big.clone()), int(3, big.clone())])), Datum::Int(5));
+    let d = scalar(T::DECIMAL128I, -1, 38, 12);
+    let e = arith(
+        "multiply",
+        d,
+        vec![decimal("0.000000001", scalar(T::DECIMAL128I, -1, 27, 9)), decimal("0.00050000", scalar(T::DECIMAL64, -1, 16, 8))],
+    );
+    assert_eq!(one_row(e), Datum::Int(1));
+    let e = call("abs", ty(T::LARGEINT), vec![int(i64::MIN, big.clone())]);
+    assert_eq!(one_row(e), Datum::Int(9_223_372_036_854_775_808));
+}
+
+#[test]
+fn unlisted_arithmetic_is_refused() {
+    let d = scalar(T::DECIMAL128I, -1, 38, 2);
+    let e = arith("add", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.00", d)]);
+    let err = check_read(&e).expect_err("decimal add is not supported").to_string();
+    assert!(err.contains("function add"), "{err}");
+}
+
+#[test]
+fn conditionals_evaluate() {
+    let i = ty(T::INT);
+    let e = call("if", i.clone(), vec![null(ty(T::BOOLEAN)), int(1, i.clone()), int(2, i.clone())]);
+    assert_eq!(one_row(e), Datum::Int(2));
+    let d = ty(T::DOUBLE);
+    assert_eq!(one_row(call("ifnull", d.clone(), vec![null(d.clone()), float(1.5, d.clone())])), Datum::Double(1.5));
+    let e = call("coalesce", i.clone(), vec![null(i.clone()), null(i.clone()), int(3, i.clone())]);
+    assert_eq!(one_row(e), Datum::Int(3));
+}
+
+#[test]
+fn string_functions_evaluate() {
+    // slot 5 is VARCHAR: "a", "b", NULL
+    let (block, slots) = typed_block();
+    let col = |e: doris_thrift::gen::exprs::TExpr| {
+        check_read(&e).expect("supported");
+        eval_column(&e, &block, &slots).expect("eval").1
+    };
+    let v = ty(T::VARCHAR);
+    let like = call("like", ty(T::BOOLEAN), vec![slot(5, v.clone()), string("a%")]);
+    assert_eq!(col(like), vec![Datum::Bool(true), Datum::Bool(false), Datum::Null]);
+    // a column of patterns: each row its own
+    let like = call("like", ty(T::BOOLEAN), vec![string("b"), slot(5, v.clone())]);
+    assert_eq!(col(like), vec![Datum::Bool(false), Datum::Bool(true), Datum::Null]);
+    let like = call("like", ty(T::BOOLEAN), vec![slot(5, v.clone()), string("!%"), string("!")]);
+    assert_eq!(col(like), vec![Datum::Bool(false), Datum::Bool(false), Datum::Null]);
+    let cat = call("concat", v.clone(), vec![slot(5, v.clone()), string("-x")]);
+    assert_eq!(col(cat), vec![Datum::Bytes(b"a-x".to_vec()), Datum::Bytes(b"b-x".to_vec()), Datum::Null]);
+    let len = call("length", ty(T::INT), vec![slot(5, v.clone())]);
+    assert_eq!(col(len), vec![Datum::Int(1), Datum::Int(1), Datum::Null]);
+}
+
+#[test]
+fn like_with_escape_on_an_empty_block() {
+    let block = Block { types: vec![col("s", T::VARCHAR, 0, 0)], rows: vec![] };
+    let slots = SlotMap([(1, 0)].into_iter().collect());
+    let e = call("like", ty(T::BOOLEAN), vec![slot(1, ty(T::VARCHAR)), string("!%"), string("!")]);
+    assert_eq!(eval_column(&e, &block, &slots).expect("eval").1, vec![]);
+}
+
+#[test]
+fn round_evaluates() {
+    let (block, slots) = typed_block();
+    let i = ty(T::INT);
+    // slot 6 is DOUBLE: 1.5, 2.5, NULL
+    let e = call("round", ty(T::DOUBLE), vec![slot(6, ty(T::DOUBLE)), int(0, i.clone())]);
+    check_read(&e).expect("supported");
+    assert_eq!(eval_column(&e, &block, &slots).unwrap().1, vec![Datum::Double(2.0), Datum::Double(3.0), Datum::Null]);
+    // slot 2 is DECIMAL32(9,2): 1.50, 2.25, NULL; to 1 digit, result scale 1
+    let e = call("round", scalar(T::DECIMAL32, -1, 9, 1), vec![slot(2, scalar(T::DECIMAL32, -1, 9, 2)), int(1, i.clone())]);
+    check_read(&e).expect("supported");
+    assert_eq!(eval_column(&e, &block, &slots).unwrap().1, vec![Datum::Int(15), Datum::Int(23), Datum::Null]);
+}
+
+#[test]
+fn round_needs_constant_digits() {
+    let i = ty(T::INT);
+    let e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), slot(1, i)]);
+    let err = check_read(&e).expect_err("digits from a column").to_string();
+    assert!(err.contains("function round"), "{err}");
+}
+
+#[test]
+fn round_digits_out_of_int16_errors() {
+    let e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(40000, ty(T::INT))]);
+    check_read(&e).expect("supported");
+    let block = Block { types: vec![], rows: vec![vec![]] };
+    let err = eval_column(&e, &block, &SlotMap::default()).unwrap_err();
+    assert_eq!(err.to_string(), "Scale argument for function round is out of bound: 40000");
+}
+
+#[test]
+fn a_float_cast_to_text_prints_as_a_float() {
+    use doris_fixtures::build::{blank, over};
+    // cast(cast(0.001 as float) as string): the float's own shortest text, not its double's
+    let to_float = over(blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, ty(T::FLOAT), 0), vec![float(0.001, ty(T::DOUBLE))]);
+    let e = over(blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, ty(T::STRING), 0), vec![to_float]);
+    assert_eq!(one_row(e), Datum::Bytes(b"0.001".to_vec()));
+}
+
+#[test]
+fn float_casts_to_numbers_are_numeric() {
+    use doris_fixtures::build::{blank, over};
+    let cast = |v: f64, to: doris_thrift::gen::types::TTypeDesc| {
+        one_row(over(blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, to, 0), vec![float(v, ty(T::DOUBLE))]))
+    };
+    // cast_to_basic_number_common.h:185-205: truncated; NULL out of range or not finite
+    assert_eq!(cast(36_028_797_018_963_968.0, ty(T::BIGINT)), Datum::Int(36_028_797_018_963_968));
+    assert_eq!(cast(1.9, ty(T::INT)), Datum::Int(1));
+    assert_eq!(cast(-1.9, ty(T::INT)), Datum::Int(-1));
+    assert_eq!(cast(2147483648.0, ty(T::INT)), Datum::Null);
+    assert_eq!(cast(1e19, ty(T::BIGINT)), Datum::Null);
+    assert_eq!(cast(f64::NAN, ty(T::INT)), Datum::Null);
+    // cast_to_decimal.h:238-262: x * 10^scale, half away from zero; NULL past the precision
+    let d = scalar(T::DECIMAL128I, -1, 27, 3);
+    assert_eq!(cast(0.0005, d.clone()), Datum::Int(1));
+    assert_eq!(cast(-0.0005, d.clone()), Datum::Int(-1));
+    assert_eq!(cast(18014398509481984.0, d.clone()), Datum::Int(18_014_398_509_481_984_000));
+    assert_eq!(cast(1e30, d.clone()), Datum::Null);
+    assert_eq!(cast(f64::INFINITY, d), Datum::Null);
+}
+
+#[test]
+fn a_round_with_missing_children_is_refused_not_a_panic() {
+    let mut e = call("round", ty(T::DOUBLE), vec![float(1.5, ty(T::DOUBLE)), int(1, ty(T::INT))]);
+    e.nodes.truncate(2); // round(x, <missing>)
+    assert!(check_read(&e).is_err());
 }

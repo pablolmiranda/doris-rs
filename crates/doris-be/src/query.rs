@@ -60,6 +60,7 @@ fn error_status(localhost: &str, e: &ExecError) -> (i32, String) {
     let (code, name) = match e {
         ExecError::Unsupported { .. } => (NOT_IMPLEMENTED_ERROR, "NOT_IMPLEMENTED_ERROR"),
         ExecError::Cancelled(_) => (CANCELLED, "CANCELLED"),
+        ExecError::Coded { code, name, .. } => (*code, *name),
         _ => (INTERNAL_ERROR, "INTERNAL_ERROR"),
     };
     (code, format!("({localhost})[{name}]{e}"))
@@ -626,6 +627,7 @@ fn status_code(e: &ExecError) -> TStatusCode {
     match e {
         ExecError::Unsupported { .. } => TStatusCode::NOT_IMPLEMENTED_ERROR,
         ExecError::Cancelled(_) => TStatusCode::CANCELLED,
+        ExecError::Coded { code, .. } => TStatusCode(*code),
         _ => TStatusCode::INTERNAL_ERROR,
     }
 }
@@ -687,4 +689,16 @@ fn blank_report() -> TReportExecStatusParams {
         None,
         None,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_coded_error_keeps_its_code_and_name() {
+        let e = ExecError::Coded { code: 33, name: "INVALID_ARGUMENT", msg: "bad".into() };
+        assert_eq!(error_status("1.2.3.4", &e), (33, "(1.2.3.4)[INVALID_ARGUMENT]bad".to_string()));
+        assert_eq!(status_code(&e), TStatusCode(33));
+    }
 }

@@ -84,8 +84,10 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         instance: &f.instances[instance],
         ctx,
     };
-    let out = me.node(&f.root)?;
-    me.sink(out)
+    crate::clock::with_clock(&plan.clock, || {
+        let out = me.node(&f.root)?;
+        me.sink(out)
+    })
 }
 
 impl Instance<'_> {
@@ -119,6 +121,15 @@ impl Instance<'_> {
         };
         if let Some(c) = n.conjuncts.as_ref().filter(|c| !c.is_empty()) {
             out.block = filter(c, out.block, &slot_map(&out.slots))?;
+        }
+        // intermediate projections first, each into its own tuple (`OperatorXBase::do_projections`)
+        let stages = n.intermediate_projections_list.iter().flatten().zip(n.intermediate_output_tuple_id_list.iter().flatten());
+        for (p, tuple) in stages {
+            let block = project(p, &out)?;
+            out = Chunk {
+                block: self.typed(block, desc.tuple_slots(*tuple)?)?,
+                slots: desc.tuple_slots(*tuple)?.to_vec(),
+            };
         }
         if let (Some(p), Some(tuple)) = (n.projections.as_ref(), n.output_tuple_id) {
             let block = project(p, &out)?;
@@ -169,9 +180,15 @@ impl Instance<'_> {
         let mut columns = Vec::with_capacity(slots.len());
         let mut types = Vec::with_capacity(slots.len());
         let mut rowid = None;
+        // virtual slots: (position, expression), computed once the real columns are read
+        let mut virtuals = Vec::new();
         for (i, id) in slots.iter().enumerate() {
             let slot = desc.slot(*id)?;
             types.push(slot.ty.clone());
+            if let Some(e) = &slot.virtual_expr {
+                virtuals.push((i, e));
+                continue;
+            }
             if slot.name.starts_with(ROWID_PREFIX) || slot.unique_id == i32::MAX {
                 rowid = Some(i);
                 continue;
@@ -207,10 +224,36 @@ impl Instance<'_> {
                 }
             }
         }
-        Ok(Chunk {
-            block: Block { types, rows },
-            slots,
-        })
+        if virtuals.is_empty() {
+            return Ok(Chunk { block: Block { types, rows }, slots });
+        }
+        // the real slots' block (the row id among them), then each virtual slot evaluated over it
+        let real: Vec<usize> = (0..slots.len()).filter(|i| !virtuals.iter().any(|(v, _)| v == i)).collect();
+        let read = Block { types: real.iter().map(|i| types[*i].clone()).collect(), rows };
+        let read_slots = slot_map(&real.iter().map(|i| slots[*i]).collect::<Vec<_>>());
+        let mut computed = Vec::with_capacity(virtuals.len());
+        for (i, e) in &virtuals {
+            let (t, v) = eval_column(e, &read, &read_slots)?;
+            let v = v.into_iter().map(|d| coerce(d, &t, &types[*i])).collect::<Result<Vec<_>, _>>()?;
+            computed.push((*i, v));
+        }
+        let rows = read
+            .rows
+            .into_iter()
+            .enumerate()
+            .map(|(r, row)| {
+                let mut out = Vec::with_capacity(slots.len());
+                let mut real_values = row.into_iter();
+                for i in 0..slots.len() {
+                    match computed.iter().find(|(v, _)| *v == i) {
+                        Some((_, col)) => out.push(col[r].clone()),
+                        None => out.push(real_values.next().unwrap_or(Datum::Null)),
+                    }
+                }
+                out
+            })
+            .collect();
+        Ok(Chunk { block: Block { types, rows }, slots })
     }
 
     fn constants(&self, t: &PlanTree) -> Result<Chunk, ExecError> {

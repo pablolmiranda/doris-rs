@@ -225,6 +225,11 @@ impl WriteFragment {
     /// Whether each column of the block reaching the sink has a null map: the output
     /// expression's nullability (a column of literals that are never NULL has none), which
     /// decides the block's bytes.
+    /// The load's instant and time zone (`TQueryGlobals`), for `now()` and zoned text.
+    pub fn clock(&self) -> crate::clock::QueryClock {
+        crate::clock::QueryClock::from_optional(self.params.query_globals.as_ref())
+    }
+
     pub fn input_nullable(&self) -> Vec<bool> {
         let exprs = self.output_exprs();
         if exprs.is_empty() {

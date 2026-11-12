@@ -134,7 +134,7 @@ impl LoadService {
             Err(e @ ExecError::Unsupported { .. }) => return refuse(NOT_IMPLEMENTED_ERROR, e.to_string()),
             Err(e) => return refuse(INTERNAL_ERROR, e.to_string()),
         };
-        let rows = match f.values_rows() {
+        let rows = match doris_exec::clock::with_clock(&f.clock(), || f.values_rows()) {
             Ok(r) => r,
             Err(e) => return refuse(NOT_IMPLEMENTED_ERROR, e.to_string()),
         };
@@ -145,7 +145,7 @@ impl LoadService {
             .spawn(move || {
                 // a panic in the sink still reaches the FE as a failed fragment, not a timeout
                 let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let outcome = run_sink(&f, rows, &inner.tablets, &inner.error_dir);
+                    let outcome = doris_exec::clock::with_clock(&f.clock(), || run_sink(&f, rows, &inner.tablets, &inner.error_dir));
                     let url = inner.tracking_url(&outcome);
                     (outcome, url)
                 }));
@@ -440,7 +440,8 @@ impl<'a> StreamLoad<'a> {
         }
         let t = Instant::now();
         let body = self.req.body.as_deref().unwrap_or_default();
-        let rows = match stream_rows(&f, body, max) {
+        let clock = f.clock();
+        let rows = match doris_exec::clock::with_clock(&clock, || stream_rows(&f, body, max)) {
             Ok(r) => r,
             Err(e @ ExecError::ExceededLimit(_)) => {
                 self.fail(format!("[EXCEEDED_LIMIT]{e}"));
@@ -451,7 +452,7 @@ impl<'a> StreamLoad<'a> {
                 return self.rollback();
             }
         };
-        let outcome = run_sink(&f, rows, &self.inner.tablets, &self.inner.error_dir);
+        let outcome = doris_exec::clock::with_clock(&clock, || run_sink(&f, rows, &self.inner.tablets, &self.inner.error_dir));
         self.times[3] = t.elapsed().as_millis();
         self.total = outcome.loaded + outcome.filtered + outcome.unselected;
         self.loaded = outcome.loaded;
