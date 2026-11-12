@@ -254,10 +254,10 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
                 Some("nullable" | "non_nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
-                Some("abs") => arithmetic_call(n),
+                Some("abs" | "mod") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
-                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil") => round_call(&e.nodes, i),
+                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil" | "round_bankers") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
@@ -729,7 +729,8 @@ fn eval_at(
             let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, &constant, rows)?;
             (to, out)
         }
-        N::ARITHMETIC_EXPR => {
+        // `mod` also comes as a FUNCTION_CALL (the fold suite's `mod(DOUBLE, DOUBLE)`)
+        N::ARITHMETIC_EXPR | N::FUNCTION_CALL if n.node_type == N::ARITHMETIC_EXPR || function_name(n).as_deref() == Some("mod") => {
             let to = node_type(n)?;
             let op = function_name(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
             let [(ta, a), (tb, b)] = <[_; 2]>::try_from(kids).map_err(|_| bad(format!("{op} needs two arguments")))?;

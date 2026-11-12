@@ -59,6 +59,7 @@ pub fn arithmetic_supported(op: &str, args: &[ColType], to: &ColType) -> bool {
     if op == "abs" {
         return match (args, int_bits(to)) {
             ([a], Some(tb)) => int_bits(a).is_some_and(|ab| ab <= tb),
+            ([a], None) if is_double(a) => is_double(to),
             // a decimal keeps its type: the unscaled value's absolute value
             ([a], None) => decimal_bits(a).is_some() && a.ptype == to.ptype && a.scale == to.scale && a.precision <= to.precision,
             _ => false,
@@ -69,13 +70,15 @@ pub fn arithmetic_supported(op: &str, args: &[ColType], to: &ColType) -> bool {
         return a.ptype == to.ptype && b.ptype == to.ptype && matches!(op, "add" | "subtract" | "multiply" | "mod");
     }
     if is_double(a) && is_double(b) && is_double(to) {
-        return matches!(op, "add" | "subtract" | "multiply" | "divide");
+        return matches!(op, "add" | "subtract" | "multiply" | "divide" | "mod");
     }
     if let (Some(_), Some(_), Some(_)) = (decimal_bits(a), decimal_bits(b), decimal_bits(to)) {
         return match op {
             // the rescale multiplier 10^(sa+sb-sr) and the bound 10^p - 1 must fit i128
             "multiply" => a.scale + b.scale >= to.scale && a.scale + b.scale - to.scale <= 38 && to.precision <= 38,
             "divide" => a.scale - b.scale == to.scale,
+            // the remainder of the raw values at one scale (modulo.cpp)
+            "mod" => a.scale == to.scale && b.scale == to.scale,
             // the FE casts both sides to the result's scale; C++ adds the raw values
             "add" | "subtract" => a.scale == to.scale && b.scale == to.scale && to.precision <= 38,
             _ => false,
@@ -115,6 +118,8 @@ fn double_op(op: &str, x: f64, y: f64) -> Datum {
         "subtract" => x - y,
         "multiply" => x * y,
         _ if y == 0.0 => return Datum::Null,
+        // C's fmod, which Rust's % is
+        "mod" => x % y,
         _ => x / y,
     })
 }
@@ -201,6 +206,12 @@ fn decimal_op(op: &str, a: (&ColType, i128), b: (&ColType, i128), to: &ColType) 
             }),
         };
     }
+    if op == "mod" {
+        if y == 0 {
+            return Ok(Datum::Null);
+        }
+        return Ok(Datum::Int(wrap(x, bits).wrapping_rem(wrap(y, bits))));
+    }
     if op == "divide" {
         if y == 0 {
             return Ok(Datum::Null);
@@ -256,6 +267,7 @@ pub fn abs(a: (&ColType, &[Datum]), to: &ColType) -> Result<Vec<Datum>, ExecErro
         .map(|d| match d {
             Datum::Null => Ok(Datum::Null),
             Datum::Int(v) => Ok(Datum::Int(wrap(v.wrapping_abs(), bits))),
+            Datum::Double(v) => Ok(Datum::Double(v.abs())),
             other => Err(ExecError::BadRequest(format!("abs of {other:?}"))),
         })
         .collect()

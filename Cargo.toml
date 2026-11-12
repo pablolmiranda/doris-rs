@@ -39,6 +39,7 @@ snap = "1"
 rustix = { version = "1", features = ["fs"] }
 ruzstd = "0.9"
 core-math = "1.4"
+libm = "0.2.16"
 twox-hash = { version = "2.1", default-features = false, features = ["xxhash32", "xxhash3_64"] }
 crc32fast = "1"
 thrift = "0.25"

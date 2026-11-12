@@ -22,6 +22,8 @@ pub enum Mode {
     Trunc,
     Floor,
     Ceil,
+    /// Half to even (`round_bankers`, round.h:72-75, 131-145).
+    Bankers,
 }
 
 impl Mode {
@@ -32,6 +34,7 @@ impl Mode {
             "truncate" => Mode::Trunc,
             "floor" | "dfloor" => Mode::Floor,
             "ceil" | "dceil" | "ceiling" => Mode::Ceil,
+            "round_bankers" => Mode::Bankers,
             _ => return None,
         })
     }
@@ -42,6 +45,8 @@ impl Mode {
             Mode::Trunc => x.trunc(),
             Mode::Floor => x.floor(),
             Mode::Ceil => x.ceil(),
+            // `nearbyint` under FE_TONEAREST
+            Mode::Bankers => x.round_ties_even(),
         }
     }
 }
@@ -93,6 +98,13 @@ pub fn round_decimal_mode(raw: i128, in_scale: i32, digits: i32, result_scale: i
         Mode::Round => {
             let abs_rem = rem.abs();
             if rem != 0 && abs_rem >= scale - abs_rem {
+                q += if rem < 0 { -1 } else { 1 };
+            }
+        }
+        Mode::Bankers => {
+            let abs_rem = rem.abs();
+            let comp = scale - abs_rem;
+            if rem != 0 && (abs_rem > comp || (abs_rem == comp && (q & 1) != 0)) {
                 q += if rem < 0 { -1 } else { 1 };
             }
         }

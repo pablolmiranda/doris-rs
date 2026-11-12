@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 crc32fast = { workspace = true }
 # correctly rounded transcendentals: glibc's results on every recorded input
 core-math = { workspace = true }
+libm = { workspace = true }
 twox-hash = { workspace = true }
 # compress_type GZ (pure Rust backend)
 flate2 = { workspace = true }

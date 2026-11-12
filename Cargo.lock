@@ -526,6 +526,7 @@ dependencies = [
  "ethnum",
  "fancy-regex",
  "flate2",
+ "libm",
  "orc-rust",
  "parquet",
  "prost 0.14.4",
