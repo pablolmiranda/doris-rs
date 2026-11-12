@@ -1070,8 +1070,8 @@ fn check_stream_sink(s: &TDataStreamSink, what: &str) -> Result<(), ExecError> {
 
 /// Checks every fragment holds only what doris-rs runs; names the first thing it does not.
 pub fn check_plan(plan: &QueryPlan) -> Result<(), ExecError> {
-    // constants are evaluated at prepare under the query's regexp options
-    crate::regexp::with_regex_options(plan.regex, || check_plan_inner(plan))
+    // constants are evaluated at prepare under the query's options and clock
+    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || check_plan_inner(plan)))
 }
 
 fn check_plan_inner(plan: &QueryPlan) -> Result<(), ExecError> {

@@ -76,7 +76,7 @@ impl Dt {
     }
 
     /// As `DateV2Value::to_string` prints it in an error: the fraction only when non-zero.
-    fn text(&self, datetime: bool) -> String {
+    pub(crate) fn text(&self, datetime: bool) -> String {
         let date = format!("{:04}-{:02}-{:02}", self.year, self.month, self.day);
         if !datetime {
             return date;
@@ -95,7 +95,7 @@ pub fn is_leap(year: i64) -> bool {
     year % 4 == 0 && (year % 100 != 0 || (year % 400 == 0 && year != 0))
 }
 
-fn days_in_month(year: i64, month: i64) -> i64 {
+pub(crate) fn days_in_month(year: i64, month: i64) -> i64 {
     if month == 2 && is_leap(year) {
         29
     } else {
@@ -123,7 +123,7 @@ pub fn calc_daynr(year: i64, month: i64, day: i64) -> i64 {
 }
 
 /// `get_date_from_daynr` (`vdatetime_value.cpp:2404-2443`).
-fn date_from_daynr(daynr: i64) -> Option<(i64, i64, i64)> {
+pub(crate) fn date_from_daynr(daynr: i64) -> Option<(i64, i64, i64)> {
     if daynr <= 0 || daynr > DATE_MAX_DAYNR {
         return None;
     }
@@ -276,7 +276,7 @@ pub fn days_diff(a: Dt, b: Dt) -> i64 {
 }
 
 /// `mysql_week_mode` (`vdatetime_value.cpp:56-62`).
-fn mysql_week_mode(mode: i64) -> u8 {
+pub(crate) fn mysql_week_mode(mode: i64) -> u8 {
     let mut mode = (mode & 7) as u8;
     if mode & WEEK_MONDAY_FIRST == 0 {
         mode ^= WEEK_FIRST_WEEKDAY;
@@ -285,7 +285,7 @@ fn mysql_week_mode(mode: i64) -> u8 {
 }
 
 /// `calc_weekday` (`util/time_lut.cpp:98-100`).
-fn calc_weekday(daynr: i64, sunday_first: bool) -> i64 {
+pub(crate) fn calc_weekday(daynr: i64, sunday_first: bool) -> i64 {
     (daynr + 5 + i64::from(sunday_first)) % 7
 }
 
@@ -298,7 +298,7 @@ fn days_in_year(year: i64) -> i64 {
 }
 
 /// `calc_week` (`vdatetime_value.cpp:3056-3113`): the week and the year it belongs to.
-fn calc_week(t: Dt, mode: u8) -> (i64, i64) {
+pub(crate) fn calc_week(t: Dt, mode: u8) -> (i64, i64) {
     if t.year == 0 {
         return (0, 0);
     }
@@ -382,18 +382,38 @@ fn is_space(c: u8) -> bool {
 /// `str_to_date` (`function_other_types_to_date.cpp:73-243`, `from_date_format_str` at
 /// `vdatetime_value.cpp:1792-2258`) for `%Y %y %m %c %d %e %H %k %i %s %S %%`: None for a value
 /// that does not parse or is not a valid date; any other specifier is refused.
-pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option<Dt>, ExecError> {
-    let format: &[u8] = match format {
-        b"yyyyMMdd" => b"%Y%m%d",
-        b"yyyy-MM-dd" => b"%Y-%m-%d",
-        b"yyyy-MM-dd HH:mm:ss" => b"%Y-%m-%d %H:%i:%s",
-        f => f,
-    };
+const AB_MONTH_NAMES: [&str; 13] = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_NAMES: [&str; 13] = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/// `check_word` and `find_in_lib` (`vdatetime_value.cpp:965-1001`): the letters at the start of
+/// `s` against `lib`, any case; an exact name, else the one name they are a prefix of. The
+/// position in `lib` and the letters read.
+fn check_word(lib: &[&str], s: &[u8]) -> Option<(usize, usize)> {
+    let len = s.iter().take_while(|c| c.is_ascii_alphabetic()).count();
+    let word = &s[..len];
+    let mut found = None;
+    let mut count = 0;
+    for (pos, name) in lib.iter().enumerate() {
+        let name = name.as_bytes();
+        if word.len() > name.len() || !word.eq_ignore_ascii_case(&name[..word.len()]) {
+            continue;
+        }
+        if word.len() == name.len() {
+            return Some((pos, len));
+        }
+        count += 1;
+        found = Some(pos);
+    }
+    (count == 1).then(|| (found.expect("counted"), len))
+}
+
+/// Refuses a `str_to_date` format with a specifier this port does not parse.
+pub fn check_format(format: &[u8]) -> Result<(), ExecError> {
     let mut spec = format.iter();
     while let Some(c) = spec.next() {
         if *c == b'%' {
             match spec.next() {
-                Some(b'Y' | b'y' | b'm' | b'c' | b'd' | b'e' | b'H' | b'k' | b'i' | b's' | b'S' | b'%') | None => {}
+                Some(b'Y' | b'y' | b'm' | b'c' | b'b' | b'M' | b'd' | b'e' | b'H' | b'k' | b'h' | b'I' | b'l' | b'p' | b'i' | b's' | b'S' | b'%') | None => {}
                 Some(other) => {
                     return Err(ExecError::Unsupported {
                         what: format!("str_to_date with the format specifier %{}", *other as char),
@@ -402,6 +422,17 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
             }
         }
     }
+    Ok(())
+}
+
+pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option<Dt>, ExecError> {
+    let format: &[u8] = match format {
+        b"yyyyMMdd" => b"%Y%m%d",
+        b"yyyy-MM-dd" => b"%Y-%m-%d",
+        b"yyyy-MM-dd HH:mm:ss" => b"%Y-%m-%d %H:%i:%s",
+        f => f,
+    };
+    check_format(format)?;
     if value.is_empty() {
         return Ok(None);
     }
@@ -411,6 +442,8 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     const TIME: u32 = 8;
     let (mut ptr, mut val) = (0usize, 0usize);
     let mut used = 0u32;
+    // a 12-hour field was read, and the AM/PM it was given
+    let (mut hour12, mut half_day) = (false, 0i64);
     let mut t = Dt {
         year: 0,
         month: 0,
@@ -431,11 +464,33 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
             let c = format[ptr + 1];
             ptr += 2;
             let rest = &value[val..];
+            // AM/PM: after a 12-hour field only
+            if c == b'p' {
+                if rest.len() < 2 || !rest[1].eq_ignore_ascii_case(&b'M') || !hour12 {
+                    return Ok(None);
+                }
+                if rest[0].eq_ignore_ascii_case(&b'P') {
+                    half_day = 12;
+                }
+                val += 2;
+                continue;
+            }
+            if matches!(c, b'h' | b'I' | b'l') {
+                hour12 = true;
+            }
+            if c == b'b' || c == b'M' {
+                let names: &[&str] = if c == b'b' { &AB_MONTH_NAMES } else { &MONTH_NAMES };
+                let Some((month, len)) = check_word(names, rest) else { return Ok(None) };
+                t.month = month as i64;
+                val += len;
+                used |= MONTH;
+                continue;
+            }
             let (field, max, part): (Option<&mut i64>, usize, u32) = match c {
                 b'Y' | b'y' => (Some(&mut t.year), if c == b'Y' { 4 } else { 2 }, YEAR),
                 b'm' | b'c' => (Some(&mut t.month), 2, MONTH),
                 b'd' | b'e' => (Some(&mut t.day), 2, DAY),
-                b'H' | b'k' => (Some(&mut t.hour), 2, TIME),
+                b'H' | b'k' | b'h' | b'I' | b'l' => (Some(&mut t.hour), 2, TIME),
                 b'i' => (Some(&mut t.minute), 2, TIME),
                 b's' | b'S' => (Some(&mut t.second), 2, TIME),
                 _ => (None, 0, 0),
@@ -471,7 +526,7 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     // time specifiers left in the format still count as time parts
     while ptr < format.len() {
         if format[ptr] == b'%' && ptr + 1 < format.len() {
-            if matches!(format[ptr + 1], b'H' | b'k' | b'i' | b's' | b'S') {
+            if matches!(format[ptr + 1], b'H' | b'k' | b'h' | b'I' | b'l' | b'p' | b'i' | b's' | b'S') {
                 used |= TIME;
             }
             ptr += 2;
@@ -481,6 +536,12 @@ pub fn str_to_date(value: &[u8], format: &[u8], datetime: bool) -> Result<Option
     }
     if used == 0 || (used & TIME != 0 && !datetime) {
         return Ok(None);
+    }
+    if hour12 {
+        if !(1..=12).contains(&t.hour) {
+            return Ok(None);
+        }
+        t.hour = t.hour % 12 + half_day;
     }
     if used & TIME == 0 && used & DAY == 0 {
         t.day = 1;
@@ -506,6 +567,9 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         "yearweek" => args.len() == 2 && is_date(&args[0]) && args[1].ptype == T::INT && to.ptype == T::INT,
         "days_diff" | "weeks_diff" => args.len() == 2 && args.iter().all(is_date) && to.ptype == T::BIGINT,
         "str_to_date" => args.len() == 2 && args.iter().all(text) && is_date(to),
+        _ if crate::datetime_round::is_function(name) => crate::datetime_round::supported(name, args, to),
+        _ if crate::unixtime::is_function(name) => crate::unixtime::supported(name, args, to),
+        _ if crate::tz::is_function(name) => crate::tz::supported(args, to),
         _ => match Unit::parse(name) {
             Some((unit, _)) => {
                 let time_unit = matches!(unit, Unit::Hour | Unit::Minute | Unit::Second);
@@ -527,6 +591,9 @@ pub fn is_date_function(name: &str) -> bool {
         name,
         "year" | "month" | "dayofmonth" | "weekofyear" | "yearweek" | "days_diff" | "weeks_diff" | "str_to_date"
     ) || Unit::parse(name).is_some()
+        || crate::datetime_round::is_function(name)
+        || crate::unixtime::is_function(name)
+        || crate::tz::is_function(name)
 }
 
 fn int(d: &Datum) -> i64 {
@@ -537,7 +604,17 @@ fn int(d: &Datum) -> i64 {
 }
 
 /// Evaluates date function `name`; a row with any NULL argument is NULL and never throws.
-pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows: usize) -> Result<Vec<Datum>, ExecError> {
+/// `constant` says which arguments are constant expressions (`is_col_constant`).
+pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], constant: &[bool], rows: usize) -> Result<Vec<Datum>, ExecError> {
+    if crate::datetime_round::is_function(name) {
+        return crate::datetime_round::eval(name, types, args, constant, rows);
+    }
+    if crate::unixtime::is_function(name) {
+        return crate::unixtime::eval(name, types, args, constant, rows);
+    }
+    if crate::tz::is_function(name) {
+        return crate::tz::eval(args, constant, rows);
+    }
     let dt_of = |i: usize, d: &Datum| Dt::unpack(i128::from(int(d)), types[i].ptype == T::DATETIMEV2);
     let mut out = Vec::with_capacity(rows);
     for r in 0..rows {

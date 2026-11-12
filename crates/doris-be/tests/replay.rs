@@ -838,6 +838,9 @@ const COMPARED_UNORDERED: &[&str] = &[
     "correctness_p0.test_outer_join_with_window_function.test_outer_join_with_with_window_function",
     "correctness_p0.test_outer_join_with_window_function_datev2.test_outer_join_with_window_function_datev2",
     "nereids_p0.aggregate.agg_window_project.agg_window_project",
+    // a sort on an encoded key (compressed materialize) below the result, no ORDER BY on the
+    // query (M6 s7 batch 5)
+    "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode",
     // a subquery's ORDER BY … OFFSET under a join
     "nereids_p0.limit.OffsetInSubqueryWithJoin.test_offset_in_subquery_with_join",
     // QUALIFY's window sort, with no ORDER BY on the query
@@ -1002,6 +1005,28 @@ const BATCH3: [&str; 26] = [
 fn batch3_matches_the_reference() {
     let mut bad = Vec::new();
     for s in BATCH3 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+const BATCH5: [&str; 7] = [
+    "nereids_p0.compress_materialize.compress_materialize.compress_materialize",
+    "nereids_p0.compress_materialize.pushdown_encode.pushdown_encode",
+    "nereids_p0.sql_functions.hash_functions.test_hash_function.test_hash_function",
+    "nereids_p0.subquery.test_inlineview_with_project.inlineview_with_project",
+    "query_p0.sql_functions.datetime_functions.test_convert_tz.test_convert_tz",
+    "query_p0.sql_functions.datetime_functions.test_week_floor_ceil_microsecond.test_week_floor_ceil_microsecond",
+    "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar",
+];
+
+#[test]
+fn batch5_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH5 {
         let m = replay(&replays::load(s));
         if !m.is_empty() {
             bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));

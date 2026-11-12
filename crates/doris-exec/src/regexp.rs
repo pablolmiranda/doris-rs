@@ -21,6 +21,10 @@ use crate::ExecError;
 pub struct RegexOptions {
     pub extended: bool,
     pub hyperscan_fallback: bool,
+    /// `new_version_unix_timestamp` (TQueryOptions 167): not a regexp option, but the query's
+    /// one other per-function switch, carried to the functions the same way. It selects
+    /// `from_unixtime_new` and `unix_timestamp_new`.
+    pub new_unix_timestamp: bool,
 }
 
 impl Default for RegexOptions {
@@ -28,6 +32,7 @@ impl Default for RegexOptions {
         RegexOptions {
             extended: false,
             hyperscan_fallback: true,
+            new_unix_timestamp: false,
         }
     }
 }
@@ -38,6 +43,7 @@ impl RegexOptions {
         RegexOptions {
             extended: o.and_then(|o| o.enable_extended_regex) == Some(true),
             hyperscan_fallback: o.and_then(|o| o.enable_hyperscan_fallback).unwrap_or(true),
+            new_unix_timestamp: o.and_then(|o| o.new_version_unix_timestamp) == Some(true),
         }
     }
 }

@@ -225,6 +225,20 @@ ratchet gains 5, among them `test_group_commit_stream_load_high_concurrency_asyn
 by its supplement need. `set_operation_exprid_reuse` passed strict in this run but stays off the
 strict ratchet (instance order). Queued rows are held in memory: there is no write-ahead log.
 
+After Milestone 6 story 7 batch 5 (three families: time rounding (`{unit}_floor`/`_ceil`) and
+the interval adds, `from_second`/`_millisecond`/`_microsecond`, `from_unixtime`,
+`unix_timestamp`, `months_between`, `next_day`, `date_format` and `convert_tz`; the strings
+`elt`, `locate`, `null_or_empty`, `not_null_or_empty`, `sub_replace`, `starts_with`,
+`money_format` and `format_round`; `encode_as_*`/`decode_as_varchar` and the hashes
+`murmur_hash3_32/64` and `xxhash_32/64`; run `m6-s7b5-full-3`, 2026-11-12): 669 eligible suites,
+all passing both gates; 727 Epic 1 suites pass the out gate (560 of those that reach the BE)
+and 606 the strict gate (526). The out ratchet gains 17 suites, the strict ratchet 14. The
+supplement now blocks `test_expr_zonemap_pruning` (`be:profile_counters`), `pushdown_encode`
+(`be:sql_cache`: the reference's explain came from the SQL cache) and
+`fold_constant_date_arithmatic` (`result:reference_date`: it selects `now()` and
+`curdate()`, which the FE folds to the day it runs). `convert_tz` uses chrono-tz and is refused
+past 2099 in a zone with DST rules, where chrono-tz stops applying them.
+
 The older directory-level gate also works against any target:
 
 ```

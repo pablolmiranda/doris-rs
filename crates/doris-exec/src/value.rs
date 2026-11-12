@@ -346,7 +346,9 @@ fn date_parts(s: &str) -> Option<(u32, u32, u32, &str)> {
         // `YYYYMMDD`, no delimiter (cast_to_datetimev2_impl.hpp: <year> <month2> <day2>)
         (date[..4].parse().ok()?, date[4..6].parse().ok()?, date[6..].parse().ok()?)
     } else {
-        let mut p = date.split('-');
+        // `<year> <separator> <month> <separator> <day>`, a separator any one character that is
+        // not a digit or a letter (`skip_one_non_alnum`)
+        let mut p = date.split(|c: char| !c.is_ascii_alphanumeric());
         let ymd = (p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?);
         if p.next().is_some() {
             return None;

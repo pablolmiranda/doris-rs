@@ -64,6 +64,12 @@ fn strfn_call(n: &TExprNode) -> bool {
     crate::strfn::supported(&name, &args, &to)
 }
 
+/// A call `codec::supported` accepts, by its name and signature.
+fn codec_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::codec::supported(&name, &args, &to)
+}
+
 /// A call `math::supported` accepts, by its name and signature.
 fn math_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
@@ -265,6 +271,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 Some(f) if crate::math::is_math_function(f) => math_call(n),
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
+                Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -328,6 +335,13 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
             let pattern = i + 1 + subtree_len(&e.nodes, i + 1);
             if let Some(p) = e.nodes.get(pattern).filter(|p| p.node_type == N::STRING_LITERAL).and_then(|p| p.string_literal.as_ref()) {
                 crate::regexp::check_constant_pattern(p.value.as_bytes(), crate::regexp::options())?;
+            }
+        }
+        // a constant parse format with a specifier the port lacks is refused now, not per row
+        if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("str_to_date" | "unix_timestamp")) && n.num_children == 2 {
+            let format = i + 1 + subtree_len(&e.nodes, i + 1);
+            if let Some(f) = e.nodes.get(format).filter(|f| f.node_type == N::STRING_LITERAL).and_then(|f| f.string_literal.as_ref()) {
+                crate::datetime::check_format(f.value.as_bytes())?;
             }
         }
     }
@@ -694,6 +708,11 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::codec::is_codec_function(&f)) => {
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::codec::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
@@ -707,7 +726,7 @@ fn eval_at(
             let to = node_type(n)?;
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
-            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, &constant, rows)?;
             (to, out)
         }
         N::ARITHMETIC_EXPR => {

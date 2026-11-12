@@ -30,6 +30,14 @@ const NAMES: &[&str] = &[
     "top_level_domain",
     "first_significant_subdomain",
     "cut_to_first_significant_subdomain",
+    "elt",
+    "locate",
+    "null_or_empty",
+    "not_null_or_empty",
+    "sub_replace",
+    "starts_with",
+    "money_format",
+    "format_round",
 ];
 
 /// Whether `name` is a function this module evaluates (for some signature).
@@ -47,7 +55,6 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     match name {
         "upper"
         | "ucase"
-        | "hex"
         | "unhex"
         | "url_encode"
         | "url_decode"
@@ -55,12 +62,32 @@ pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
         | "first_significant_subdomain"
         | "cut_to_first_significant_subdomain" => all_text(1) && is_text(to),
         "replace" => all_text(3) && is_text(to),
+        // text, or a BIGINT (`HexIntImpl`)
+        "hex" => matches!(args, [a] if is_text(a) || a.ptype == T::BIGINT) && is_text(to),
         "find_in_set" => all_text(2) && to.ptype == T::INT,
         "crc32" => all_text(1) && to.ptype == T::BIGINT,
         "parse_data_size" => all_text(1) && to.ptype == T::LARGEINT,
         "lpad" | "rpad" => args.len() == 3 && is_text(&args[0]) && args[1].ptype == T::INT && is_text(&args[2]) && is_text(to),
         "char" => args.len() >= 2 && is_text(&args[0]) && args[1..].iter().all(|a| a.ptype == T::INT) && is_text(to),
         "trim_in" | "ltrim_in" | "rtrim_in" => (all_text(1) || all_text(2)) && is_text(to),
+        "elt" => args.len() >= 2 && args[0].ptype == T::INT && args[1..].iter().all(is_text) && is_text(to),
+        "locate" => {
+            let shape = match args {
+                [a, b] => is_text(a) && is_text(b),
+                [a, b, c] => is_text(a) && is_text(b) && c.ptype == T::INT,
+                _ => false,
+            };
+            shape && to.ptype == T::INT
+        }
+        "null_or_empty" | "not_null_or_empty" => {
+            matches!(args, [a] if is_text(a) || a.ptype == T::NULL_TYPE) && to.ptype == T::BOOLEAN
+        }
+        "sub_replace" => {
+            (3..=4).contains(&args.len()) && is_text(&args[0]) && is_text(&args[1]) && args[2..].iter().all(|a| a.ptype == T::INT) && is_text(to)
+        }
+        "starts_with" => all_text(2) && to.ptype == T::BOOLEAN,
+        "money_format" => matches!(args, [a] if crate::numfmt::formats(a)) && is_text(to),
+        "format_round" => matches!(args, [a, b] if crate::numfmt::formats(a) && b.ptype == T::INT) && is_text(to),
         // `if(a = b, NULL, a)`: two values of one type, compared as stored
         "nullif" => {
             args.len() == 2
@@ -144,6 +171,62 @@ fn char_starts(s: &[u8]) -> Vec<usize> {
 fn chars(s: &[u8]) -> Vec<&[u8]> {
     let starts = char_starts(s);
     starts.windows(2).map(|w| &s[w[0]..w[1].min(s.len())]).collect()
+}
+
+/// Characters by `get_char_len`: the bytes that are not continuation bytes (0x80..=0xBF).
+fn non_continuation(s: &[u8]) -> i128 {
+    s.iter().filter(|b| !(0x80..=0xBF).contains(*b)).count() as i128
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// `locate(sub, s[, pos])` (search.cpp:56-207, fs.cpp:346-500): 1-based character positions,
+/// 0 when not found.
+fn locate(sub: &[u8], s: &[u8], pos: Option<i128>) -> i128 {
+    let Some(pos) = pos else {
+        return match find(s, sub) {
+            Some(m) => non_continuation(&s[..m]) + 1,
+            None => 0,
+        };
+    };
+    if s.is_empty() && sub.is_empty() && pos == 1 {
+        return 1;
+    }
+    let starts = char_starts(s);
+    let nchars = starts.len() as i128 - 1;
+    if pos <= 0 || pos > nchars {
+        return 0;
+    }
+    if sub.is_empty() {
+        return pos;
+    }
+    let from = starts[(pos - 1) as usize];
+    match find(&s[from..], sub) {
+        Some(m) => pos + non_continuation(&s[from..from + m]),
+        None => 0,
+    }
+}
+
+/// `sub_replace(s, new, start[, len])` (repl.h:181-361): `start` 0-based in characters; the
+/// 3-argument length is the replacement's character count. None is NULL.
+fn sub_replace(s: &[u8], new: &[u8], start: i128, len: Option<i128>) -> Option<Vec<u8>> {
+    let len = len.unwrap_or_else(|| non_continuation(new));
+    if start < 0 || len < 0 {
+        return None;
+    }
+    let starts = char_starts(s);
+    let nchars = starts.len() as i128 - 1;
+    if start >= nchars {
+        return None;
+    }
+    let from = starts[start as usize];
+    let to = starts[(start.saturating_add(len)).min(nchars) as usize].min(s.len());
+    Some([&s[..from], new, &s[to..]].concat())
 }
 
 /// `upper` (fs.cpp:567-627): ASCII when the bytes are, else full Unicode case mapping.
@@ -363,6 +446,7 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Resul
         "replace" => rows(args, n, |r| text(replace(bytes(r[0]), bytes(r[1]), bytes(r[2])))),
         "find_in_set" => rows(args, n, |r| Ok(Datum::Int(find_in_set(bytes(r[0]), bytes(r[1]))))),
         "crc32" => rows(args, n, |r| Ok(Datum::Int(i128::from(crc32fast::hash(bytes(r[0])))))),
+        "hex" if types.first().is_some_and(|t| t.ptype == T::BIGINT) => rows(args, n, |r| text(format!("{:X}", int(r[0]) as i64 as u64).into_bytes())),
         "hex" => rows(args, n, |r| text(hex(bytes(r[0])))),
         "unhex" => rows(args, n, |r| text(unhex(bytes(r[0])))),
         "url_encode" => rows(args, n, |r| text(crate::url::url_encode(bytes(r[0])))),
@@ -383,7 +467,26 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], n: usize) -> Resul
         "trim_in" | "ltrim_in" | "rtrim_in" => rows(args, n, |r| {
             text(trim_in(bytes(r[0]), r.get(1).map(|d| bytes(d)), name != "rtrim_in", name != "ltrim_in"))
         }),
-        // these three handle their own NULLs
+        "locate" => rows(args, n, |r| Ok(Datum::Int(locate(bytes(r[0]), bytes(r[1]), r.get(2).map(|p| int(p)))))),
+        "sub_replace" => rows(args, n, |r| {
+            Ok(sub_replace(bytes(r[0]), bytes(r[1]), int(r[2]), r.get(3).map(|l| int(l))).map_or(Datum::Null, Datum::Bytes))
+        }),
+        "starts_with" => rows(args, n, |r| Ok(Datum::Bool(bytes(r[0]).starts_with(bytes(r[1]))))),
+        "money_format" => Ok(crate::numfmt::money_format(&types[0], args[0])),
+        "format_round" => crate::numfmt::format_round(&types[0], args[0], args[1]),
+        // these handle their own NULLs
+        "elt" => Ok((0..n)
+            .map(|r| match &args[0][r] {
+                Datum::Int(p) if *p >= 1 && (*p as usize) < args.len() => args[*p as usize][r].clone(),
+                _ => Datum::Null,
+            })
+            .collect()),
+        "null_or_empty" | "not_null_or_empty" => Ok((0..n)
+            .map(|r| {
+                let empty = matches!(&args[0][r], Datum::Null) || bytes(&args[0][r]).is_empty();
+                Datum::Bool(empty == (name == "null_or_empty"))
+            })
+            .collect()),
         "parse_data_size" => (0..n)
             .map(|r| match &args[0][r] {
                 Datum::Null => Ok(Datum::Null),

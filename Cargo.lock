@@ -535,6 +535,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "thrift 0.25.0",
+ "twox-hash 2.1.5",
 ]
 
 [[package]]

@@ -11,10 +11,12 @@ fn s(v: &str) -> Datum {
 const OFF: RegexOptions = RegexOptions {
     extended: false,
     hyperscan_fallback: true,
+    new_unix_timestamp: false,
 };
 const EXT: RegexOptions = RegexOptions {
     extended: true,
     hyperscan_fallback: true,
+    new_unix_timestamp: false,
 };
 
 fn one(value: &str, pattern: &str, constant: bool, o: RegexOptions) -> Result<Datum, ExecError> {
@@ -191,9 +193,9 @@ fn boost_refuses_possessive_and_spaced_counts() {
 #[test]
 fn options_come_from_the_query_options() {
     use doris_thrift::gen::palo_internal_service::TQueryOptions;
-    assert_eq!(RegexOptions::from_query_options(None), RegexOptions { extended: false, hyperscan_fallback: true });
+    assert_eq!(RegexOptions::from_query_options(None), RegexOptions { extended: false, hyperscan_fallback: true, new_unix_timestamp: false });
     let o = TQueryOptions { enable_extended_regex: Some(true), enable_hyperscan_fallback: Some(false), ..Default::default() };
-    assert_eq!(RegexOptions::from_query_options(Some(&o)), RegexOptions { extended: true, hyperscan_fallback: false });
+    assert_eq!(RegexOptions::from_query_options(Some(&o)), RegexOptions { extended: true, hyperscan_fallback: false, new_unix_timestamp: false });
 }
 
 /// C++ compiles a constant pattern at open (`FunctionRegexp::open`): a bad one fails the
