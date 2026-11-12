@@ -249,5 +249,10 @@
   "nereids_p0.subquery.test_inlineview_with_project.inlineview_with_project",
   "query_p0.sql_functions.datetime_functions.test_convert_tz.test_convert_tz",
   "query_p0.sql_functions.datetime_functions.test_week_floor_ceil_microsecond.test_week_floor_ceil_microsecond",
-  "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar"
+  "query_p0.sql_functions.string_functions.test_code_varchar.test_code_varchar",
+  "nereids_p0.multi_distinct.multi_distinct_window.multi_distinct_window",
+  "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
+  "nereids_p0.sql_functions.encryption_digest.test_encryption_function.test_encryption_function",
+  "nereids_p0.system.test_query_sys.test_query_sys",
+  "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive"
 ]

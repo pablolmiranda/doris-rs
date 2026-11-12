@@ -345,6 +345,9 @@ enum State {
     Max(Option<Datum>),
     Avg { sum: Num, count: i64 },
     Distinct(BTreeSet<Vec<u8>>),
+    /// The distinct combinator around `sum` or `group_concat` (`aggregate_function_distinct.h`):
+    /// the distinct values' canonical bytes, fed to the nested function at the end
+    DistinctOf { concat: bool, set: BTreeSet<Vec<u8>> },
     /// Welford's running mean and squared deviation (`aggregate_function_stddev.h`)
     Stddev { mean: f64, m2: f64, count: i64 },
     /// the first accepted row's separator is the one kept (`aggregate_function_group_concat.h`)
@@ -486,8 +489,29 @@ impl State {
             "sum0" => {
                 return Err(ExecError::Unsupported { what: format!("sum0 of {}", f.ret.type_name()) });
             }
-            "stddev" if f.param_types.first().is_some_and(|t| t.ptype == T::DOUBLE) => State::Stddev { mean: 0.0, m2: 0.0, count: 0 },
-            "stddev" => return Err(ExecError::Unsupported { what: "stddev of a type other than DOUBLE".into() }),
+            // one state, four finalizers (aggregate_function_stddev.h)
+            "stddev" | "stddev_samp" | "variance" | "variance_samp" if f.param_types.first().is_some_and(|t| t.ptype == T::DOUBLE) => {
+                State::Stddev { mean: 0.0, m2: 0.0, count: 0 }
+            }
+            name @ ("stddev" | "stddev_samp" | "variance" | "variance_samp") => {
+                return Err(ExecError::Unsupported { what: format!("{name} of a type other than DOUBLE") })
+            }
+            // integers sum the same in any order; a DOUBLE would add in hash-set order
+            "multi_distinct_sum"
+                if f.param_types.len() == 1
+                    && matches!(f.param_types[0].ptype, T::TINYINT | T::SMALLINT | T::INT | T::BIGINT)
+                    && f.ret.ptype == T::BIGINT =>
+            {
+                State::DistinctOf { concat: false, set: BTreeSet::new() }
+            }
+            "multi_distinct_group_concat" if f.param_types.len() == 1 && matches!(f.param_types[0].ptype, T::CHAR | T::VARCHAR | T::STRING) => {
+                State::DistinctOf { concat: true, set: BTreeSet::new() }
+            }
+            name @ ("multi_distinct_sum" | "multi_distinct_group_concat") => {
+                return Err(ExecError::Unsupported {
+                    what: format!("{name} of {}", f.param_types.iter().map(|t| t.type_name()).collect::<Vec<_>>().join(", ")),
+                })
+            }
             "group_concat" if (1..=2).contains(&f.param_types.len()) => State::GroupConcat { data: vec![], sep: vec![], inited: false },
             "ndv" if f.param_types.first().is_some_and(|t| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING) || ndv_width(t.ptype).is_some()) => {
                 State::Ndv(crate::hll::Hll::default())
@@ -571,7 +595,7 @@ impl State {
                     }
                 }
             }
-            State::Distinct(set) => {
+            State::Distinct(set) | State::DistinctOf { set, .. } => {
                 if let Some((_, d)) = first.filter(|_| !null) {
                     set.insert(canonical(std::slice::from_ref(d)));
                 }
@@ -688,6 +712,7 @@ impl State {
                 *count += c2;
             }
             (State::Distinct(a), State::Distinct(b)) => a.extend(b.iter().cloned()),
+            (State::DistinctOf { set: a, .. }, State::DistinctOf { set: b, .. }) => a.extend(b.iter().cloned()),
             // aggregate_function_stddev.h:99-108: the formula runs even into an empty state
             (State::Stddev { mean, m2, count }, State::Stddev { mean: rm, m2: rm2, count: rc }) => {
                 if *rc != 0 {
@@ -701,7 +726,7 @@ impl State {
             (State::Ndv(a), State::Ndv(b)) => a.merge(b),
             (State::Stats { s, accepted }, State::Stats { s: r, accepted: b }) => {
                 if *b {
-                    s.merge(r);
+                    s.merge(r)?;
                     *accepted = true;
                 }
             }
@@ -767,11 +792,41 @@ impl State {
                 }
             }
             State::Distinct(set) => Datum::Int(set.len() as i128),
+            State::DistinctOf { concat, set } => {
+                let values = set.iter().map(|k| Reader(k).datum()).collect::<Result<Vec<_>, _>>()?;
+                match (values.as_slice(), *concat) {
+                    ([], _) if ret.nullable => Datum::Null,
+                    ([], false) => Datum::Int(0),
+                    ([], true) => Datum::Bytes(vec![]),
+                    ([one], true) => one.clone(),
+                    // C++ joins them in its hash set's order
+                    (_, true) => {
+                        return Err(ExecError::Unsupported {
+                            what: "multi_distinct_group_concat of two or more distinct values".into(),
+                        })
+                    }
+                    (vs, false) => {
+                        let mut sum: i64 = 0;
+                        for v in vs {
+                            if let Datum::Int(x) = v {
+                                sum = sum.wrapping_add(*x as i64);
+                            }
+                        }
+                        Datum::Int(sum.into())
+                    }
+                }
+            }
+            // no accepted row is NULL (the NULL wrapper); one row is 0; inf → NaN
             State::Stddev { m2, count, .. } => match *count {
                 0 => Datum::Null,
                 1 => Datum::Double(0.0),
                 n => {
-                    let v = (m2 / n as f64).sqrt();
+                    let v = match f.function.as_str() {
+                        "variance" => m2 / n as f64,
+                        "variance_samp" => m2 / (n - 1) as f64,
+                        "stddev_samp" => (m2 / (n - 1) as f64).sqrt(),
+                        _ => (m2 / n as f64).sqrt(),
+                    };
                     Datum::Double(if v.is_infinite() { f64::NAN } else { v })
                 }
             },
@@ -871,6 +926,15 @@ impl State {
                 out.push(8);
                 out.extend(h.encode());
             }
+            State::DistinctOf { concat, set } => {
+                out.push(12);
+                out.push(u8::from(*concat));
+                out.extend((set.len() as u64).to_le_bytes());
+                for k in set {
+                    out.extend((k.len() as u64).to_le_bytes());
+                    out.extend(k);
+                }
+            }
             State::Distinct(set) => {
                 out.push(5);
                 out.extend((set.len() as u64).to_le_bytes());
@@ -916,6 +980,16 @@ impl State {
                     set.insert(r.take(len)?.to_vec());
                 }
                 State::Distinct(set)
+            }
+            12 => {
+                let concat = r.u8()? == 1;
+                let n = r.u64()? as usize;
+                let mut set = BTreeSet::new();
+                for _ in 0..n {
+                    let len = r.u64()? as usize;
+                    set.insert(r.take(len)?.to_vec());
+                }
+                State::DistinctOf { concat, set }
             }
             6 => State::Stddev {
                 mean: f64::from_bits(r.u64()?),

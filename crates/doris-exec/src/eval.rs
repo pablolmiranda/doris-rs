@@ -26,6 +26,7 @@ pub const AGGREGATES: &[&str] = &[
     "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
     "percentile", "percentile_array", "retention", "linear_histogram", "exponential_moving_average", "group_bit_and", "group_bit_or", "group_bit_xor",
+    "stddev_samp", "variance", "variance_samp", "percentile_approx", "multi_distinct_sum", "multi_distinct_group_concat",
 ];
 
 fn function_name(n: &TExprNode) -> Option<String> {
@@ -68,6 +69,12 @@ fn strfn_call(n: &TExprNode) -> bool {
 fn codec_call(n: &TExprNode) -> bool {
     let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
     crate::codec::supported(&name, &args, &to)
+}
+
+/// A call `crypto::supported` accepts, by its name and signature.
+fn crypto_call(n: &TExprNode) -> bool {
+    let (Some(name), Some((args, to))) = (function_name(n), signature(n)) else { return false };
+    crate::crypto::supported(&name, &args, &to)
 }
 
 /// A call `math::supported` accepts, by its name and signature.
@@ -254,10 +261,10 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
             N::FUNCTION_CALL => match function_name(n).as_deref() {
                 Some("substring" | "is_null_pred" | "is_not_null_pred") => true,
                 Some("nullable" | "non_nullable") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == to.ptype),
-                Some("abs") => arithmetic_call(n),
+                Some("abs" | "mod") => arithmetic_call(n),
                 Some("if" | "ifnull" | "coalesce") => conditional_call(n),
                 Some("like" | "concat" | "length") => string_call(n),
-                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil") => round_call(&e.nodes, i),
+                Some("round" | "truncate" | "floor" | "dfloor" | "ceil" | "dceil" | "round_bankers") => round_call(&e.nodes, i),
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
@@ -270,8 +277,12 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 Some(f) if crate::math::is_math_function(f) => math_call(n),
+                Some(f) if crate::random::is_random_function(f) => {
+                    signature(n).is_some_and(|(args, to)| crate::random::supported(f, &args, &to))
+                }
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
+                Some(f) if crate::crypto::is_crypto_function(f) => crypto_call(n),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -328,7 +339,9 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
         )
     };
     let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
-    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
+    // the clock functions need the query's clock; random and sleep run (and fail) per row, as
+    // C++ runs them at execute, not open
+    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate" | "random" | "rand" | "sleep"));
     // a regexp's constant pattern is compiled at open
     for (i, n) in e.nodes.iter().enumerate() {
         if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("regexp" | "rlike")) {
@@ -446,6 +459,12 @@ pub fn eval_column(
     let mut pos = 0;
     let out = eval_at(&e.nodes, &mut pos, block, slots)?;
     Ok(out)
+}
+
+/// As `eval_column`, over an expression's nodes in place (a subtree of a larger expression).
+pub fn eval_nodes(nodes: &[TExprNode], block: &Block, slots: &SlotMap) -> Result<(ColType, Vec<Datum>), ExecError> {
+    let mut pos = 0;
+    eval_at(nodes, &mut pos, block, slots)
 }
 
 fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
@@ -708,10 +727,18 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::crypto::is_crypto_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::crypto::eval(&function_name(n).unwrap_or_default(), &args, rows)?)
+        }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::codec::is_codec_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::codec::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::random::is_random_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::random::eval(n, &function_name(n).unwrap_or_default(), &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
@@ -729,7 +756,8 @@ fn eval_at(
             let out = crate::datetime::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, &constant, rows)?;
             (to, out)
         }
-        N::ARITHMETIC_EXPR => {
+        // `mod` also comes as a FUNCTION_CALL (the fold suite's `mod(DOUBLE, DOUBLE)`)
+        N::ARITHMETIC_EXPR | N::FUNCTION_CALL if n.node_type == N::ARITHMETIC_EXPR || function_name(n).as_deref() == Some("mod") => {
             let to = node_type(n)?;
             let op = function_name(n).ok_or_else(|| ExecError::Unsupported { what: describe(n) })?;
             let [(ta, a), (tb, b)] = <[_; 2]>::try_from(kids).map_err(|_| bad(format!("{op} needs two arguments")))?;

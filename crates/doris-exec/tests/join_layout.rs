@@ -55,3 +55,15 @@ fn asof_sides_must_share_a_type() {
     assert!(check_asof_condition(&binary("ge", slot(1, ty(T::INT)), slot(2, ty(T::INT)))).is_err());
     assert!(check_asof_condition(&binary("eq", date(), slot(3, ty(T::DATEV2)))).is_err());
 }
+
+/// An ASOF side is evaluated from a copy of its nodes, which would give a `random` a fresh
+/// generator on every evaluation: refused (final review M1).
+#[test]
+fn random_in_an_asof_condition_is_refused() {
+    use doris_exec::hash_join::check_asof_condition;
+    use doris_fixtures::build::{binary, call, int, slot, ty};
+    use doris_thrift::gen::types::TPrimitiveType as T;
+    let side = call("random", ty(T::DATEV2), vec![int(1, ty(T::BIGINT))]);
+    let err = check_asof_condition(&binary("ge", side, slot(3, ty(T::DATEV2)))).unwrap_err().to_string();
+    assert!(err.contains("random"), "{err}");
+}

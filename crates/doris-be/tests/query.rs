@@ -1032,3 +1032,73 @@ fn a_constant_overflow_fails_exec_plan_fragment() {
     // nothing runs
     assert_ne!(env.query.fetch_data(&fetch_req(&q)).status.status_code, 0);
 }
+
+/// test_window_fn's `rank() over (partition by … order by sum(…))` on a GROUP BY: the window
+/// sits on a sort over the merging aggregation, in 4 instances, fed by an exchange hashed on one
+/// grouping key. A window partition's rows are in one instance when the exchange's hash keys are
+/// among the partition keys, mapped through the sort and the grouping exprs.
+fn window_over_agg_prepare(projected: bool) -> impl Fn(&dyn Fn(&mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList)) -> doris_proto::doris::PStatus {
+    use doris_proto::doris::PExecPlanFragmentRequest;
+    use prost::Message;
+    let suite = "nereids_p0.sql_functions.window_functions.test_window_fn.test_window_fn";
+    let recs = doris_wire::suites::read_suite(&doris_wire::suites::corpus_dir().join(format!("{suite}.bin.gz"))).expect("the suite's traffic");
+    let (req, list) = recs
+        .iter()
+        .filter(|r| r.header.get("method").and_then(|v| v.as_str()) == Some("exec_plan_fragment_prepare") && r.header.get("kind").and_then(|v| v.as_str()) == Some("request"))
+        .filter_map(|r| PExecPlanFragmentRequest::decode(&r.data[..]).ok())
+        .find_map(|req| {
+            let l = doris_fixtures::replays::plan_list(&req)?;
+            let fits = l.params_list.iter().flatten().any(|p| {
+                let nodes = p.fragment.as_ref().and_then(|f| f.plan.as_ref()).map(|x| x.nodes.as_slice()).unwrap_or_default();
+                p.local_params.as_ref().is_some_and(|l| l.len() >= 4)
+                    && nodes.iter().position(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE).is_some_and(|a| nodes[a..].iter().any(|n| n.node_type == TPlanNodeType::AGGREGATION_NODE))
+                    && !nodes.iter().any(|n| n.node_type == TPlanNodeType::PARTITION_SORT_NODE)
+                    && nodes.iter().any(|n| n.node_type == TPlanNodeType::AGGREGATION_NODE && n.projections.is_some() == projected)
+            });
+            fits.then_some((req, l))
+        })
+        .expect("a window over an aggregation in 4 instances");
+    move |change| {
+        let mut l = list.clone();
+        change(&mut l);
+        let mut r = req.clone();
+        r.request = exec_request(l.params_list.clone().unwrap()).request;
+        env().query.prepare(&r).status
+    }
+}
+
+#[test]
+fn a_window_over_an_aggregation_runs_in_several_instances() {
+    let prepare = window_over_agg_prepare(false);
+    let st = prepare(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    // the aggregation projects (`partition by k order by sum(a) + sum(b)`): the partition key is
+    // a projected grouping slot
+    let st = window_over_agg_prepare(true)(&|_| {});
+    assert_eq!(st.status_code, 0, "{st:?}");
+    // the aggregation's exchange hashed on another grouping key: a partition may span instances
+    let rehash = |l: &mut doris_thrift::gen::palo_internal_service::TPipelineFragmentParamsList| {
+        let agg_exchange = {
+            let plan = l.params_list.as_mut().unwrap().iter_mut().map(|p| p.fragment.as_mut().unwrap().plan.as_mut().unwrap()).find(|p| p.nodes.iter().any(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE)).unwrap();
+            let at = plan.nodes.iter().position(|n| n.node_type == TPlanNodeType::ANALYTIC_EVAL_NODE).unwrap();
+            plan.nodes[at..].iter().find(|n| n.node_type == TPlanNodeType::EXCHANGE_NODE).unwrap().node_id
+        };
+        let group = l
+            .params_list
+            .as_ref()
+            .unwrap()
+            .iter()
+            .flat_map(|p| p.fragment.as_ref().unwrap().plan.as_ref().unwrap().nodes.iter())
+            .find_map(|n| n.agg_node.as_ref().filter(|_| n.node_type == TPlanNodeType::AGGREGATION_NODE).and_then(|a| a.grouping_exprs.clone()))
+            .unwrap();
+        for p in l.params_list.as_mut().unwrap() {
+            if let Some(s) = p.fragment.as_mut().unwrap().output_sink.as_mut().and_then(|s| s.stream_sink.as_mut()) {
+                if s.dest_node_id == agg_exchange {
+                    // every grouping key: more than the window's partition key
+                    s.output_partition.partition_exprs = Some(group.clone());
+                }
+            }
+        }
+    };
+    refused_by(&prepare, &rehash, "an ANALYTIC_EVAL_NODE hashed on other exprs than its partition keys in 4 instances");
+}

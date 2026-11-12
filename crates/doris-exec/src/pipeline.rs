@@ -106,14 +106,24 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         ctx,
         prefetched: Default::default(),
     };
-    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || {
+    // one instance: its own random generators (random.cpp's per-instance mt19937_64)
+    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || random_scope(f.mode == crate::query::RunMode::Merged && f.instances.len() > 1, || {
         if f.mode == crate::query::RunMode::Merged && instance > 0 {
             return me.idle();
         }
         me.prefetch_shared_builds()?;
         let out = me.node(&f.root)?;
         me.sink(out)
-    }))
+    })))
+}
+
+/// The instance's random generators: shared when one run stands for several C++ tasks.
+fn random_scope<R>(merged: bool, f: impl FnOnce() -> R) -> R {
+    if merged {
+        crate::random::with_shared_scope(f)
+    } else {
+        crate::random::with_scope(f)
+    }
 }
 
 impl Instance<'_> {
@@ -312,7 +322,10 @@ impl Instance<'_> {
             },
             slots: vec![],
         };
-        for row in &u.const_expr_lists {
+        // the constant rows: only the fragment's first instance (union_source_operator.cpp,
+        // `per_fragment_instance_idx() == 0`, which is the sender id)
+        let consts = if self.instance.sender_id == 0 { &u.const_expr_lists[..] } else { &[] };
+        for row in consts {
             let b = self.typed(project(row, &one)?, &out.slots)?;
             out.block.rows.extend(b.rows);
         }
@@ -702,7 +715,8 @@ impl Instance<'_> {
         let mut lists = Vec::with_capacity(fns.len());
         for e in fns {
             let name = function_name(e).unwrap_or_default();
-            let (_, arg) = eval_column(&TExpr { nodes: e.nodes[1..].to_vec() }, &child.block, &map)?;
+            // in place: the plan's own nodes, whose addresses key their random generators
+            let (_, arg) = crate::eval::eval_nodes(&e.nodes[1..], &child.block, &map)?;
             lists.push(arg.iter().map(|a| values(&name, a)).collect::<Vec<_>>());
         }
         let fn_tuple = *n.row_tuples.last().ok_or_else(|| ExecError::BadRequest("TABLE_FUNCTION_NODE without its tuples".into()))?;

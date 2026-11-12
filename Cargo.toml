@@ -27,6 +27,7 @@ doris-fixtures = { path = "crates/doris-fixtures" }
 doris-rocks = { path = "crates/doris-rocks" }
 doris-segment = { path = "crates/doris-segment" }
 doris-exec = { path = "crates/doris-exec" }
+doris-wire = { path = "crates/doris-wire" }
 prost = "0.14"
 prost-build = "0.14"
 protoc-bin-vendored = "3"
@@ -39,6 +40,12 @@ snap = "1"
 rustix = { version = "1", features = ["fs"] }
 ruzstd = "0.9"
 core-math = "1.4"
+libm = "0.2.16"
+aes = "0.8"
+aes-gcm = "0.10"
+sm4 = "0.5"
+sm3 = "0.4"
+base64 = "0.22"
 twox-hash = { version = "2.1", default-features = false, features = ["xxhash32", "xxhash3_64"] }
 crc32fast = "1"
 thrift = "0.25"

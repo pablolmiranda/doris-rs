@@ -305,9 +305,10 @@ fn arithmetic_and_abs_evaluate() {
 
 #[test]
 fn unlisted_arithmetic_is_refused() {
+    // decimal mod runs at one scale only (since batch 6); mixed scales stay refused
     let d = scalar(T::DECIMAL128I, -1, 38, 2);
-    let e = arith("mod", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.00", d)]);
-    let err = check_read(&e).expect_err("decimal mod is not supported").to_string();
+    let e = arith("mod", d.clone(), vec![decimal("1.00", d.clone()), decimal("2.0000", scalar(T::DECIMAL128I, -1, 38, 4))]);
+    let err = check_read(&e).expect_err("decimal mod at two scales is not supported").to_string();
     assert!(err.contains("function mod"), "{err}");
 }
 

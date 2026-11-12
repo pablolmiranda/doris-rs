@@ -197,12 +197,13 @@ fn refuses_unlisted_signatures() {
     assert!(!arithmetic_supported("add", &[big.clone(), dbl.clone()], &dbl));
     assert!(!arithmetic_supported("divide", &[big.clone(), big.clone()], &big));
     // decimal add/subtract only at the result's scale (the FE casts both sides to it); decimal
-    // and DOUBLE mod are not in any eligible suite
+    // mod at one scale and DOUBLE mod since batch 6 (the fold suite sends both)
     assert!(arithmetic_supported("add", &[d128.clone(), d128.clone()], &d128));
     assert!(arithmetic_supported("subtract", &[d128.clone(), d128.clone()], &d128));
     assert!(!arithmetic_supported("add", &[ty(T::DECIMAL128I, 38, 2), d128.clone()], &d128));
-    assert!(!arithmetic_supported("mod", &[d128.clone(), d128.clone()], &d128));
-    assert!(!arithmetic_supported("mod", &[dbl.clone(), dbl.clone()], &dbl));
+    assert!(arithmetic_supported("mod", &[d128.clone(), d128.clone()], &d128));
+    assert!(!arithmetic_supported("mod", &[ty(T::DECIMAL128I, 38, 2), d128.clone()], &d128));
+    assert!(arithmetic_supported("mod", &[dbl.clone(), dbl.clone()], &dbl));
 }
 
 #[test]

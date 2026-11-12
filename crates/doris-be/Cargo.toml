@@ -30,3 +30,4 @@ flate2 = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 doris-fixtures = { workspace = true }
+doris-wire = { workspace = true }
