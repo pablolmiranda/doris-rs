@@ -312,7 +312,10 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
         if rows > 0 && (0..rows).all(null) {
             return Ok(vec![Datum::Null; rows]);
         }
-        if let Some(p) = period_at.filter(|p| constant[*p]) {
+        // all arguments constant: C++ unwraps them and runs the column path, which names every
+        // argument (the default origin too) in its errors
+        let all_constant = constant.iter().all(|c| *c);
+        if let Some(p) = period_at.filter(|p| constant[*p] && !all_constant) {
             let v = args[p].first().map(int).unwrap_or(1);
             if args[p].first() != Some(&Datum::Null) && v < 1 {
                 return Err(out_of_range(format!("Operation {name} of {v} out of range")));
@@ -320,7 +323,8 @@ pub fn eval(name: &str, types: &[ColType], args: &[&[Datum]], constant: &[bool],
         }
         // a constant default origin is the period form, in the error too
         // (`vector_const_const`: only when the period is constant too)
-        let default_origin = period_at.is_some_and(|p| constant[p])
+        let default_origin = !all_constant
+            && period_at.is_some_and(|p| constant[p])
             && origin_at.is_some_and(|o| constant[o] && args[o].first().is_some_and(|d| *d != Datum::Null && dt(d) == FIRST_DAY));
         return (0..rows)
             .map(|r| {

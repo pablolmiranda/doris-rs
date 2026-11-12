@@ -128,6 +128,12 @@
     "be:sql_cache"
    ],
    "reason": "Its explain physical plan at exchange 18 shows PhysicalSqlCache with cost 0.0 on the reference: the same select ran just before (order_qt_exec_agg_join) and was stored in the BE's SQL cache, which the FE's explain reads back. doris-rs keeps no SQL cache, so the FE plans afresh and the explain has 13 rows, not 14 (doris-rs run m6-s7b5-full-1, 2026-11-11). The suite's own assertions pass; the out gate passes."
+  },
+  "nereids_p0.expression.fold_constant.fold_constant_date_arithmatic.fold_constant_date_arithmatic": {
+   "needs": [
+    "result:reference_date"
+   ],
+   "reason": "Its 12 selects of substr(now()/curdate()/current_date()/current_timestamp(), 1, 10) return the day the FE folds them: 2026-11-03 on the reference, 2026-11-12 in doris-rs run m6-s7b5-full-3, where every other reply matches (all 411 exchanges compared). No BE can return the reference's date on another day."
   }
  },
  "groups": []

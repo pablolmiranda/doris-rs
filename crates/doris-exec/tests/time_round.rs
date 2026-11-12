@@ -171,11 +171,59 @@ fn rounding_past_9999_is_out_of_range() {
             "Operation year_ceil of 9999-12-31 00:00:00, 2000-01-01 00:00:00 out of range".into()
         )
     );
-    // a constant period below 1 fails before any row
+    // all arguments constant: C++ unwraps them and names every one (test_date_floor_ceil #440)
     assert_eq!(
-        coded(round("hour_floor", 0, vec![lit("2020-01-01 00:00:00", 0), int(0, ty(T::INT))])),
-        (-218, "Operation hour_floor of 0 out of range".into())
+        coded(round("month_floor", 0, vec![lit("2023-07-14 15:30:45", 0), int(0, ty(T::INT))])),
+        (-218, "Operation month_floor of 2023-07-14 15:30:45, 0 out of range".into())
     );
+}
+
+/// `date_floor`/`date_ceil` of constants: the default origin the FE adds shows in the error,
+/// whether the period is below 1 or the result passes 9999 (test_date_floor_ceil #36, #39, #438).
+#[test]
+fn all_constant_errors_name_the_default_origin() {
+    let origin = || lit("0001-01-01 00:00:00", 0);
+    assert_eq!(
+        coded(round(
+            "year_floor",
+            6,
+            vec![lit("9999-12-31 23:59:59.999999", 6), int(-10, ty(T::INT)), origin()]
+        )),
+        (
+            -218,
+            "Operation year_floor of 9999-12-31 23:59:59.999999, -10, 0001-01-01 00:00:00 out of range".into()
+        )
+    );
+    assert_eq!(
+        coded(round(
+            "minute_ceil",
+            6,
+            vec![lit("9999-12-31 23:59:59.999999", 6), int(5, ty(T::INT)), origin()]
+        )),
+        (
+            -218,
+            "Operation minute_ceil of 9999-12-31 23:59:59.999999, 5, 0001-01-01 00:00:00 out of range".into()
+        )
+    );
+    assert_eq!(
+        coded(round("month_floor", 0, vec![lit("2007-01-02 00:00:00", 0), int(0, ty(T::INT)), origin()])),
+        (
+            -218,
+            "Operation month_floor of 2007-01-02 00:00:00, 0, 0001-01-01 00:00:00 out of range".into()
+        )
+    );
+}
+
+/// A column date with a constant period below 1 fails before any row, naming the period
+/// alone (test_time_round #47: `hour_floor(dt, 0)`).
+#[test]
+fn a_constant_period_over_a_column_names_the_period() {
+    let (block, slots) = column_block();
+    let e = call("hour_floor", dt(0), vec![slot(1, dt(0)), int(0, ty(T::INT))]);
+    match eval_column(&e, &block, &slots) {
+        Err(ExecError::Coded { code: -218, msg, .. }) => assert_eq!(msg, "Operation hour_floor of 0 out of range"),
+        other => panic!("{other:?}"),
+    }
 }
 
 fn column_block() -> (Block, SlotMap) {
