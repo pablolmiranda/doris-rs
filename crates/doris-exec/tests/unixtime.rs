@@ -360,3 +360,17 @@ fn an_unported_parse_format_is_refused_at_check() {
     let e = call("str_to_date", ty(T::DATEV2), vec![slot(1, vc()), string("%Y-%b-%d")]);
     in_zone("UTC", || check_read(&e)).unwrap();
 }
+
+/// The cast grammar takes any one non-alphanumeric character between the date's fields (the
+/// fold suite's `unix_timestamp('1970/01/01 00:00:00')`).
+#[test]
+fn a_date_with_any_separator_casts() {
+    assert_eq!(doris_exec::value::parse_datetimev2("1970/01/01 00:00:00", 6), doris_exec::value::parse_datetimev2("1970-01-01 00:00:00", 6));
+    assert_eq!(doris_exec::value::parse_datev2("2024.02.29"), doris_exec::value::parse_datev2("2024-02-29"));
+    // two separators in a row, or a letter, is no date
+    assert_eq!(doris_exec::value::parse_datev2("2024--02-29"), None);
+    assert_eq!(doris_exec::value::parse_datev2("2024a02a29"), None);
+    let cast = doris_fixtures::build::over(doris_fixtures::build::blank(doris_thrift::gen::exprs::TExprNodeType::CAST_EXPR, dt(6), 1), vec![string("1970/01/01 00:00:00")]);
+    let e = call("unix_timestamp", scalar(T::DECIMAL64, -1, 18, 6), vec![cast]);
+    assert_eq!(utc(e).unwrap(), Datum::Int(0));
+}
