@@ -270,6 +270,9 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
                 Some(f) if crate::geo::is_geo_function(f) => geo_call(n),
                 Some(f) if crate::math::is_math_function(f) => math_call(n),
+                Some(f) if crate::random::is_random_function(f) => {
+                    signature(n).is_some_and(|(args, to)| crate::random::supported(f, &args, &to))
+                }
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
                 _ => false,
@@ -328,7 +331,9 @@ pub fn check_constants(e: &TExpr) -> Result<(), ExecError> {
         )
     };
     let call = |n: &TExprNode| matches!(n.node_type, N::FUNCTION_CALL | N::COMPUTE_FUNCTION_CALL | N::ARITHMETIC_EXPR | N::CAST_EXPR);
-    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate"));
+    // the clock functions need the query's clock; random and sleep run (and fail) per row, as
+    // C++ runs them at execute, not open
+    let clock = |n: &TExprNode| matches!(function_name(n).as_deref(), Some("now" | "current_date" | "curdate" | "random" | "rand" | "sleep"));
     // a regexp's constant pattern is compiled at open
     for (i, n) in e.nodes.iter().enumerate() {
         if n.node_type == N::FUNCTION_CALL && matches!(function_name(n).as_deref(), Some("regexp" | "rlike")) {
@@ -712,6 +717,10 @@ fn eval_at(
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::codec::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::random::is_random_function(&f)) => {
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            (node_type(n)?, crate::random::eval(n, &function_name(n).unwrap_or_default(), &args, rows)?)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::math::is_math_function(&f)) => {
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();

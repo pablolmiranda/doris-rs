@@ -106,14 +106,15 @@ pub fn run_instance(plan: &QueryPlan, fragment: usize, instance: usize, ctx: &Ex
         ctx,
         prefetched: Default::default(),
     };
-    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || {
+    // one instance: its own random generators (random.cpp's per-instance mt19937_64)
+    crate::clock::with_clock(&plan.clock, || crate::regexp::with_regex_options(plan.regex, || crate::random::with_scope(|| {
         if f.mode == crate::query::RunMode::Merged && instance > 0 {
             return me.idle();
         }
         me.prefetch_shared_builds()?;
         let out = me.node(&f.root)?;
         me.sink(out)
-    }))
+    })))
 }
 
 impl Instance<'_> {

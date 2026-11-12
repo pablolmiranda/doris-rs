@@ -35,6 +35,7 @@ pub mod nested_loop;
 pub mod partition_sort;
 pub mod pipeline;
 pub mod query;
+pub mod random;
 pub mod regexp;
 pub mod repeat;
 pub mod round;

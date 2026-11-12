@@ -147,6 +147,21 @@ fn head_unordered(plan: &TPipelineFragmentParamsList) -> bool {
         })
 }
 
+/// Whether the plan calls `random`/`rand` without a seed (no argument, or a range): C++ seeds
+/// that generator from `std::random_device`, so its values differ from run to run (the marks
+/// mask them); such a reply is compared by its row count.
+fn unseeded_random(plan: &TPipelineFragmentParamsList) -> bool {
+    let debug = format!("{plan:?}");
+    ["function_name: \"random\"", "function_name: \"rand\""].iter().any(|key| {
+        debug.match_indices(key).any(|(at, _)| {
+            // the call's own node: its num_children comes before its fn_
+            let before = &debug[..at];
+            let n = before.rfind("num_children: ").map(|i| &before[i + 14..]);
+            n.and_then(|t| t.split(|c: char| !c.is_ascii_digit()).next()).is_some_and(|d| d != "1")
+        })
+    })
+}
+
 fn ids(plan: &TPipelineFragmentParamsList) -> Vec<(i64, i64)> {
     let mut out = Vec::new();
     for p in plan.params_list.iter().flatten() {
@@ -300,7 +315,8 @@ impl Driver<'_> {
         let reference = outcome(&want);
         // REPLAY_EXACT: compare every query's row order too (the strict gate compares it)
         let exact = std::env::var_os("REPLAY_EXACT").is_some();
-        let m = compare(&r.suite, query, exact || ordered(&plan), !exact && head_unordered(&plan), &got, &reference);
+        let by_count = !exact && (head_unordered(&plan) || unseeded_random(&plan));
+        let m = compare(&r.suite, query, exact || ordered(&plan), by_count, &got, &reference);
         self.out.extend(m);
     }
 }
@@ -854,13 +870,19 @@ const COMPARED_BY_COUNT: &[&str] = &[
     // `GROUP BY t2.c1 LIMIT 1 OFFSET 1` (no ORDER BY) gathered from 10 instances: the group kept
     // is whichever instance's arrives first; the reference varied too (exchanges 29 and 31)
     "nereids_p0.join.test_limit_join.test_limit_join",
+    // `select a + 2 … limit` gathered from 4 instances with no ORDER BY (M6 s7 batch 6; its seeded
+    // `random(100)` query is compared row by row)
+    "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
+    // `rand()`, `random()` and `random(1, 10)` draw from an OS-seeded generator (random.cpp); the
+    // marks mask those columns (M6 s7 batch 6)
+    "nereids_p0.system.test_query_sys.test_query_sys",
 ];
 
 #[test]
 fn replays_compared_by_count_are_listed() {
     let mut got: Vec<String> = replays::all()
         .iter()
-        .filter(|r| r.queries().iter().filter(|q| replays::is_result_query(q)).any(head_unordered))
+        .filter(|r| r.queries().iter().filter(|q| replays::is_result_query(q)).any(|q| head_unordered(q) || unseeded_random(q)))
         .map(|r| r.suite.clone())
         .collect();
     got.sort();
