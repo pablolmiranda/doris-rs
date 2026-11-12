@@ -281,3 +281,43 @@ fn multi_distinct_in_frames() {
     );
     assert!(WindowFn::from_expr(&e).is_err());
 }
+
+// final review fixes
+
+/// Two partial states merged past the limit: the digest may have merged points (I1).
+#[test]
+fn merged_percentile_approx_states_past_the_limit_are_refused() {
+    use doris_exec::stats_agg::Stats;
+    let params = [ty(T::DOUBLE), ty(T::DOUBLE)];
+    let state = |from: usize| {
+        let mut s = Stats::new("percentile_approx", &params).unwrap();
+        for x in from..from + 1500 {
+            s.add(&[&d(x as f64), &d(0.5)]).unwrap();
+        }
+        s
+    };
+    let mut a = state(0);
+    assert!(matches!(a.merge(&state(1500)), Err(ExecError::Unsupported { .. })));
+    // under the limit the merge stands
+    let mut small = Stats::new("percentile_approx", &params).unwrap();
+    small.add(&[&d(1.0), &d(0.5)]).unwrap();
+    let mut other = Stats::new("percentile_approx", &params).unwrap();
+    other.add(&[&d(3.0), &d(0.5)]).unwrap();
+    small.merge(&other).unwrap();
+    assert_eq!(small.finish(true, &ty(T::DOUBLE)), d(2.0));
+}
+
+/// Infinite values follow C++'s `std::min`/`std::max` and the `_min` formula (I2).
+#[test]
+fn percentile_approx_with_infinities_as_cpp() {
+    let v = |xs: &[f64]| xs.iter().map(|x| d(*x)).collect::<Vec<_>>();
+    // weight 0 on -inf: x is NaN; std::min(NaN, x2) is NaN, std::max(x1, NaN) is x1
+    assert_eq!(
+        approx(v(&[f64::NEG_INFINITY, 5.0]), 0.75, Frame::Partition).unwrap()[0],
+        d(f64::NEG_INFINITY)
+    );
+    // the first half-centroid: _min + 2·index/w0·(mean0 - _min) is NaN with _min -inf, written as 0
+    assert_eq!(approx(v(&[f64::NEG_INFINITY, 5.0]), 0.1, Frame::Partition).unwrap()[0], d(0.0));
+    // finite values are unchanged by the literal formula
+    assert_eq!(approx(v(&[2.0, 5.0]), 0.1, Frame::Partition).unwrap()[0], d(2.0));
+}

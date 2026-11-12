@@ -67,11 +67,29 @@ pub enum Stats {
 /// merges two points at about 4·δ/π values, 2608 for the smallest compression (2048).
 pub const APPROX_LIMIT: usize = 2048;
 
-/// `TDigest::weightedAverage` (`x1 <= x2` order, then `max(x1, min(x, x2))`), in f32.
+/// `std::min(a, b)`: `b < a ? b : a`, so a NaN `a` is kept.
+fn cpp_min(a: f32, b: f32) -> f32 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+/// `std::max(a, b)`: `a < b ? b : a`, so a NaN `b` gives `a`.
+fn cpp_max(a: f32, b: f32) -> f32 {
+    if a < b {
+        b
+    } else {
+        a
+    }
+}
+
+/// `TDigest::weightedAverage` (`x1 <= x2` order, then `std::max(x1, std::min(x, x2))`), in f32.
 fn weighted_average(x1: f32, w1: f32, x2: f32, w2: f32) -> f32 {
     let sorted = |x1: f32, w1: f32, x2: f32, w2: f32| {
         let x = (x1 * w1 + x2 * w2) / (w1 + w2);
-        x1.max(x.min(x2))
+        cpp_max(x1, cpp_min(x, x2))
     };
     if x1 <= x2 {
         sorted(x1, w1, x2, w2)
@@ -92,9 +110,12 @@ fn digest_quantile(values: &[f32], q: f64) -> f32 {
         _ => {}
     }
     let index = (q as f32) * n as f32;
-    // the first centroid's half: the `_min` formula, with `_min` its mean
+    // the first centroid's half: `_min + 2·index/w0·(mean0 - _min)` in double, `_min` the
+    // smallest mean (NaN with an infinite one)
     if f64::from(index) <= 0.5 {
-        return v[0];
+        // `_min` and the first centroid's mean and weight: the same value here
+        let (min, mean0, w0) = (f64::from(v[0]), f64::from(v[0]), 1.0);
+        return (min + 2.0 * f64::from(index) / w0 * (mean0 - min)) as f32;
     }
     // cumulative weights: c[i] = i + 0.5 for each centroid, c[n] = n
     let c = |i: usize| if i < n { i as f32 + 0.5 } else { n as f32 };
@@ -312,7 +333,7 @@ impl Stats {
         Ok(true)
     }
 
-    pub fn merge(&mut self, other: &Stats) {
+    pub fn merge(&mut self, other: &Stats) -> Result<(), ExecError> {
         match (self, other) {
             (Stats::Percentile { levels, values, .. }, Stats::Percentile { levels: rl, values: rv, .. }) => {
                 if levels.is_none() {
@@ -322,6 +343,12 @@ impl Stats {
             }
             (Stats::Retention { events, .. }, Stats::Retention { events: r, .. }) => *events |= r,
             (Stats::Approx { quantile, values }, Stats::Approx { quantile: rq, values: rv }) => {
+                // past the limit the merged digest may have merged points, as update refuses
+                if values.len() + rv.len() >= APPROX_LIMIT {
+                    return Err(ExecError::Unsupported {
+                        what: format!("percentile_approx over {APPROX_LIMIT} or more values"),
+                    });
+                }
                 if quantile.is_none() {
                     *quantile = *rq;
                 }
@@ -361,6 +388,7 @@ impl Stats {
             (Stats::Bit { op, acc }, Stats::Bit { acc: r, .. }) => bit(*op, acc, *r),
             _ => {}
         }
+        Ok(())
     }
 
     /// The result; `accepted` is whether any row was.

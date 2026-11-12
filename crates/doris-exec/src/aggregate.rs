@@ -726,7 +726,7 @@ impl State {
             (State::Ndv(a), State::Ndv(b)) => a.merge(b),
             (State::Stats { s, accepted }, State::Stats { s: r, accepted: b }) => {
                 if *b {
-                    s.merge(r);
+                    s.merge(r)?;
                     *accepted = true;
                 }
             }

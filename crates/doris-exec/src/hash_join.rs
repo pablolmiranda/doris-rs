@@ -272,6 +272,12 @@ pub fn asof_condition(e: &doris_thrift::gen::exprs::TExpr) -> Result<(AsofOp, TE
 pub fn check_asof_condition(e: &doris_thrift::gen::exprs::TExpr) -> Result<(), ExecError> {
     use doris_thrift::gen::types::TPrimitiveType as T;
     let (_, (p, b)) = asof_condition(e)?;
+    // the sides run from copies of their nodes: a random's generator is keyed by node address
+    if e.nodes.iter().any(|n| n.fn_.as_ref().is_some_and(|f| matches!(f.name.function_name.to_ascii_lowercase().as_str(), "random" | "rand"))) {
+        return Err(ExecError::Unsupported {
+            what: "random in an ASOF match condition".into(),
+        });
+    }
     let ty = |x: &doris_thrift::gen::exprs::TExpr| x.nodes.first().and_then(|n| crate::value::ColType::from_type_desc("", &n.type_, true));
     match (ty(&p), ty(&b)) {
         (Some(p), Some(b)) if p.ptype == b.ptype && p.scale == b.scale && matches!(p.ptype, T::DATEV2 | T::DATETIMEV2) => Ok(()),

@@ -69,15 +69,31 @@ impl Mt19937_64 {
 }
 
 thread_local! {
-    static GENERATORS: RefCell<Option<HashMap<usize, Mt19937_64>>> = const { RefCell::new(None) };
+    /// The instance's generators, and whether it stands for several C++ tasks
+    static GENERATORS: RefCell<Option<(HashMap<usize, Mt19937_64>, bool)>> = const { RefCell::new(None) };
+}
+
+fn scoped<R>(shared: bool, f: impl FnOnce() -> R) -> R {
+    let outer = GENERATORS.with(|g| g.borrow_mut().replace((HashMap::new(), shared)));
+    let out = f();
+    GENERATORS.with(|g| *g.borrow_mut() = outer);
+    out
 }
 
 /// Runs `f` as one fragment instance: generators made inside it last until it returns.
 pub fn with_scope<R>(f: impl FnOnce() -> R) -> R {
-    let outer = GENERATORS.with(|g| g.borrow_mut().replace(HashMap::new()));
-    let out = f();
-    GENERATORS.with(|g| *g.borrow_mut() = outer);
-    out
+    scoped(false, f)
+}
+
+/// Runs `f` as a merged fragment, one run for what C++ runs as several tasks, each with its own
+/// generators: a seeded generator there is refused (its draws would be one sequence, not one
+/// per task).
+pub fn with_shared_scope<R>(f: impl FnOnce() -> R) -> R {
+    scoped(true, f)
+}
+
+fn shared() -> bool {
+    GENERATORS.with(|g| g.borrow().as_ref().is_some_and(|(_, s)| *s))
 }
 
 /// An OS-random seed (`std::random_device`).
@@ -98,7 +114,7 @@ fn draw<R>(node: &TExprNode, seed: impl FnOnce() -> u64, f: impl FnOnce(&mut Mt1
     GENERATORS.with(|g| {
         let mut g = g.borrow_mut();
         match g.as_mut() {
-            Some(map) => f(map.entry(key).or_insert_with(|| Mt19937_64::new(seed()))),
+            Some((map, _)) => f(map.entry(key).or_insert_with(|| Mt19937_64::new(seed()))),
             // outside an instance (a unit test): a fresh generator, as a fresh instance has
             None => f(&mut Mt19937_64::new(seed())),
         }
@@ -151,6 +167,9 @@ pub fn eval(node: &TExprNode, name: &str, args: &[&[Datum]], rows: usize) -> Res
     match first.as_slice() {
         [] => Ok(draw(node, os_seed, |g| (0..rows).map(|_| Datum::Double(g.next_f64())).collect())),
         // `(uint32_t)` of the seed (random.cpp)
+        [Some(_)] if shared() => Err(ExecError::Unsupported {
+            what: format!("a seeded {name} in a fragment run merged over several instances"),
+        }),
         [Some(seed)] => Ok(draw(
             node,
             || u64::from(*seed as i64 as u32),

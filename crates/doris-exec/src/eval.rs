@@ -461,6 +461,12 @@ pub fn eval_column(
     Ok(out)
 }
 
+/// As `eval_column`, over an expression's nodes in place (a subtree of a larger expression).
+pub fn eval_nodes(nodes: &[TExprNode], block: &Block, slots: &SlotMap) -> Result<(ColType, Vec<Datum>), ExecError> {
+    let mut pos = 0;
+    eval_at(nodes, &mut pos, block, slots)
+}
+
 fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
     v.into_iter()
         .map(|b| b.map_or(Datum::Null, Datum::Bool))

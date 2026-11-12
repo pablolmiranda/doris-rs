@@ -108,3 +108,31 @@ fn sleep_returns_zero() {
     check_constants(&call("sleep", ty(T::BOOLEAN), vec![int(2, ty(T::INT))])).unwrap();
     assert!(start.elapsed().as_secs() < 1);
 }
+
+/// A merged fragment runs C++'s several tasks as one: a seeded generator there would draw one
+/// sequence where C++ starts one per task, so it is refused (final review I3).
+#[test]
+fn seeded_random_is_refused_in_a_merged_fragment() {
+    match doris_exec::random::with_shared_scope(|| eval_rows(&seeded(100), 2)) {
+        Err(ExecError::Unsupported { what }) => assert!(what.contains("random"), "{what}"),
+        other => panic!("{other:?}"),
+    }
+    // unseeded values are free there
+    doris_exec::random::with_shared_scope(|| eval_rows(&call("random", ty(T::DOUBLE), vec![]), 2)).unwrap();
+}
+
+/// A subtree evaluated in place keeps its node addresses, so its generator goes on drawing
+/// (table-function arguments; final review M1).
+#[test]
+fn a_subtree_evaluated_in_place_keeps_its_generator() {
+    // explode-like: the call's argument subtree is random(100)
+    let e = call("explode_numbers", ty(T::INT), vec![seeded(100)]);
+    let (block, slots) = rows(1);
+    let (a, b) = doris_exec::random::with_scope(|| {
+        let a = doris_exec::eval::eval_nodes(&e.nodes[1..], &block, &slots).unwrap().1;
+        let b = doris_exec::eval::eval_nodes(&e.nodes[1..], &block, &slots).unwrap().1;
+        (a, b)
+    });
+    assert_eq!(a, vec![Datum::Double(0.9616644308453555)]);
+    assert_eq!(b, vec![Datum::Double(0.32358402105146866)]);
+}
