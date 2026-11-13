@@ -19,7 +19,7 @@ pub fn is_map_function(name: &str) -> bool {
 pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     match name {
-        "map" => to.ptype == T::MAP && args.len() % 2 == 0,
+        "map" => to.ptype == T::MAP && args.len().is_multiple_of(2),
         "struct" => to.ptype == T::STRUCT && args.len() == to.children.len(),
         "named_struct" => to.ptype == T::STRUCT && args.len() == 2 * to.children.len() && args.iter().step_by(2).all(text),
         _ => false,
