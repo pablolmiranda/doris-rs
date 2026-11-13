@@ -446,3 +446,60 @@ fn window_funnel_v2_window_past_9999_is_zero() {
     let rows: &[(&str, &[bool])] = &[("9999-12-31 23:59:58", &[true, false]), (end, &[false, true])];
     assert_eq!(funnel(10, "default", rows).unwrap(), Datum::Int(1));
 }
+
+/// Two columns, slots 1 and 2.
+fn pairs(kt: &TTypeDesc, vt: &TTypeDesc, rows: &[(Datum, Datum)]) -> Chunk {
+    Chunk {
+        block: Block { types: vec![ct(kt), ct(vt)], rows: rows.iter().map(|(k, v)| vec![k.clone(), v.clone()]).collect() },
+        slots: vec![1, 2],
+    }
+}
+
+fn map_agg(kt: &TTypeDesc, vt: &TTypeDesc, merge: bool) -> AggSpec {
+    let ret = doris_fixtures::build::map_of(kt.clone(), vt.clone());
+    let args = if merge { vec![slot(10, scalar(T::VARCHAR, 65533, 0, 0))] } else { vec![slot(1, kt.clone()), slot(2, vt.clone())] };
+    spec("map_agg_v1", ret, vec![kt.clone(), vt.clone()], merge, args)
+}
+
+fn map_text(d: &Datum, kt: &TTypeDesc, vt: &TTypeDesc) -> String {
+    let t = ct(&doris_fixtures::build::map_of(kt.clone(), vt.clone()));
+    String::from_utf8(doris_exec::row_text::cell_text(d, &t).unwrap()).unwrap()
+}
+
+fn b(s: &str) -> Datum {
+    Datum::Bytes(s.as_bytes().to_vec())
+}
+
+#[test]
+fn map_agg_v1_keeps_the_first_key() {
+    let (kt, vt) = (scalar(T::VARCHAR, 32, 0, 0), ty(T::BIGINT));
+    let rows = [(b("a"), Datum::Int(1)), (Datum::Null, Datum::Int(2)), (b("b"), Datum::Null), (b("a"), Datum::Int(3)), (b("c"), Datum::Int(4))];
+    let out = one_phase(vec![map_agg(&kt, &vt, false)], &pairs(&kt, &vt, &rows));
+    // a NULL key skips its row, a NULL value is kept, the first of a repeated key wins
+    assert_eq!(map_text(&out[0][0], &kt, &vt), "{\"a\":1, \"b\":null, \"c\":4}");
+    let out = one_phase(vec![map_agg(&kt, &vt, false)], &pairs(&kt, &vt, &[]));
+    assert_eq!(map_text(&out[0][0], &kt, &vt), "{}");
+}
+
+#[test]
+fn map_agg_v1_merges_partials_in_order() {
+    let (kt, vt) = (scalar(T::VARCHAR, 32, 0, 0), ty(T::BIGINT));
+    let mut partials = Vec::new();
+    for rows in [vec![(b("x"), Datum::Int(1)), (b("y"), Datum::Int(2))], vec![(b("y"), Datum::Int(9)), (b("z"), Datum::Int(3))]] {
+        let phase1 = Aggregation { group_by: vec![], functions: vec![map_agg(&kt, &vt, false)], finalize: false };
+        partials.extend(phase1.run(&pairs(&kt, &vt, &rows)).unwrap().rows);
+    }
+    let state = scalar(T::VARCHAR, 65533, 0, 0);
+    let merge_in = Chunk { block: Block { types: vec![ct(&state)], rows: partials }, slots: vec![10] };
+    let phase2 = Aggregation { group_by: vec![], functions: vec![map_agg(&kt, &vt, true)], finalize: true };
+    let out = phase2.run(&merge_in).unwrap().rows;
+    assert_eq!(map_text(&out[0][0], &kt, &vt), "{\"x\":1, \"y\":2, \"z\":3}");
+}
+
+#[test]
+fn map_agg_v1_with_bigint_max_key() {
+    let (kt, vt) = (ty(T::BIGINT), ty(T::DOUBLE));
+    let rows = [(Datum::Int(i64::MAX.into()), Datum::Double(75.5)), (Datum::Int(1), Datum::Double(90.0))];
+    let out = one_phase(vec![map_agg(&kt, &vt, false)], &pairs(&kt, &vt, &rows));
+    assert_eq!(map_text(&out[0][0], &kt, &vt), "{9223372036854775807:75.5, 1:90}");
+}

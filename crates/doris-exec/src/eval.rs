@@ -23,7 +23,7 @@ pub struct SlotMap(pub HashMap<i32, usize>);
 const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 /// The aggregate functions an aggregation node computes.
 pub const AGGREGATES: &[&str] = &[
-    "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
+    "count", "sum", "min", "max", "map_agg_v1", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
     "percentile", "percentile_array", "retention", "linear_histogram", "exponential_moving_average", "group_bit_and", "group_bit_or", "group_bit_xor",
     "stddev_samp", "variance", "variance_samp", "percentile_approx", "multi_distinct_sum", "multi_distinct_group_concat",
@@ -421,7 +421,7 @@ fn nested_carried(nodes: &[TExprNode], i: usize) -> bool {
         None => true,
         // percentile_array's levels (its second argument)
         Some(p) if nodes[p].node_type == N::AGG_EXPR => {
-            function_name(&nodes[p]).as_deref() == Some("percentile_array") && i != p + 1
+            matches!(function_name(&nodes[p]).as_deref(), Some("percentile_array" | "map_agg_v1")) && i != p + 1
         }
         Some(p) if nodes[p].node_type == N::ARRAY_LITERAL => true,
         // a cast between nested types of the same kind, part by part
