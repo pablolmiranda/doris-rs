@@ -99,19 +99,49 @@ pub fn cell_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
 /// (nesting level > 1) strings, dates and datetimes are wrapped in unescaped double quotes and
 /// NULL prints `null` (research `2026-11-12-m6-s7b6-arrays.md` §1).
 fn nested_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
-    // a part of a nested value: NULL as `null`, quoted when the serde quotes its kind
-    let part = |d: &Datum, t: &ColType| -> String {
+    // a part of a nested value: NULL as `null`, quoted when the serde quotes its kind; bytes as
+    // they are (C++ writes a string's raw bytes)
+    let part = |d: &Datum, t: &ColType| -> Vec<u8> {
         match nested_text(d, t) {
-            None => "null".to_string(),
+            None => b"null".to_vec(),
             Some(b) if matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING | T::DATEV2 | T::DATETIMEV2 | T::DATE | T::DATETIME) => {
-                format!("\"{}\"", String::from_utf8_lossy(&b))
+                [&b"\""[..], &b, b"\""].concat()
             }
-            Some(b) => String::from_utf8_lossy(&b).into_owned(),
+            Some(b) => b,
         }
+    };
+    let wrap = |open: u8, parts: Vec<Vec<u8>>, close: u8| -> Vec<u8> {
+        let mut out = vec![open];
+        out.extend(parts.join(&b", "[..]));
+        out.push(close);
+        out
     };
     let text = match d {
         Datum::Null => return None,
         Datum::Bytes(b) => return Some(b.clone()),
+        // `[` elements `, ` `]`
+        Datum::Array(a) => {
+            let elem = t.element().unwrap_or_else(|| t.clone());
+            return Some(wrap(b'[', a.iter().map(|v| part(v, &elem)).collect(), b']'));
+        }
+        // `{` key `:` value, `, ` `}`
+        Datum::Map(m) => {
+            let (kt, vt) = t.map_types().unwrap_or_default();
+            return Some(wrap(b'{', m.iter().map(|(k, v)| [part(k, &kt), b":".to_vec(), part(v, &vt)].concat()).collect(), b'}'));
+        }
+        // `{` `"name":` value, `, ` `}`, the names from the type
+        Datum::Struct(f) => {
+            let fields = t.fields().unwrap_or_default();
+            let parts = f
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    let (name, ft) = fields.get(i).cloned().unwrap_or_default();
+                    [format!("\"{name}\":").into_bytes(), part(v, &ft)].concat()
+                })
+                .collect();
+            return Some(wrap(b'{', parts, b'}'));
+        }
         Datum::Bool(b) => u8::from(*b).to_string(),
         Datum::Float(f) => special(f.is_nan(), f.is_infinite(), *f < 0.0)
             .unwrap_or_else(|| float_text(format!("{f:e}"))),
@@ -126,31 +156,6 @@ fn nested_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
             T::BOOLEAN => u8::from(*v != 0).to_string(),
             _ => v.to_string(),
         },
-        // `[` elements `, ` `]`
-        Datum::Array(a) => {
-            let elem = t.element().unwrap_or_else(|| t.clone());
-            let parts: Vec<String> = a.iter().map(|v| part(v, &elem)).collect();
-            format!("[{}]", parts.join(", "))
-        }
-        // `{` key `:` value, `, ` `}`
-        Datum::Map(m) => {
-            let (kt, vt) = t.map_types().unwrap_or_default();
-            let parts: Vec<String> = m.iter().map(|(k, v)| format!("{}:{}", part(k, &kt), part(v, &vt))).collect();
-            format!("{{{}}}", parts.join(", "))
-        }
-        // `{` `"name":` value, `, ` `}`, the names from the type
-        Datum::Struct(f) => {
-            let fields = t.fields().unwrap_or_default();
-            let parts: Vec<String> = f
-                .iter()
-                .enumerate()
-                .map(|(i, v)| {
-                    let (name, ft) = fields.get(i).cloned().unwrap_or_default();
-                    format!("\"{name}\":{}", part(v, &ft))
-                })
-                .collect();
-            format!("{{{}}}", parts.join(", "))
-        }
     };
     Some(text.into_bytes())
 }

@@ -274,10 +274,9 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                     [arr, i] if arr.ptype == T::ARRAY => {
                         arr.element().is_some_and(|el| el.ptype == to.ptype && el.scale == to.scale) && i.ptype == T::INT
                     }
-                    [m, _] if m.ptype == T::MAP => m.map_types().is_some_and(|(_, v)| v.ptype == to.ptype && v.scale == to.scale),
-                    [s, name] if s.ptype == T::STRUCT => {
-                        matches!(name.ptype, T::CHAR | T::VARCHAR | T::STRING) && s.children.iter().any(|f| f.ptype == to.ptype)
-                    }
+                    [m, _] if m.ptype == T::MAP => m.map_types().is_some_and(|(k, v)| !k.is_nested() && v.ptype == to.ptype && v.scale == to.scale),
+                    // the field and its type: `maps::check_struct_element`, below
+                    [s, _] if s.ptype == T::STRUCT => true,
                     _ => false,
                 }),
                 Some(f) if crate::maps::is_map_function(f) => signature(n).is_some_and(|(a, to)| crate::maps::supported(f, &a, &to)),
@@ -306,9 +305,23 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
         if !ok {
             return Err(ExecError::Unsupported { what: describe(n) });
         }
+        let struct_arg = e.nodes.get(i + 1).and_then(|c| ColType::from_type_desc("", &c.type_, true)).is_some_and(|t| t.ptype == T::STRUCT);
+        if function_name(n).as_deref() == Some("element_at") && struct_arg {
+            crate::maps::check_struct_element(&e.nodes, i)?;
+        }
         // an aggregate's serialized state travels as a string; its own types are checked by name
         if n.node_type == N::AGG_EXPR {
             continue;
+        }
+        // a cast to a nested type goes part by part from the same shape; from text C++ parses it
+        if n.node_type == N::CAST_EXPR {
+            let to = ColType::from_type_desc("", &n.type_, true);
+            let from = e.nodes.get(i + 1).and_then(|c| ColType::from_type_desc("", &c.type_, true));
+            if let (Some(to), Some(from)) = (to.filter(ColType::is_nested), from) {
+                if !same_shape(&from, &to) {
+                    return Err(ExecError::Unsupported { what: format!("a cast from {} to {}", from.type_name(), to.type_name()) });
+                }
+            }
         }
         match ColType::from_type_desc("", &n.type_, true) {
             Some(c)
@@ -436,23 +449,25 @@ fn nested_carried(nodes: &[TExprNode], i: usize) -> bool {
 /// One value cast from `from` to `to`; a nested value part by part (`cast_to_array.h`,
 /// `cast_to_map.h`).
 fn cast_datum(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    let shape = || bad(format!("a value that is not a {} ({} to {})", from.type_name(), from.type_name(), to.type_name()));
     match d {
         Datum::Array(a) => {
-            let (fe, te) = (from.element().unwrap_or_default(), to.element().unwrap_or_default());
-            return Ok(Datum::Array(a.iter().map(|v| cast_datum(v, &fe, &te)).collect::<Result<_, _>>()?));
+            let (Some(fe), Some(te)) = (from.element(), to.element()) else { return Err(shape()) };
+            return Ok(Datum::Array(a.iter().map(|v| cast_part(v, &fe, &te)).collect::<Result<_, _>>()?));
         }
         Datum::Map(m) => {
-            let ((fk, fv), (tk, tv)) = (from.map_types().unwrap_or_default(), to.map_types().unwrap_or_default());
-            let m = m.iter().map(|(k, v)| Ok((cast_datum(k, &fk, &tk)?, cast_datum(v, &fv, &tv)?))).collect::<Result<_, ExecError>>()?;
+            let (Some((fk, fv)), Some((tk, tv))) = (from.map_types(), to.map_types()) else { return Err(shape()) };
+            let changed = !same_leaf(&fk, &tk);
+            let m: Vec<(Datum, Datum)> = m.iter().map(|(k, v)| Ok((cast_part(k, &fk, &tk)?, cast_part(v, &fv, &tv)?))).collect::<Result<_, ExecError>>()?;
             // keys that became equal in the new type: the last wins (`cast_to_map.h`)
-            return Ok(Datum::Map(crate::maps::dedup(m)));
+            return Ok(Datum::Map(if changed { crate::maps::dedup(m) } else { m }));
         }
         Datum::Struct(f) => {
-            let (ff, tf) = (from.fields().unwrap_or_default(), to.fields().unwrap_or_default());
-            let f = f.iter().enumerate().map(|(i, v)| {
-                let (a, b) = (ff.get(i).map(|x| x.1.clone()).unwrap_or_default(), tf.get(i).map(|x| x.1.clone()).unwrap_or_default());
-                cast_datum(v, &a, &b)
-            });
+            let (Some(ff), Some(tf)) = (from.fields(), to.fields()) else { return Err(shape()) };
+            if ff.len() != f.len() || tf.len() != f.len() {
+                return Err(shape());
+            }
+            let f = f.iter().zip(ff.iter().zip(&tf)).map(|(v, ((_, a), (_, b)))| cast_part(v, a, b));
             return Ok(Datum::Struct(f.collect::<Result<_, _>>()?));
         }
         _ => {}
@@ -479,6 +494,28 @@ fn cast_datum(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecErro
     } else {
         as_datum(&v, to)
     }
+}
+
+/// A part of a nested value cast: one of an unchanged type keeps its bytes (no text round trip).
+fn cast_part(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    if *d == Datum::Null || same_leaf(from, to) {
+        return Ok(d.clone());
+    }
+    cast_datum(d, from, to)
+}
+
+/// Whether two types nest alike: the same kinds of ARRAY, MAP and STRUCT with the same number of
+/// parts, whatever their scalar leaves.
+fn same_shape(a: &ColType, b: &ColType) -> bool {
+    if !a.is_nested() && !b.is_nested() {
+        return true;
+    }
+    a.ptype == b.ptype && a.children.len() == b.children.len() && a.children.iter().zip(&b.children).all(|(x, y)| same_shape(x, y))
+}
+
+/// Whether a nested value's part needs no cast: the same storage (as `coerce`), or a NULL_TYPE target.
+fn same_leaf(from: &ColType, to: &ColType) -> bool {
+    !from.is_nested() && !to.is_nested() && (same_storage(from, to) || to.ptype == T::NULL_TYPE)
 }
 
 fn bad(msg: impl Into<String>) -> ExecError {

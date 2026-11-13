@@ -167,3 +167,39 @@ fn element_at_on_a_struct() {
         other => panic!("{other:?}"),
     }
 }
+
+/// Review M3: a nested MAP key is refused (lookups by it would not match as C++'s compare_at).
+#[test]
+fn nested_map_keys_are_refused() {
+    let t = map_of(array_of(ty(T::INT)), ty(T::BIGINT));
+    let m = map(t.clone(), vec![array_literal(ty(T::INT), vec![int(1, ty(T::INT))]), bigint(7)]);
+    assert!(matches!(check_read(&m), Err(ExecError::Unsupported { .. })));
+    let probe = array_literal(ty(T::INT), vec![int(1, ty(T::INT))]);
+    let e = element_at(doris_fixtures::build::slot(1, t), probe, ty(T::BIGINT));
+    assert!(matches!(check_read(&e), Err(ExecError::Unsupported { .. })));
+}
+
+/// Review M5/M6: element_at on a STRUCT resolves its field at prepare, as C++ does when it works
+/// out the return type: an unknown name fails with no rows at all, and the result type must be
+/// the named field's.
+#[test]
+fn element_at_on_a_struct_resolves_at_prepare() {
+    let t = struct_of(vec![("a", array_of(ty(T::INT)), true), ("f1", ty(T::TINYINT), false)]);
+    let e = element_at(doris_fixtures::build::slot(1, t.clone()), string("zz"), ty(T::TINYINT));
+    match check_read(&e) {
+        Err(ExecError::Coded { name, msg, .. }) => {
+            assert_eq!(name, "RUNTIME_ERROR");
+            assert_eq!(
+                msg,
+                "Element not found for function element_at: name zz not found in Struct(a:Nullable(Array(Nullable(INT))), f1:TINYINT)."
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    // the right name, the wrong result type
+    let e = element_at(doris_fixtures::build::slot(1, t.clone()), string("f1"), ty(T::BIGINT));
+    assert!(matches!(check_read(&e), Err(ExecError::Unsupported { .. })));
+    // a NULL name is refused
+    let e = element_at(doris_fixtures::build::slot(1, t), null(ty(T::STRING)), ty(T::TINYINT));
+    assert!(check_read(&e).is_err());
+}

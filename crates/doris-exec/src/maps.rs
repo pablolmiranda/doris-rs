@@ -19,7 +19,8 @@ pub fn is_map_function(name: &str) -> bool {
 pub fn supported(name: &str, args: &[ColType], to: &ColType) -> bool {
     let text = |t: &ColType| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING);
     match name {
-        "map" => to.ptype == T::MAP && args.len().is_multiple_of(2),
+        // a nested key: lookups by it would not compare as C++'s compare_at
+        "map" => to.map_types().is_some_and(|(k, _)| !k.is_nested()) && args.len().is_multiple_of(2),
         "struct" => to.ptype == T::STRUCT && args.len() == to.children.len(),
         "named_struct" => to.ptype == T::STRUCT && args.len() == 2 * to.children.len() && args.iter().step_by(2).all(text),
         _ => false,
@@ -117,19 +118,75 @@ pub fn struct_element(structs: &[Datum], st: &ColType, names: &[Datum], to: &Col
         .collect()
 }
 
-/// `DataTypeStruct::get_name`: `Struct(name:type, ..)`, a nullable field's type as `Nullable(..)`.
+/// `IDataType::get_name` with nullability: a nullable part as `Nullable(..)`.
+fn cpp_name(t: &ColType) -> String {
+    let part = |c: &ColType| if c.nullable { format!("Nullable({})", cpp_name(c)) } else { cpp_name(c) };
+    match t.ptype {
+        T::ARRAY => format!("Array({})", t.element().map(|e| part(&e)).unwrap_or_default()),
+        T::MAP => t
+            .map_types()
+            .map_or_else(String::new, |(k, v)| format!("Map({}, {})", part(&k), part(&v))),
+        T::STRUCT => {
+            let f: Vec<String> = t.fields().unwrap_or_default().iter().map(|(n, c)| format!("{n}:{}", part(c))).collect();
+            format!("Struct({})", f.join(", "))
+        }
+        _ => t.type_name(),
+    }
+}
+
+/// `DataTypeStruct::get_name`.
 fn struct_name(t: &ColType) -> String {
-    let f: Vec<String> = t
-        .fields()
-        .unwrap_or_default()
-        .iter()
-        .map(|(n, ft)| {
-            if ft.nullable {
-                format!("{n}:Nullable({})", ft.type_name())
-            } else {
-                format!("{n}:{}", ft.type_name())
+    cpp_name(t)
+}
+
+/// `element_at(struct, name | index)` at node `i`, checked as C++ works out its return type
+/// (`function_array_element.h:84-100,176-200`): the constant name or index must name a field,
+/// and the call's type must be that field's.
+pub fn check_struct_element(nodes: &[doris_thrift::gen::exprs::TExprNode], i: usize) -> Result<(), ExecError> {
+    use doris_thrift::gen::exprs::TExprNodeType as N;
+    let ty = |at: usize| nodes.get(at).and_then(|n| ColType::from_type_desc("", &n.type_, true));
+    let first = i + 1;
+    let second = crate::aggregate::subtree_end(nodes, first)?;
+    let (Some(st), Some(to)) = (ty(first), ty(i)) else {
+        return Err(ExecError::BadRequest("element_at without its types".into()));
+    };
+    let fields = st.fields().unwrap_or_default();
+    let runtime = |msg: String| ExecError::Coded {
+        code: doris_thrift::gen::status::TStatusCode::RUNTIME_ERROR.0,
+        name: "RUNTIME_ERROR",
+        msg,
+    };
+    let key = &nodes[second];
+    let at = match (key.node_type, key.string_literal.as_ref(), key.int_literal.as_ref()) {
+        (N::STRING_LITERAL, Some(s), _) => fields.iter().position(|(f, _)| f.eq_ignore_ascii_case(&s.value)).ok_or_else(|| {
+            runtime(format!(
+                "Element not found for function element_at: name {} not found in {}.",
+                s.value,
+                struct_name(&st)
+            ))
+        })?,
+        (N::INT_LITERAL, _, Some(v)) => {
+            let limit = fields.len() as i64 + 1;
+            if v.value < 1 || v.value >= limit {
+                return Err(runtime(format!(
+                    "Index out of bound for function element_at: index {} should base from 1 and less than {limit}.",
+                    v.value
+                )));
             }
-        })
-        .collect();
-    format!("Struct({})", f.join(", "))
+            (v.value - 1) as usize
+        }
+        _ => {
+            return Err(ExecError::Unsupported {
+                what: "element_at on a STRUCT by a name that is not a constant".into(),
+            })
+        }
+    };
+    let (name, ft) = &fields[at];
+    let same = ft.ptype == to.ptype && ft.scale == to.scale && (!ft.is_nested() || ft.children == to.children);
+    if !same {
+        return Err(ExecError::Unsupported {
+            what: format!("element_at of field {name} ({}) as {}", ft.type_name(), to.type_name()),
+        });
+    }
+    Ok(())
 }

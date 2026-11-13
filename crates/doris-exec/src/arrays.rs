@@ -12,6 +12,30 @@ use crate::ExecError;
 /// `max_array_size_as_field` (`column_array.h:64`).
 const MAX_ARRAY_SIZE: i128 = 1_000_000;
 
+/// The most elements one call builds over a block. A Datum takes several times C++'s bytes per
+/// element, so past this doris-rs refuses where C++ would answer or fail on its memory limit.
+const MAX_BLOCK_ELEMENTS: i128 = 1 << 24;
+
+/// Counts the elements a call has built over a block; refuses past `MAX_BLOCK_ELEMENTS`.
+struct Budget(std::cell::Cell<i128>);
+
+impl Budget {
+    fn new() -> Budget {
+        Budget(std::cell::Cell::new(0))
+    }
+
+    fn take(&self, name: &str, n: i128) -> Result<(), ExecError> {
+        let total = self.0.get() + n;
+        if total > MAX_BLOCK_ELEMENTS {
+            return Err(ExecError::Unsupported {
+                what: format!("{name} building more than {MAX_BLOCK_ELEMENTS} elements in one block"),
+            });
+        }
+        self.0.set(total);
+        Ok(())
+    }
+}
+
 const UNITS: &[(&str, Unit, i64)] = &[
     ("array_range_second_unit", Unit::Second, 1),
     ("array_range_minute_unit", Unit::Minute, 1),
@@ -63,6 +87,7 @@ fn too_large() -> ExecError {
 
 pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows: usize) -> Result<Vec<Datum>, ExecError> {
     let elem = to.element().unwrap_or_default();
+    let budget = Budget::new();
     match name {
         "array_with_constant" => with_constant(types, &elem, args, rows),
         "array_join" => Ok(join(args, rows)),
@@ -107,7 +132,7 @@ pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows
                         },
                     };
                     match (&args[0][r], &args[1][r], step) {
-                        (Datum::Int(a), Datum::Int(b), Some(s)) if s > 0 => time_range(*a, *b, unit, s * times),
+                        (Datum::Int(a), Datum::Int(b), Some(s)) if s > 0 => time_range(*a, *b, unit, s * times, &|n| budget.take(name, n)),
                         _ => Ok(Datum::Null),
                     }
                 })
@@ -122,7 +147,7 @@ pub fn eval(name: &str, types: &[ColType], to: &ColType, args: &[&[Datum]], rows
                     _ => (at(0), at(1), at(2)),
                 };
                 match (start, end, step) {
-                    (Some(Datum::Int(a)), Some(Datum::Int(b)), Some(Datum::Int(s))) => int_range(*a, *b, *s),
+                    (Some(Datum::Int(a)), Some(Datum::Int(b)), Some(Datum::Int(s))) => int_range(*a, *b, *s, &|n| budget.take(name, n)),
                     _ => Ok(Datum::Null),
                 }
             })
@@ -139,6 +164,7 @@ fn with_constant(types: &[ColType], elem: &ColType, args: &[&[Datum]], rows: usi
             "Array size should in range(0, {MAX_ARRAY_SIZE}) in function: array_with_constant"
         )));
     }
+    Budget::new().take("array_with_constant", counts.iter().sum())?;
     (0..rows)
         .map(|r| {
             Ok(Datum::Array(vec![
@@ -183,7 +209,7 @@ fn join(args: &[&[Datum]], rows: usize) -> Vec<Datum> {
 
 /// The INT `array_range(start, end, step)`: NULL when a bound is negative or the step is not
 /// positive; `[]` when end <= start; at most 1000000 elements.
-fn int_range(start: i128, end: i128, step: i128) -> Result<Datum, ExecError> {
+fn int_range(start: i128, end: i128, step: i128, take: &dyn Fn(i128) -> Result<(), ExecError>) -> Result<Datum, ExecError> {
     if start < 0 || end < 0 || step <= 0 {
         return Ok(Datum::Null);
     }
@@ -195,18 +221,20 @@ fn int_range(start: i128, end: i128, step: i128) -> Result<Datum, ExecError> {
     if size > MAX_ARRAY_SIZE {
         return Err(too_large());
     }
+    take(size)?;
     Ok(Datum::Array((0..size).map(|i| Datum::Int(start + i * step)).collect()))
 }
 
 /// A DATETIMEV2 range: `start`, then each value plus `step` units while below `end` (packed
 /// values compare in time order); it stops when the next value leaves the date range.
-fn time_range(start: i128, end: i128, unit: Unit, step: i64) -> Result<Datum, ExecError> {
+fn time_range(start: i128, end: i128, unit: Unit, step: i64, take: &dyn Fn(i128) -> Result<(), ExecError>) -> Result<Datum, ExecError> {
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
         if out.len() as i128 >= MAX_ARRAY_SIZE {
             return Err(too_large());
         }
+        take(1)?;
         out.push(Datum::Int(at));
         match add(unit, Dt::unpack(at, true), step, true) {
             Some(next) => at = next.pack(true),

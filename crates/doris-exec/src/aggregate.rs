@@ -553,7 +553,7 @@ impl State {
                 })
             }
             "group_concat" if (1..=2).contains(&f.param_types.len()) => State::GroupConcat { data: vec![], sep: vec![], inited: false },
-            "map_agg_v1" if f.param_types.len() == 2 && f.ret.ptype == T::MAP => State::MapAgg { entries: vec![], keys: Default::default() },
+            "map_agg_v1" if f.param_types.len() == 2 && f.ret.ptype == T::MAP && !f.param_types[0].is_nested() => State::MapAgg { entries: vec![], keys: Default::default() },
             "ndv" if f.param_types.first().is_some_and(|t| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING) || ndv_width(t.ptype).is_some()) => {
                 State::Ndv(crate::hll::Hll::default())
             }

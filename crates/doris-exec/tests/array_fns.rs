@@ -219,3 +219,25 @@ fn push_and_pop_as_cpp() {
     let pushed = call("array_pushback", array_of(scalar(T::DECIMAL32, -1, 2, 1)), vec![dec, d("1.0")]);
     assert_eq!(text(&pushed), "[0.5, 0.7, 1.0]");
 }
+
+/// Review M4: a call that would build more elements in one block than doris-rs holds (C++
+/// fails it on its memory limit) is refused, before anything is allocated.
+#[test]
+fn too_many_elements_in_one_block_are_refused() {
+    let rows = 20;
+    let block = Block {
+        types: vec![],
+        rows: vec![vec![]; rows],
+    };
+    let big = [
+        call("array_with_constant", array_of(ty(T::INT)), vec![bigint(1_000_000), int32(1)]),
+        range(vec![int32(0), int32(1_000_000)]),
+    ];
+    for e in big {
+        check_read(&e).unwrap();
+        match eval_column(&e, &block, &SlotMap::default()) {
+            Err(ExecError::Unsupported { what }) => assert!(what.contains("elements in one block"), "{what}"),
+            other => panic!("{:?}", other.map(|(_, v)| v.len())),
+        }
+    }
+}

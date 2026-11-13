@@ -150,3 +150,52 @@ fn a_nested_key_is_refused() {
     }
     doris_exec::query::check_keys([&slot(1, ty(T::INT))], "a sort key").unwrap();
 }
+
+/// Review I1: a nested value of an unchanged type keeps its bytes (no text round trip).
+#[test]
+fn nested_values_keep_their_bytes() {
+    let t = col(&array_of(ty(T::STRING)));
+    let raw = Datum::Array(vec![Datum::Bytes(vec![0xFF]), bytes("a")]);
+    assert_eq!(doris_exec::eval::coerce(raw.clone(), &t, &t).unwrap(), raw);
+    let t3 = col(&array_of(varchar(3)));
+    let long = Datum::Array(vec![bytes("abcdef")]);
+    assert_eq!(doris_exec::eval::coerce(long.clone(), &t3, &t3).unwrap(), long);
+    let s = col(&struct_of(vec![("f", ty(T::STRING), true)]));
+    let raw = Datum::Struct(vec![Datum::Bytes(vec![0xFF])]);
+    assert_eq!(doris_exec::eval::coerce(raw.clone(), &s, &s).unwrap(), raw);
+    // the text keeps them too
+    assert_eq!(
+        cell_text(&Datum::Array(vec![Datum::Bytes(vec![0xFF])]), &t).unwrap(),
+        b"[\"\xFF\"]".to_vec()
+    );
+    let m = col(&map_of(ty(T::STRING), ty(T::STRING)));
+    let d = Datum::Map(vec![(Datum::Bytes(vec![0xFE]), Datum::Bytes(vec![0xFF]))]);
+    assert_eq!(cell_text(&d, &m).unwrap(), b"{\"\xFE\":\"\xFF\"}".to_vec());
+}
+
+/// Review I2: a cast to a nested type from a scalar (C++ parses the text) is refused.
+#[test]
+fn a_cast_to_a_nested_type_from_a_scalar_is_refused() {
+    for to in [array_of(ty(T::INT)), map_of(ty(T::STRING), ty(T::INT))] {
+        let e = over(blank(N::CAST_EXPR, to, 0), vec![string("[1,2]")]);
+        match check_read(&e) {
+            Err(ExecError::Unsupported { what }) => assert!(what.starts_with("a cast from String to "), "{what}"),
+            other => panic!("{other:?}"),
+        }
+    }
+    // a STRUCT cast to a different number of fields is refused too
+    let from = struct_of(vec![("a", ty(T::INT), true)]);
+    let to = struct_of(vec![("a", ty(T::INT), true), ("b", ty(T::INT), true)]);
+    let e = over(blank(N::CAST_EXPR, to, 0), vec![slot(1, from)]);
+    assert!(matches!(check_read(&e), Err(ExecError::Unsupported { .. })));
+}
+
+/// Review M7: values whose shape does not match the types are an error, not NULLs.
+#[test]
+fn a_shape_mismatch_is_an_error() {
+    let one = col(&struct_of(vec![("a", ty(T::INT), true)]));
+    let two = col(&struct_of(vec![("a", ty(T::INT), true), ("b", ty(T::INT), true)]));
+    assert!(doris_exec::eval::coerce(Datum::Struct(vec![Datum::Int(1)]), &one, &two).is_err());
+    let arr = col(&array_of(ty(T::INT)));
+    assert!(doris_exec::eval::coerce(Datum::Map(vec![]), &arr, &arr).is_err());
+}
