@@ -376,11 +376,13 @@ fn check_exprs<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, aggregates: bool)
 
 /// Keys of a sort, grouping, window, join, set operation or partition: no order or hash of an
 /// ARRAY is ported, so one is refused.
-fn check_keys<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, what: &str) -> Result<(), ExecError> {
+/// Refuses an ARRAY, MAP or STRUCT among `exprs`, which are used as `what` (a sort, grouping,
+/// join, window or partition key): doris-rs neither compares nor hashes nested values as C++ does.
+pub fn check_keys<'a>(exprs: impl IntoIterator<Item = &'a TExpr>, what: &str) -> Result<(), ExecError> {
     for e in exprs {
         let t = e.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true));
-        if t.is_some_and(|t| t.ptype == doris_thrift::gen::types::TPrimitiveType::ARRAY) {
-            return Err(unsupported(format!("an ARRAY as {what}")));
+        if let Some(t) = t.filter(ColType::is_nested) {
+            return Err(unsupported(format!("{} as {what}", t.nested_name())));
         }
     }
     Ok(())
@@ -1147,16 +1149,16 @@ fn check_plan_inner(plan: &QueryPlan) -> Result<(), ExecError> {
     }
     check_senders(plan)?;
     for s in plan.desc.slots.values() {
-        // an ARRAY is carried (`ARRAY_LITERAL`, `split_by_string`), never read from storage
-        if !s.ty.supported() && !s.ty.supported_array() && s.ty.ptype != doris_thrift::gen::types::TPrimitiveType::NULL_TYPE {
+        // an ARRAY, MAP or STRUCT is carried (literals, functions, exchanges), never read from storage
+        if !s.ty.supported() && !s.ty.supported_nested() && s.ty.ptype != doris_thrift::gen::types::TPrimitiveType::NULL_TYPE {
             return Err(unsupported(format!("type {} (slot {})", s.ty.type_name(), s.name)));
         }
     }
     for f in &plan.fragments {
         for n in f.root.nodes() {
             let Some(scan) = n.olap_scan_node.as_ref().filter(|_| n.node_type == P::OLAP_SCAN_NODE) else { continue };
-            if let Some(s) = plan.desc.slots.values().find(|s| s.tuple == scan.tuple_id && s.ty.ptype == doris_thrift::gen::types::TPrimitiveType::ARRAY) {
-                return Err(unsupported(format!("reading an ARRAY column ({})", s.name)));
+            if let Some(s) = plan.desc.slots.values().find(|s| s.tuple == scan.tuple_id && s.ty.is_nested()) {
+                return Err(unsupported(format!("reading {} column ({})", s.ty.nested_name(), s.name)));
             }
         }
     }

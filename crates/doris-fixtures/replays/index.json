@@ -254,5 +254,9 @@
   "nereids_p0.physical_translator.test_physical_translator.test_physical_translator",
   "nereids_p0.sql_functions.encryption_digest.test_encryption_function.test_encryption_function",
   "nereids_p0.system.test_query_sys.test_query_sys",
-  "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive"
+  "query_p0.sql_functions.encryption_digest.key_case_sensitive.key_case_sensitive",
+  "datatype_p0.nested_types.query.map_functions.test_map_with_agg.test_map_with_agg",
+  "query_p0.aggregate.map_agg_v1.map_agg_v1",
+  "query_p0.sql_functions.array_functions.test_array_range_null_argument.test_array_range_null_argument",
+  "query_p0.sql_functions.struct_functions.test_struct_functions_by_literal.test_struct_functions_by_literal"
 ]

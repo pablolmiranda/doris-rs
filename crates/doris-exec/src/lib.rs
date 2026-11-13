@@ -5,6 +5,7 @@
 pub mod aggregate;
 pub mod analytic;
 pub mod arith;
+pub mod arrays;
 pub mod bits;
 pub mod block;
 pub mod clock;
@@ -29,6 +30,7 @@ pub mod geo;
 pub mod glibc;
 pub mod hash_join;
 pub mod hll;
+pub mod maps;
 pub mod math;
 pub mod moments;
 pub mod numfmt;

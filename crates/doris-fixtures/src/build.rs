@@ -118,6 +118,28 @@ pub fn array_of(elem: TTypeDesc) -> TTypeDesc {
     TTypeDesc { types: Some(nodes), ..elem }
 }
 
+/// `MAP<key, value>`: a MAP node (`contains_nulls` for the key and the value), then the key's
+/// nodes, then the value's.
+pub fn map_of(key: TTypeDesc, value: TTypeDesc) -> TTypeDesc {
+    let mut nodes = vec![TTypeNode::new(TTypeNodeType::MAP, None, None, None, Some(vec![true, true]))];
+    nodes.extend(key.types.unwrap_or_default());
+    nodes.extend(value.types.clone().unwrap_or_default());
+    TTypeDesc { types: Some(nodes), ..value }
+}
+
+/// `STRUCT<name type, ..>`: a STRUCT node with its fields (name, nullable), then each field's nodes.
+pub fn struct_of(fields: Vec<(&str, TTypeDesc, bool)>) -> TTypeDesc {
+    let names = fields
+        .iter()
+        .map(|(n, _, null)| doris_thrift::gen::types::TStructField::new(n.to_string(), None, Some(*null)))
+        .collect();
+    let mut nodes = vec![TTypeNode::new(TTypeNodeType::STRUCT, None, Some(names), None, None)];
+    for (_, t, _) in fields {
+        nodes.extend(t.types.unwrap_or_default());
+    }
+    TTypeDesc { types: Some(nodes), ..ty(TPrimitiveType::INT) }
+}
+
 /// An ARRAY_LITERAL of `elems` (each already of the element type).
 pub fn array_literal(elem: TTypeDesc, elems: Vec<TExpr>) -> TExpr {
     over(blank(N::ARRAY_LITERAL, array_of(elem), 0), elems)

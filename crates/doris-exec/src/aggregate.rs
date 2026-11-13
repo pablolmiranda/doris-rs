@@ -77,12 +77,13 @@ impl AggSpec {
         if !merge {
             for (k, a) in args.iter().enumerate() {
                 check_read(a)?;
-                // only percentile_array's levels carry an array into an aggregate: arrays have no
-                // order or hash here, so min/max/count of one would be wrong
-                let array = a.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true)).is_some_and(|t| t.ptype == T::ARRAY);
-                if array && !(function == "percentile_array" && k == 1) {
+                // only percentile_array's levels and map_agg_v1's values carry a nested value into
+                // an aggregate: nested values have no order or hash here, so min/max/count of one
+                // would be wrong
+                let nested = a.nodes.first().and_then(|n| ColType::from_type_desc("", &n.type_, true)).filter(ColType::is_nested);
+                if let Some(t) = nested.filter(|_| !(matches!(function.as_str(), "percentile_array" | "map_agg_v1") && k == 1)) {
                     return Err(ExecError::Unsupported {
-                        what: format!("an ARRAY value as an operand (function {function})"),
+                        what: format!("{} value as an operand (function {function})", t.nested_name()),
                     });
                 }
             }
@@ -220,6 +221,7 @@ impl Aggregation {
                     precision: 0,
                     scale: 0,
                     nullable: false,
+                    ..ColType::default()
                 }
             });
         }
@@ -283,6 +285,21 @@ fn encode_datum(v: &Datum, out: &mut Vec<u8>) {
                 encode_datum(v, out);
             }
         }
+        Datum::Map(m) => {
+            out.push(7);
+            out.extend((m.len() as u64).to_le_bytes());
+            for (k, v) in m {
+                encode_datum(k, out);
+                encode_datum(v, out);
+            }
+        }
+        Datum::Struct(f) => {
+            out.push(8);
+            out.extend((f.len() as u64).to_le_bytes());
+            for v in f {
+                encode_datum(v, out);
+            }
+        }
     }
 }
 
@@ -325,6 +342,14 @@ impl Reader<'_> {
                 let n = self.u64()? as usize;
                 Datum::Array((0..n).map(|_| self.datum()).collect::<Result<_, _>>()?)
             }
+            7 => {
+                let n = self.u64()? as usize;
+                Datum::Map((0..n).map(|_| Ok((self.datum()?, self.datum()?))).collect::<Result<_, ExecError>>()?)
+            }
+            8 => {
+                let n = self.u64()? as usize;
+                Datum::Struct((0..n).map(|_| self.datum()).collect::<Result<_, _>>()?)
+            }
             t => return Err(ExecError::Internal(format!("a partial aggregate state has value tag {t}"))),
         })
     }
@@ -361,6 +386,21 @@ enum State {
     Moments { m: crate::moments::Moments, accepted: bool },
     /// batch 3's aggregates (`stats_agg`); `accepted` as for `Funnel`
     Stats { s: crate::stats_agg::Stats, accepted: bool },
+    /// `map_agg_v1` (`aggregate_function_map.h`): the entries in first-seen order; a key already
+    /// present (by its bytes) is ignored
+    MapAgg { entries: Vec<(Datum, Datum)>, keys: std::collections::HashSet<Vec<u8>> },
+}
+
+impl State {
+    /// Adds an entry to a `map_agg_v1` state unless its key is NULL or already present.
+    fn map_add(entries: &mut Vec<(Datum, Datum)>, keys: &mut std::collections::HashSet<Vec<u8>>, k: Datum, v: Datum) {
+        if k == Datum::Null {
+            return;
+        }
+        if keys.insert(crate::set_op::row_key(std::slice::from_ref(&k))) {
+            entries.push((k, v));
+        }
+    }
 }
 
 /// The bytes `ndv` hashes for a value: a fixed-width type's in-memory value, little-endian
@@ -418,7 +458,7 @@ fn bound(t: &ColType) -> i128 {
 fn number(d: &Datum, t: &ColType, to_scale: i32) -> Result<Option<Num>, ExecError> {
     Ok(match d {
         Datum::Null => None,
-        Datum::Array(_) => return Err(ExecError::Unsupported { what: "an ARRAY value as a number".into() }),
+        Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => return Err(ExecError::Unsupported { what: "a nested value as a number".into() }),
         Datum::Float(f) => Some(Num::Float(f64::from(*f))),
         Datum::Double(f) => Some(Num::Float(*f)),
         Datum::Bool(b) => Some(Num::Int(i128::from(*b))),
@@ -513,6 +553,7 @@ impl State {
                 })
             }
             "group_concat" if (1..=2).contains(&f.param_types.len()) => State::GroupConcat { data: vec![], sep: vec![], inited: false },
+            "map_agg_v1" if f.param_types.len() == 2 && f.ret.ptype == T::MAP && !f.param_types[0].is_nested() => State::MapAgg { entries: vec![], keys: Default::default() },
             "ndv" if f.param_types.first().is_some_and(|t| matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING) || ndv_width(t.ptype).is_some()) => {
                 State::Ndv(crate::hll::Hll::default())
             }
@@ -609,6 +650,15 @@ impl State {
                     *m2 += (*count as f64 * delta) * r;
                     *count += 1;
                 }
+            }
+            State::MapAgg { entries, keys } => {
+                let [(tk, k), (tv, v)] = args else {
+                    return Err(ExecError::BadRequest("map_agg_v1 needs two arguments".into()));
+                };
+                let (rk, rv) = f.ret.map_types().unwrap_or_default();
+                let k = crate::eval::coerce((*k).clone(), tk, &rk)?;
+                let v = crate::eval::coerce((*v).clone(), tv, &rv)?;
+                State::map_add(entries, keys, k, v);
             }
             State::Stats { s, accepted } => {
                 let row: Vec<&Datum> = args.iter().map(|(_, d)| *d).collect();
@@ -724,6 +774,12 @@ impl State {
                 }
             }
             (State::Ndv(a), State::Ndv(b)) => a.merge(b),
+            // each partial's entries in its order; the first of a key wins again
+            (State::MapAgg { entries, keys }, State::MapAgg { entries: theirs, .. }) => {
+                for (k, v) in theirs {
+                    State::map_add(entries, keys, k.clone(), v.clone());
+                }
+            }
             (State::Stats { s, accepted }, State::Stats { s: r, accepted: b }) => {
                 if *b {
                     s.merge(r)?;
@@ -831,6 +887,8 @@ impl State {
                 }
             },
             State::Ndv(h) => Datum::Int(h.estimate().into()),
+            // never NULL: no rows give `{}`
+            State::MapAgg { entries, .. } => Datum::Map(entries.clone()),
             State::Moments { m, accepted } => m.finish(*accepted).map_or(Datum::Null, Datum::Double),
             State::Stats { s, accepted } => s.finish(*accepted, ret),
             State::Funnel { accepted: false, .. } if ret.nullable => Datum::Null,
@@ -910,6 +968,14 @@ impl State {
                 for (t, e) in &f.events {
                     out.extend(t.to_le_bytes());
                     out.push(*e);
+                }
+            }
+            State::MapAgg { entries, .. } => {
+                out.push(13);
+                out.extend((entries.len() as u64).to_le_bytes());
+                for (k, v) in entries {
+                    encode_datum(k, &mut out);
+                    encode_datum(v, &mut out);
                 }
             }
             State::Stats { s, accepted } => {
@@ -1034,6 +1100,15 @@ impl State {
                 let (s, used) = crate::stats_agg::Stats::decode(r.0).ok_or_else(|| ExecError::Internal("a batch 3 aggregate state is cut short".into()))?;
                 r.take(used)?;
                 State::Stats { s, accepted }
+            }
+            13 => {
+                let n = r.u64()? as usize;
+                let (mut entries, mut keys) = (Vec::new(), std::collections::HashSet::new());
+                for _ in 0..n {
+                    let (k, v) = (r.datum()?, r.datum()?);
+                    State::map_add(&mut entries, &mut keys, k, v);
+                }
+                State::MapAgg { entries, keys }
             }
             t => return Err(ExecError::Internal(format!("unknown partial aggregate state {t}"))),
         })

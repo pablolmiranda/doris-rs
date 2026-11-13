@@ -24,6 +24,7 @@ fn int_col() -> ColType {
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     }
 }
 

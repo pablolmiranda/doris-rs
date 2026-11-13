@@ -270,7 +270,7 @@ pub fn concat(args: &[Value]) -> Value {
         match a {
             Value::Null => return Value::Null,
             Value::Str(b) => out.extend_from_slice(b),
-            other => match cast(other.clone(), &ColType { name: String::new(), ptype: TPrimitiveType::STRING, len: -1, precision: 0, scale: 0, nullable: true }) {
+            other => match cast(other.clone(), &ColType { name: String::new(), ptype: TPrimitiveType::STRING, len: -1, precision: 0, scale: 0, nullable: true, ..ColType::default() }) {
                 Value::Str(b) => out.extend_from_slice(&b),
                 _ => return Value::Null,
             },

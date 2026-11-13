@@ -115,7 +115,7 @@ fn numbers_past_what_one_chunk_holds_is_refused() {
 fn numbers_needs_one_non_null_bigint_slot() {
     use doris_exec::value::ColType;
     use doris_thrift::gen::types::TPrimitiveType as T;
-    let col = |ptype, nullable| ColType { name: "number".into(), ptype, len: -1, precision: 0, scale: 0, nullable };
+    let col = |ptype, nullable| ColType { name: "number".into(), ptype, len: -1, precision: 0, scale: 0, nullable, ..ColType::default() };
     assert!(check_numbers_tuple(&[col(T::BIGINT, false)]).is_ok());
     assert!(check_numbers_tuple(&[col(T::BIGINT, true)]).is_err());
     assert!(check_numbers_tuple(&[col(T::INT, false)]).is_err());

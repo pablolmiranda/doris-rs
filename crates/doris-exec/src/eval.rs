@@ -23,7 +23,7 @@ pub struct SlotMap(pub HashMap<i32, usize>);
 const COMPARISONS: &[&str] = &["eq", "ne", "lt", "gt", "le", "ge"];
 /// The aggregate functions an aggregation node computes.
 pub const AGGREGATES: &[&str] = &[
-    "count", "sum", "min", "max", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
+    "count", "sum", "min", "max", "map_agg_v1", "avg", "multi_distinct_count", "sum0", "stddev", "group_concat", "ndv", "window_funnel_v2", "kurt", "kurt_pop", "kurtosis", "skew",
     "skew_pop", "skewness", "regr_slope", "regr_intercept", "corr", "corr_welford", "covar", "covar_pop", "covar_samp", "avg_weighted",
     "percentile", "percentile_array", "retention", "linear_histogram", "exponential_moving_average", "group_bit_and", "group_bit_or", "group_bit_xor",
     "stddev_samp", "variance", "variance_samp", "percentile_approx", "multi_distinct_sum", "multi_distinct_group_concat",
@@ -268,10 +268,18 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some("to_date") => signature(n).is_some_and(|(a, to)| a.len() == 1 && a[0].ptype == T::DATETIMEV2 && to.ptype == T::DATEV2),
                 Some("concat_ws" | "regexp" | "rlike" | "split_by_string") => string_call(n),
                 Some("assert_true") => assert_true_call(&e.nodes, i),
-                // `element_at(ARRAY<T>, INT) -> T` (function_array_element.h:293-330)
-                Some("element_at") => signature(n).is_some_and(|(a, to)| {
-                    a.len() == 2 && a[0].element().is_some_and(|el| el.ptype == to.ptype && el.scale == to.scale) && a[1].ptype == T::INT
+                // `element_at(ARRAY<T>, INT) -> T` (function_array_element.h:293-330), on a MAP by
+                // key, on a STRUCT by a field's name
+                Some("element_at") => signature(n).is_some_and(|(a, to)| match a.as_slice() {
+                    [arr, i] if arr.ptype == T::ARRAY => {
+                        arr.element().is_some_and(|el| el.ptype == to.ptype && el.scale == to.scale) && i.ptype == T::INT
+                    }
+                    [m, _] if m.ptype == T::MAP => m.map_types().is_some_and(|(k, v)| !k.is_nested() && v.ptype == to.ptype && v.scale == to.scale),
+                    // the field and its type: `maps::check_struct_element`, below
+                    [s, _] if s.ptype == T::STRUCT => true,
+                    _ => false,
                 }),
+                Some(f) if crate::maps::is_map_function(f) => signature(n).is_some_and(|(a, to)| crate::maps::supported(f, &a, &to)),
                 Some("now" | "current_date" | "curdate") => clock_call(n),
                 Some(f) if BIT_FUNCTIONS.contains(&f) => bit_call(n),
                 Some(f) if crate::datetime::is_date_function(f) => date_call(n),
@@ -283,6 +291,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
                 Some(f) if crate::crypto::is_crypto_function(f) => crypto_call(n),
+                Some(f) if crate::arrays::is_array_function(f) => signature(n).is_some_and(|(a, to)| crate::arrays::supported(f, &a, &to)),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -296,19 +305,33 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
         if !ok {
             return Err(ExecError::Unsupported { what: describe(n) });
         }
+        let struct_arg = e.nodes.get(i + 1).and_then(|c| ColType::from_type_desc("", &c.type_, true)).is_some_and(|t| t.ptype == T::STRUCT);
+        if function_name(n).as_deref() == Some("element_at") && struct_arg {
+            crate::maps::check_struct_element(&e.nodes, i)?;
+        }
         // an aggregate's serialized state travels as a string; its own types are checked by name
         if n.node_type == N::AGG_EXPR {
             continue;
         }
+        // a cast to a nested type goes part by part from the same shape; from text C++ parses it
+        if n.node_type == N::CAST_EXPR {
+            let to = ColType::from_type_desc("", &n.type_, true);
+            let from = e.nodes.get(i + 1).and_then(|c| ColType::from_type_desc("", &c.type_, true));
+            if let (Some(to), Some(from)) = (to.filter(ColType::is_nested), from) {
+                if !same_shape(&from, &to) {
+                    return Err(ExecError::Unsupported { what: format!("a cast from {} to {}", from.type_name(), to.type_name()) });
+                }
+            }
+        }
         match ColType::from_type_desc("", &n.type_, true) {
             Some(c)
                 if c.supported() || n.node_type == N::NULL_LITERAL || c.ptype == T::NULL_TYPE => {}
-            // an ARRAY is only carried: the expression itself, or a table function's argument;
-            // no comparison, cast or other function takes one
-            Some(c) if c.supported_array() && array_carried(&e.nodes, i) => {}
-            Some(c) if c.ptype == T::ARRAY => {
+            // an ARRAY, MAP or STRUCT is only carried: the expression itself, or an argument of a
+            // function that takes one; no comparison or other function takes one
+            Some(c) if c.supported_nested() && nested_carried(&e.nodes, i) => {}
+            Some(c) if c.is_nested() => {
                 return Err(ExecError::Unsupported {
-                    what: format!("an ARRAY value as an operand ({})", describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
+                    what: format!("{} value as an operand ({})", c.nested_name(), describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
                 })
             }
             Some(c) => {
@@ -400,17 +423,99 @@ fn parent(nodes: &[TExprNode], i: usize) -> Option<usize> {
 /// The table functions, whose arguments may be ARRAYs.
 pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 
-/// Whether an ARRAY at node `i` is carried, not operated on: the whole expression, or an
-/// argument of a table function.
-fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
+/// The functions whose arguments may be ARRAYs, MAPs or STRUCTs (besides the table functions).
+pub const NESTED_ARG_FUNCTIONS: &[&str] = &["element_at", "map", "struct", "named_struct", "array_with_constant", "array_join", "array_pushback", "array_pushfront", "array_popback", "array_popfront"];
+
+/// Whether an ARRAY, MAP or STRUCT at node `i` is carried, not operated on: the whole
+/// expression, an element of an ARRAY_LITERAL, the operand of a cast to a nested type, or an
+/// argument of a function that takes one.
+fn nested_carried(nodes: &[TExprNode], i: usize) -> bool {
     match parent(nodes, i) {
         None => true,
-        // percentile_array's levels (its second argument), `element_at`'s array
+        // percentile_array's levels (its second argument)
         Some(p) if nodes[p].node_type == N::AGG_EXPR => {
-            function_name(&nodes[p]).as_deref() == Some("percentile_array") && i != p + 1
+            matches!(function_name(&nodes[p]).as_deref(), Some("percentile_array" | "map_agg_v1")) && i != p + 1
         }
-        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || f == "element_at"),
+        Some(p) if nodes[p].node_type == N::ARRAY_LITERAL => true,
+        // a cast between nested types of the same kind, part by part
+        Some(p) if nodes[p].node_type == N::CAST_EXPR => {
+            let kind = |n: &TExprNode| ColType::from_type_desc("", &n.type_, true).map(|t| t.ptype);
+            kind(&nodes[p]) == kind(&nodes[i])
+        }
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || NESTED_ARG_FUNCTIONS.contains(&f.as_str())),
     }
+}
+
+/// One value cast from `from` to `to`; a nested value part by part (`cast_to_array.h`,
+/// `cast_to_map.h`).
+fn cast_datum(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    let shape = || bad(format!("a value that is not a {} ({} to {})", from.type_name(), from.type_name(), to.type_name()));
+    match d {
+        Datum::Array(a) => {
+            let (Some(fe), Some(te)) = (from.element(), to.element()) else { return Err(shape()) };
+            return Ok(Datum::Array(a.iter().map(|v| cast_part(v, &fe, &te)).collect::<Result<_, _>>()?));
+        }
+        Datum::Map(m) => {
+            let (Some((fk, fv)), Some((tk, tv))) = (from.map_types(), to.map_types()) else { return Err(shape()) };
+            let changed = !same_leaf(&fk, &tk);
+            let m: Vec<(Datum, Datum)> = m.iter().map(|(k, v)| Ok((cast_part(k, &fk, &tk)?, cast_part(v, &fv, &tv)?))).collect::<Result<_, ExecError>>()?;
+            // keys that became equal in the new type: the last wins (`cast_to_map.h`)
+            return Ok(Datum::Map(if changed { crate::maps::dedup(m) } else { m }));
+        }
+        Datum::Struct(f) => {
+            let (Some(ff), Some(tf)) = (from.fields(), to.fields()) else { return Err(shape()) };
+            if ff.len() != f.len() || tf.len() != f.len() {
+                return Err(shape());
+            }
+            let f = f.iter().zip(ff.iter().zip(&tf)).map(|(v, ((_, a), (_, b)))| cast_part(v, a, b));
+            return Ok(Datum::Struct(f.collect::<Result<_, _>>()?));
+        }
+        _ => {}
+    }
+    if let Some(r) = round_datetime(d, from, to) {
+        return Ok(r);
+    }
+    if let Some(r) = float_to_number(d, to) {
+        return Ok(r);
+    }
+    if let Some(r) = number_to_bool(d, from, to) {
+        return Ok(r);
+    }
+    if let Some(r) = date_to_number(d, from, to) {
+        return Ok(r);
+    }
+    // a FLOAT as text is the float's own shortest text, not its double's
+    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
+        return Ok(crate::row_text::cell_text(d, from).map_or(Datum::Null, Datum::Bytes));
+    }
+    let v = expr::cast(datum_value(d, from), to);
+    if v == Value::Null {
+        Ok(Datum::Null)
+    } else {
+        as_datum(&v, to)
+    }
+}
+
+/// A part of a nested value cast: one of an unchanged type keeps its bytes (no text round trip).
+fn cast_part(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    if *d == Datum::Null || same_leaf(from, to) {
+        return Ok(d.clone());
+    }
+    cast_datum(d, from, to)
+}
+
+/// Whether two types nest alike: the same kinds of ARRAY, MAP and STRUCT with the same number of
+/// parts, whatever their scalar leaves.
+fn same_shape(a: &ColType, b: &ColType) -> bool {
+    if !a.is_nested() && !b.is_nested() {
+        return true;
+    }
+    a.ptype == b.ptype && a.children.len() == b.children.len() && a.children.iter().zip(&b.children).all(|(x, y)| same_shape(x, y))
+}
+
+/// Whether a nested value's part needs no cast: the same storage (as `coerce`), or a NULL_TYPE target.
+fn same_leaf(from: &ColType, to: &ColType) -> bool {
+    !from.is_nested() && !to.is_nested() && (same_storage(from, to) || to.ptype == T::NULL_TYPE)
 }
 
 fn bad(msg: impl Into<String>) -> ExecError {
@@ -421,7 +526,7 @@ fn bad(msg: impl Into<String>) -> ExecError {
 /// NULL: `check_nodes` refuses an array operand).
 pub fn datum_value(d: &Datum, t: &ColType) -> Value {
     match d {
-        Datum::Null | Datum::Array(_) => Value::Null,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),
@@ -475,7 +580,7 @@ fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
 
 fn truth(d: &Datum) -> Option<bool> {
     match d {
-        Datum::Null | Datum::Array(_) => None,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => None,
         Datum::Bool(b) => Some(*b),
         Datum::Int(v) => Some(*v != 0),
         Datum::Float(f) => Some(*f != 0.0),
@@ -510,6 +615,7 @@ fn eval_at(
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     };
     Ok(match n.node_type {
         // the elements, in the element type (`VArrayLiteral`)
@@ -588,33 +694,7 @@ fn eval_at(
                 .into_iter()
                 .next()
                 .ok_or_else(|| bad("cast without its argument"))?;
-            let out = vals
-                .iter()
-                .map(|d| {
-                    if let Some(r) = round_datetime(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = float_to_number(d, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = number_to_bool(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = date_to_number(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    // a FLOAT as text is the float's own shortest text, not its double's
-                    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
-                        return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
-                    }
-                    let v = expr::cast(datum_value(d, &from), &to);
-                    if v == Value::Null {
-                        Ok(Datum::Null)
-                    } else {
-                        as_datum(&v, &to)
-                    }
-                })
-                .collect::<Result<_, _>>()?;
+            let out = vals.iter().map(|d| cast_datum(d, &from, &to)).collect::<Result<_, _>>()?;
             (to, out)
         }
         // `a <=> b`: both NULL is true, one NULL false, never NULL (`eq_for_null`)
@@ -727,6 +807,21 @@ fn eval_at(
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
         }
+        // the constructors are never NULL
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::maps::is_map_function(&f)) => {
+            let to = ColType { nullable: false, ..node_type(n)? };
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::maps::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            (to, out)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::arrays::is_array_function(&f)) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::arrays::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            (to, out)
+        }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::crypto::is_crypto_function(&f)) => {
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::crypto::eval(&function_name(n).unwrap_or_default(), &args, rows)?)
@@ -766,6 +861,18 @@ fn eval_at(
         }
         N::FUNCTION_CALL => match function_name(n).as_deref() {
             // 1-based; negative from the end; 0, out of range or a NULL array is NULL
+            Some("element_at") if kids.first().is_some_and(|(t, _)| t.ptype == T::MAP) => {
+                let to = node_type(n)?;
+                let [(mt, maps), (pt, probes)] = <[_; 2]>::try_from(kids).map_err(|_| bad("element_at needs two arguments"))?;
+                let out = crate::maps::map_element(&maps, &mt, &probes, &pt, &to)?;
+                (to, out)
+            }
+            Some("element_at") if kids.first().is_some_and(|(t, _)| t.ptype == T::STRUCT) => {
+                let to = node_type(n)?;
+                let [(st, structs), (_, names)] = <[_; 2]>::try_from(kids).map_err(|_| bad("element_at needs two arguments"))?;
+                let out = crate::maps::struct_element(&structs, &st, &names, &to)?;
+                (to, out)
+            }
             Some("element_at") => {
                 let to = node_type(n)?;
                 let [(_, arrays), (_, idx)] = <[_; 2]>::try_from(kids).map_err(|_| bad("element_at needs two arguments"))?;
@@ -1009,7 +1116,7 @@ enum Key<'a> {
 fn key<'a>(d: &'a Datum, t: &ColType) -> Option<Key<'a>> {
     Some(match d {
         // an ARRAY never reaches a comparison: `check_nodes` refuses it
-        Datum::Null | Datum::Array(_) => return None,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => return None,
         Datum::Bool(b) => Key::Fixed(i128::from(*b), 0),
         Datum::Float(f) => Key::Float(f64::from(*f)),
         Datum::Double(f) => Key::Float(*f),
@@ -1200,6 +1307,9 @@ fn round_datetime(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
 
 /// A value of type `from` as a value of type `to` (a slot's type), cast when they differ.
 pub fn coerce(d: Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    if matches!(d, Datum::Array(_) | Datum::Map(_) | Datum::Struct(_)) {
+        return cast_datum(&d, from, to);
+    }
     if d == Datum::Null || same_storage(from, to) || to.ptype == T::NULL_TYPE {
         return Ok(d);
     }

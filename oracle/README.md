@@ -254,6 +254,16 @@ unknown column statistics", and whether the FE's auto-analyze has run before the
 timing. A full run can lose up to two hours to `nereids_p0 test_use_mv`, which polls a rollup
 job the FE cancelled until its timeout; the suite is not eligible.
 
+After Milestone 6 story 7 batch 7 (arrays, maps and structs: a column type is now a tree, so an
+ARRAY, MAP or STRUCT can hold any supported type, nested values print as C++ prints them, and
+casts go part by part; `array_with_constant`, `array_join`, `array_range` with the time units,
+`array_pushback`/`pushfront`/`popback`/`popfront`, `map`, `struct`, `named_struct`,
+`element_at` on a MAP or STRUCT, and `map_agg_v1`; run `m6-s7b7-full-2`, 2026-11-13): 687
+eligible suites, all passing both gates; 748 Epic 1 suites pass the out gate (581 of those that
+reach the BE) and 626 the strict gate (546). Each ratchet gains 7 suites. Nested columns in
+tablets are still refused (reading one, or using one as a key), as are nested MAP keys and a
+cast between different shapes. One call builds at most 2^24 elements per block.
+
 The older directory-level gate also works against any target:
 
 ```

@@ -92,6 +92,19 @@ pub fn row_key(row: &[Datum]) -> Vec<u8> {
                 out.extend((inner.len() as u64).to_le_bytes());
                 out.extend(inner);
             }
+            Datum::Map(m) => {
+                let flat: Vec<Datum> = m.iter().flat_map(|(k, v)| [k.clone(), v.clone()]).collect();
+                let inner = row_key(&flat);
+                out.push(7);
+                out.extend((inner.len() as u64).to_le_bytes());
+                out.extend(inner);
+            }
+            Datum::Struct(f) => {
+                let inner = row_key(f);
+                out.push(8);
+                out.extend((inner.len() as u64).to_le_bytes());
+                out.extend(inner);
+            }
         }
     }
     out

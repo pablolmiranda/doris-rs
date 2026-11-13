@@ -34,6 +34,7 @@ fn int(nullable: bool) -> ColType {
         precision: 0,
         scale: 0,
         nullable,
+        ..ColType::default()
     }
 }
 

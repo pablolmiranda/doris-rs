@@ -25,6 +25,7 @@ fn col(name: &str, ptype: T) -> ColType {
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     }
 }
 

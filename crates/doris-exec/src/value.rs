@@ -3,7 +3,7 @@
 //! included: NULL into NOT NULL, strings longer than the column).
 use doris_segment::writer::Datum;
 use doris_thrift::gen::descriptors::TColumn;
-use doris_thrift::gen::types::{TPrimitiveType, TTypeDesc};
+use doris_thrift::gen::types::{TPrimitiveType, TTypeDesc, TTypeNode};
 
 use crate::RowError;
 
@@ -22,8 +22,10 @@ pub enum Value {
     Date(String),
 }
 
-/// A column's type as the FE describes it. An ARRAY of a scalar keeps its element's type in
-/// `len` (the element's `TPrimitiveType`), `precision` and `scale` (see `element`).
+/// A column's type as the FE describes it. A nested type describes its parts in `children`
+/// (ARRAY: the element; MAP: the key, then the value; STRUCT: the fields, named by
+/// `field_names`). An ARRAY of a scalar also keeps its element's type in `len` (the element's
+/// `TPrimitiveType`), `precision` and `scale`, the form older callers read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColType {
     pub name: String,
@@ -32,6 +34,23 @@ pub struct ColType {
     pub precision: i32,
     pub scale: i32,
     pub nullable: bool,
+    pub children: Vec<ColType>,
+    pub field_names: Vec<String>,
+}
+
+impl Default for ColType {
+    fn default() -> ColType {
+        ColType {
+            name: String::new(),
+            ptype: TPrimitiveType::INVALID_TYPE,
+            len: -1,
+            precision: 0,
+            scale: 0,
+            nullable: true,
+            children: Vec::new(),
+            field_names: Vec::new(),
+        }
+    }
 }
 
 impl ColType {
@@ -44,62 +63,121 @@ impl ColType {
             precision: t.precision.unwrap_or(0),
             scale: t.scale.unwrap_or(0),
             nullable: c.is_allow_null.unwrap_or(false),
+            ..ColType::default()
         }
     }
 
-    /// The scalar type of a type descriptor; None for nested types.
+    /// The type of a type descriptor: its node list in pre-order (ARRAY has one child, MAP two,
+    /// STRUCT one per field). None for a node kind doris-rs does not describe.
     pub fn from_type_desc(name: &str, t: &TTypeDesc, nullable: bool) -> Option<ColType> {
-        // ARRAY<scalar>: an ARRAY node, then the element's scalar node
-        if let [array, elem] = t.types.as_deref()? {
-            if array.type_ != doris_thrift::gen::types::TTypeNodeType::ARRAY {
-                return None;
+        let nodes = t.types.as_deref()?;
+        let mut pos = 0;
+        let out = Self::from_nodes(name, nodes, &mut pos, nullable)?;
+        (pos == nodes.len()).then_some(out)
+    }
+
+    fn from_nodes(name: &str, nodes: &[TTypeNode], pos: &mut usize, nullable: bool) -> Option<ColType> {
+        use doris_thrift::gen::types::TTypeNodeType as K;
+        let node = nodes.get(*pos)?;
+        *pos += 1;
+        let base = ColType { name: name.to_string(), nullable, ..ColType::default() };
+        match node.type_ {
+            K::SCALAR => {
+                let s = node.scalar_type.as_ref()?;
+                Some(ColType {
+                    ptype: s.type_,
+                    len: s.len.unwrap_or(-1),
+                    precision: s.precision.unwrap_or(0),
+                    scale: s.scale.unwrap_or(0),
+                    ..base
+                })
             }
-            let e = elem.scalar_type.as_ref()?;
-            return Some(ColType {
-                name: name.to_string(),
-                ptype: TPrimitiveType::ARRAY,
-                len: e.type_.0,
-                precision: e.precision.unwrap_or(0),
-                scale: e.scale.unwrap_or(0),
-                nullable,
-            });
+            K::ARRAY => {
+                let e = Self::from_nodes("", nodes, pos, node.contains_null.unwrap_or(true))?;
+                let scalar = e.children.is_empty();
+                Some(ColType {
+                    ptype: TPrimitiveType::ARRAY,
+                    len: if scalar { e.ptype.0 } else { -1 },
+                    precision: if scalar { e.precision } else { 0 },
+                    scale: if scalar { e.scale } else { 0 },
+                    children: vec![e],
+                    ..base
+                })
+            }
+            K::MAP => {
+                let nulls = node.contains_nulls.clone().unwrap_or_default();
+                let k = Self::from_nodes("", nodes, pos, nulls.first().copied().unwrap_or(true))?;
+                let v = Self::from_nodes("", nodes, pos, nulls.get(1).copied().unwrap_or(true))?;
+                Some(ColType { ptype: TPrimitiveType::MAP, children: vec![k, v], ..base })
+            }
+            K::STRUCT => {
+                let fields = node.struct_fields.as_deref()?;
+                let mut children = Vec::with_capacity(fields.len());
+                for f in fields {
+                    children.push(Self::from_nodes("", nodes, pos, f.contains_null.unwrap_or(true))?);
+                }
+                let field_names = fields.iter().map(|f| f.name.clone()).collect();
+                Some(ColType { ptype: TPrimitiveType::STRUCT, children, field_names, ..base })
+            }
+            _ => None,
         }
-        let node = t.types.as_ref()?.first()?;
-        let s = node.scalar_type.as_ref()?;
-        if t.types.as_ref()?.len() != 1 {
+    }
+
+    /// An ARRAY's element type, None for anything else. The old flat form (no `children`) has
+    /// an always-nullable element.
+    pub fn element(&self) -> Option<ColType> {
+        if self.ptype != TPrimitiveType::ARRAY {
             return None;
         }
+        if let Some(e) = self.children.first() {
+            return Some(e.clone());
+        }
         Some(ColType {
-            name: name.to_string(),
-            ptype: s.type_,
-            len: s.len.unwrap_or(-1),
-            precision: s.precision.unwrap_or(0),
-            scale: s.scale.unwrap_or(0),
-            nullable,
-        })
-    }
-
-    /// An ARRAY's element type (always nullable), None for a scalar.
-    pub fn element(&self) -> Option<ColType> {
-        (self.ptype == TPrimitiveType::ARRAY).then(|| ColType {
             name: self.name.clone(),
             ptype: TPrimitiveType(self.len),
             len: -1,
             precision: self.precision,
             scale: self.scale,
             nullable: true,
+            ..ColType::default()
         })
     }
 
-    /// An ARRAY doris-rs carries and prints: of an integer or text element.
-    pub fn supported_array(&self) -> bool {
-        use TPrimitiveType as T;
-        self.element().is_some_and(|e| {
-            matches!(
-                e.ptype,
-                T::BOOLEAN | T::TINYINT | T::SMALLINT | T::INT | T::BIGINT | T::LARGEINT | T::FLOAT | T::DOUBLE | T::CHAR | T::VARCHAR | T::STRING
-            )
-        })
+    /// A MAP's key and value types.
+    pub fn map_types(&self) -> Option<(ColType, ColType)> {
+        match (self.ptype, self.children.as_slice()) {
+            (TPrimitiveType::MAP, [k, v]) => Some((k.clone(), v.clone())),
+            _ => None,
+        }
+    }
+
+    /// A STRUCT's fields, by name.
+    pub fn fields(&self) -> Option<Vec<(String, ColType)>> {
+        (self.ptype == TPrimitiveType::STRUCT).then(|| self.field_names.iter().cloned().zip(self.children.iter().cloned()).collect())
+    }
+
+    /// Whether this is an ARRAY, MAP or STRUCT.
+    pub fn is_nested(&self) -> bool {
+        matches!(self.ptype, TPrimitiveType::ARRAY | TPrimitiveType::MAP | TPrimitiveType::STRUCT)
+    }
+
+    /// The article and name of a nested type in messages ("an ARRAY", "a MAP", "a STRUCT").
+    pub fn nested_name(&self) -> &'static str {
+        match self.ptype {
+            TPrimitiveType::MAP => "a MAP",
+            TPrimitiveType::STRUCT => "a STRUCT",
+            _ => "an ARRAY",
+        }
+    }
+
+    /// A nested type doris-rs carries and prints: every part a type it reads, or NULL_TYPE.
+    pub fn supported_nested(&self) -> bool {
+        let part = |c: &ColType| c.supported() || c.ptype == TPrimitiveType::NULL_TYPE || c.supported_nested();
+        match self.ptype {
+            TPrimitiveType::ARRAY => self.element().is_some_and(|e| part(&e)),
+            TPrimitiveType::MAP | TPrimitiveType::STRUCT => !self.children.is_empty() && self.children.iter().all(part),
+            _ => false,
+        }
     }
 
     /// The name the C++ BE prints for the column's type (`IDataType::get_name`).
@@ -107,6 +185,13 @@ impl ColType {
         let p = self.ptype;
         if let Some(e) = self.element() {
             return format!("Array({})", e.type_name());
+        }
+        if let Some((k, v)) = self.map_types() {
+            return format!("Map({}, {})", k.type_name(), v.type_name());
+        }
+        if let Some(f) = self.fields() {
+            let f: Vec<String> = f.iter().map(|(n, t)| format!("{n}:{}", t.type_name())).collect();
+            return format!("Struct({})", f.join(", "));
         }
         match p {
             TPrimitiveType::BOOLEAN => "BOOL".into(),
@@ -167,7 +252,7 @@ pub fn datum_value(d: &Datum, c: &ColType) -> Value {
     use TPrimitiveType as T;
     match d {
         // an ARRAY is never written or cast: refused at prepare
-        Datum::Null | Datum::Array(_) => Value::Null,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),
