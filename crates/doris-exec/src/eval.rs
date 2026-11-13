@@ -303,12 +303,12 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
         match ColType::from_type_desc("", &n.type_, true) {
             Some(c)
                 if c.supported() || n.node_type == N::NULL_LITERAL || c.ptype == T::NULL_TYPE => {}
-            // an ARRAY is only carried: the expression itself, or a table function's argument;
-            // no comparison, cast or other function takes one
-            Some(c) if c.supported_array() && array_carried(&e.nodes, i) => {}
-            Some(c) if c.ptype == T::ARRAY => {
+            // an ARRAY, MAP or STRUCT is only carried: the expression itself, or an argument of a
+            // function that takes one; no comparison or other function takes one
+            Some(c) if c.supported_nested() && nested_carried(&e.nodes, i) => {}
+            Some(c) if c.is_nested() => {
                 return Err(ExecError::Unsupported {
-                    what: format!("an ARRAY value as an operand ({})", describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
+                    what: format!("{} value as an operand ({})", c.nested_name(), describe(&e.nodes[parent(&e.nodes, i).unwrap_or(i)])),
                 })
             }
             Some(c) => {
@@ -400,16 +400,73 @@ fn parent(nodes: &[TExprNode], i: usize) -> Option<usize> {
 /// The table functions, whose arguments may be ARRAYs.
 pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 
-/// Whether an ARRAY at node `i` is carried, not operated on: the whole expression, or an
-/// argument of a table function.
-fn array_carried(nodes: &[TExprNode], i: usize) -> bool {
+/// The functions whose arguments may be ARRAYs, MAPs or STRUCTs (besides the table functions).
+pub const NESTED_ARG_FUNCTIONS: &[&str] = &["element_at"];
+
+/// Whether an ARRAY, MAP or STRUCT at node `i` is carried, not operated on: the whole
+/// expression, an element of an ARRAY_LITERAL, the operand of a cast to a nested type, or an
+/// argument of a function that takes one.
+fn nested_carried(nodes: &[TExprNode], i: usize) -> bool {
     match parent(nodes, i) {
         None => true,
-        // percentile_array's levels (its second argument), `element_at`'s array
+        // percentile_array's levels (its second argument)
         Some(p) if nodes[p].node_type == N::AGG_EXPR => {
             function_name(&nodes[p]).as_deref() == Some("percentile_array") && i != p + 1
         }
-        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || f == "element_at"),
+        Some(p) if nodes[p].node_type == N::ARRAY_LITERAL => true,
+        // a cast between nested types of the same kind, part by part
+        Some(p) if nodes[p].node_type == N::CAST_EXPR => {
+            let kind = |n: &TExprNode| ColType::from_type_desc("", &n.type_, true).map(|t| t.ptype);
+            kind(&nodes[p]) == kind(&nodes[i])
+        }
+        Some(p) => function_name(&nodes[p]).is_some_and(|f| TABLE_FUNCTIONS.contains(&f.as_str()) || NESTED_ARG_FUNCTIONS.contains(&f.as_str())),
+    }
+}
+
+/// One value cast from `from` to `to`; a nested value part by part (`cast_to_array.h`,
+/// `cast_to_map.h`).
+fn cast_datum(d: &Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    match d {
+        Datum::Array(a) => {
+            let (fe, te) = (from.element().unwrap_or_default(), to.element().unwrap_or_default());
+            return Ok(Datum::Array(a.iter().map(|v| cast_datum(v, &fe, &te)).collect::<Result<_, _>>()?));
+        }
+        Datum::Map(m) => {
+            let ((fk, fv), (tk, tv)) = (from.map_types().unwrap_or_default(), to.map_types().unwrap_or_default());
+            let m = m.iter().map(|(k, v)| Ok((cast_datum(k, &fk, &tk)?, cast_datum(v, &fv, &tv)?))).collect::<Result<_, ExecError>>()?;
+            return Ok(Datum::Map(m));
+        }
+        Datum::Struct(f) => {
+            let (ff, tf) = (from.fields().unwrap_or_default(), to.fields().unwrap_or_default());
+            let f = f.iter().enumerate().map(|(i, v)| {
+                let (a, b) = (ff.get(i).map(|x| x.1.clone()).unwrap_or_default(), tf.get(i).map(|x| x.1.clone()).unwrap_or_default());
+                cast_datum(v, &a, &b)
+            });
+            return Ok(Datum::Struct(f.collect::<Result<_, _>>()?));
+        }
+        _ => {}
+    }
+    if let Some(r) = round_datetime(d, from, to) {
+        return Ok(r);
+    }
+    if let Some(r) = float_to_number(d, to) {
+        return Ok(r);
+    }
+    if let Some(r) = number_to_bool(d, from, to) {
+        return Ok(r);
+    }
+    if let Some(r) = date_to_number(d, from, to) {
+        return Ok(r);
+    }
+    // a FLOAT as text is the float's own shortest text, not its double's
+    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
+        return Ok(crate::row_text::cell_text(d, from).map_or(Datum::Null, Datum::Bytes));
+    }
+    let v = expr::cast(datum_value(d, from), to);
+    if v == Value::Null {
+        Ok(Datum::Null)
+    } else {
+        as_datum(&v, to)
     }
 }
 
@@ -421,7 +478,7 @@ fn bad(msg: impl Into<String>) -> ExecError {
 /// NULL: `check_nodes` refuses an array operand).
 pub fn datum_value(d: &Datum, t: &ColType) -> Value {
     match d {
-        Datum::Null | Datum::Array(_) => Value::Null,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => Value::Null,
         Datum::Bool(b) => Value::Bool(*b),
         Datum::Float(f) => Value::Float(f64::from(*f)),
         Datum::Double(f) => Value::Float(*f),
@@ -475,7 +532,7 @@ fn bools(v: impl IntoIterator<Item = Option<bool>>) -> Vec<Datum> {
 
 fn truth(d: &Datum) -> Option<bool> {
     match d {
-        Datum::Null | Datum::Array(_) => None,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => None,
         Datum::Bool(b) => Some(*b),
         Datum::Int(v) => Some(*v != 0),
         Datum::Float(f) => Some(*f != 0.0),
@@ -510,6 +567,7 @@ fn eval_at(
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     };
     Ok(match n.node_type {
         // the elements, in the element type (`VArrayLiteral`)
@@ -588,33 +646,7 @@ fn eval_at(
                 .into_iter()
                 .next()
                 .ok_or_else(|| bad("cast without its argument"))?;
-            let out = vals
-                .iter()
-                .map(|d| {
-                    if let Some(r) = round_datetime(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = float_to_number(d, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = number_to_bool(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    if let Some(r) = date_to_number(d, &from, &to) {
-                        return Ok(r);
-                    }
-                    // a FLOAT as text is the float's own shortest text, not its double's
-                    if let (Datum::Float(_), T::CHAR | T::VARCHAR | T::STRING) = (d, to.ptype) {
-                        return Ok(crate::row_text::cell_text(d, &from).map_or(Datum::Null, Datum::Bytes));
-                    }
-                    let v = expr::cast(datum_value(d, &from), &to);
-                    if v == Value::Null {
-                        Ok(Datum::Null)
-                    } else {
-                        as_datum(&v, &to)
-                    }
-                })
-                .collect::<Result<_, _>>()?;
+            let out = vals.iter().map(|d| cast_datum(d, &from, &to)).collect::<Result<_, _>>()?;
             (to, out)
         }
         // `a <=> b`: both NULL is true, one NULL false, never NULL (`eq_for_null`)
@@ -1009,7 +1041,7 @@ enum Key<'a> {
 fn key<'a>(d: &'a Datum, t: &ColType) -> Option<Key<'a>> {
     Some(match d {
         // an ARRAY never reaches a comparison: `check_nodes` refuses it
-        Datum::Null | Datum::Array(_) => return None,
+        Datum::Null | Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => return None,
         Datum::Bool(b) => Key::Fixed(i128::from(*b), 0),
         Datum::Float(f) => Key::Float(f64::from(*f)),
         Datum::Double(f) => Key::Float(*f),
@@ -1200,6 +1232,9 @@ fn round_datetime(d: &Datum, from: &ColType, to: &ColType) -> Option<Datum> {
 
 /// A value of type `from` as a value of type `to` (a slot's type), cast when they differ.
 pub fn coerce(d: Datum, from: &ColType, to: &ColType) -> Result<Datum, ExecError> {
+    if matches!(d, Datum::Array(_) | Datum::Map(_) | Datum::Struct(_)) {
+        return cast_datum(&d, from, to);
+    }
     if d == Datum::Null || same_storage(from, to) || to.ptype == T::NULL_TYPE {
         return Ok(d);
     }

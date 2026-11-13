@@ -103,8 +103,8 @@ fn bits(d: &Datum) -> Bits {
         Datum::Float(f) => Bits::F32(f.to_bits()),
         Datum::Double(f) => Bits::F64(f.to_bits()),
         Datum::Bytes(b) => Bits::Bytes(b.clone()),
-        // an ARRAY key is refused at prepare; its canonical bytes keep the match total
-        Datum::Array(a) => Bits::Bytes(crate::set_op::row_key(a)),
+        // a nested key is refused at prepare; its canonical bytes keep the match total
+        Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => Bits::Bytes(crate::set_op::row_key(std::slice::from_ref(d))),
     }
 }
 

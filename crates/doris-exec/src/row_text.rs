@@ -92,6 +92,23 @@ pub fn datetimev2_text(v: u64, scale: i32) -> String {
 
 /// A value's text in a result row; None for NULL.
 pub fn cell_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
+    nested_text(d, t)
+}
+
+/// A value's text (`DataTypeSerDe` with `_nesting_level`). Inside an ARRAY, MAP or STRUCT
+/// (nesting level > 1) strings, dates and datetimes are wrapped in unescaped double quotes and
+/// NULL prints `null` (research `2026-11-12-m6-s7b6-arrays.md` §1).
+fn nested_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
+    // a part of a nested value: NULL as `null`, quoted when the serde quotes its kind
+    let part = |d: &Datum, t: &ColType| -> String {
+        match nested_text(d, t) {
+            None => "null".to_string(),
+            Some(b) if matches!(t.ptype, T::CHAR | T::VARCHAR | T::STRING | T::DATEV2 | T::DATETIMEV2 | T::DATE | T::DATETIME) => {
+                format!("\"{}\"", String::from_utf8_lossy(&b))
+            }
+            Some(b) => String::from_utf8_lossy(&b).into_owned(),
+        }
+    };
     let text = match d {
         Datum::Null => return None,
         Datum::Bytes(b) => return Some(b.clone()),
@@ -109,19 +126,30 @@ pub fn cell_text(d: &Datum, t: &ColType) -> Option<Vec<u8>> {
             T::BOOLEAN => u8::from(*v != 0).to_string(),
             _ => v.to_string(),
         },
-        // `DataTypeArraySerDe`: `[` elements `, ` `]`, strings in unescaped quotes, NULL as `null`
+        // `[` elements `, ` `]`
         Datum::Array(a) => {
             let elem = t.element().unwrap_or_else(|| t.clone());
-            let text_elem = matches!(elem.ptype, T::CHAR | T::VARCHAR | T::STRING);
-            let parts: Vec<String> = a
+            let parts: Vec<String> = a.iter().map(|v| part(v, &elem)).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        // `{` key `:` value, `, ` `}`
+        Datum::Map(m) => {
+            let (kt, vt) = t.map_types().unwrap_or_default();
+            let parts: Vec<String> = m.iter().map(|(k, v)| format!("{}:{}", part(k, &kt), part(v, &vt))).collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+        // `{` `"name":` value, `, ` `}`, the names from the type
+        Datum::Struct(f) => {
+            let fields = t.fields().unwrap_or_default();
+            let parts: Vec<String> = f
                 .iter()
-                .map(|v| match cell_text(v, &elem) {
-                    None => "null".to_string(),
-                    Some(b) if text_elem => format!("\"{}\"", String::from_utf8_lossy(&b)),
-                    Some(b) => String::from_utf8_lossy(&b).into_owned(),
+                .enumerate()
+                .map(|(i, v)| {
+                    let (name, ft) = fields.get(i).cloned().unwrap_or_default();
+                    format!("\"{name}\":{}", part(v, &ft))
                 })
                 .collect();
-            format!("[{}]", parts.join(", "))
+            format!("{{{}}}", parts.join(", "))
         }
     };
     Some(text.into_bytes())

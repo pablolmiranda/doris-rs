@@ -220,6 +220,7 @@ impl Aggregation {
                     precision: 0,
                     scale: 0,
                     nullable: false,
+                    ..ColType::default()
                 }
             });
         }
@@ -283,6 +284,21 @@ fn encode_datum(v: &Datum, out: &mut Vec<u8>) {
                 encode_datum(v, out);
             }
         }
+        Datum::Map(m) => {
+            out.push(7);
+            out.extend((m.len() as u64).to_le_bytes());
+            for (k, v) in m {
+                encode_datum(k, out);
+                encode_datum(v, out);
+            }
+        }
+        Datum::Struct(f) => {
+            out.push(8);
+            out.extend((f.len() as u64).to_le_bytes());
+            for v in f {
+                encode_datum(v, out);
+            }
+        }
     }
 }
 
@@ -324,6 +340,14 @@ impl Reader<'_> {
             6 => {
                 let n = self.u64()? as usize;
                 Datum::Array((0..n).map(|_| self.datum()).collect::<Result<_, _>>()?)
+            }
+            7 => {
+                let n = self.u64()? as usize;
+                Datum::Map((0..n).map(|_| Ok((self.datum()?, self.datum()?))).collect::<Result<_, ExecError>>()?)
+            }
+            8 => {
+                let n = self.u64()? as usize;
+                Datum::Struct((0..n).map(|_| self.datum()).collect::<Result<_, _>>()?)
             }
             t => return Err(ExecError::Internal(format!("a partial aggregate state has value tag {t}"))),
         })
@@ -418,7 +442,7 @@ fn bound(t: &ColType) -> i128 {
 fn number(d: &Datum, t: &ColType, to_scale: i32) -> Result<Option<Num>, ExecError> {
     Ok(match d {
         Datum::Null => None,
-        Datum::Array(_) => return Err(ExecError::Unsupported { what: "an ARRAY value as a number".into() }),
+        Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => return Err(ExecError::Unsupported { what: "a nested value as a number".into() }),
         Datum::Float(f) => Some(Num::Float(f64::from(*f))),
         Datum::Double(f) => Some(Num::Float(*f)),
         Datum::Bool(b) => Some(Num::Int(i128::from(*b))),

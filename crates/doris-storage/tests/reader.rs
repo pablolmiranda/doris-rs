@@ -49,6 +49,7 @@ fn table_rows(mgr: &TabletManager, columns: &str) -> Vec<String> {
                 precision: c.ty.precision,
                 scale: c.ty.scale,
                 nullable: true,
+                ..ColType::default()
             })
             .collect();
         for segment in scan_tablet(mgr, h.tablet_id(), visible_version(h), &cols).unwrap() {

@@ -35,8 +35,12 @@ pub enum Datum {
     Float(f32),
     Double(f64),
     Bytes(Vec<u8>),
-    /// An ARRAY value: its elements, each a scalar Datum.
+    /// An ARRAY value: its elements.
     Array(Vec<Datum>),
+    /// A MAP value: its entries in order (a key may repeat until the map is deduplicated).
+    Map(Vec<(Datum, Datum)>),
+    /// A STRUCT value: its fields in order.
+    Struct(Vec<Datum>),
 }
 
 /// One column of the tablet schema, as the segment needs it.

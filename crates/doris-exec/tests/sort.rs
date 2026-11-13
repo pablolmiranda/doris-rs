@@ -14,7 +14,7 @@ use doris_storage::{DataDir, TabletManager, TabletOptions};
 use doris_thrift::gen::types::{TKeysType, TPrimitiveType as T};
 
 fn int() -> ColType {
-    ColType { name: String::new(), ptype: T::INT, len: -1, precision: 0, scale: 0, nullable: true }
+    ColType { name: String::new(), ptype: T::INT, len: -1, precision: 0, scale: 0, nullable: true, ..ColType::default() }
 }
 
 fn i(v: Option<i128>) -> Datum {

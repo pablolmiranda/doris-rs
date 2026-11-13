@@ -118,6 +118,7 @@ fn concat_null_is_null() {
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     };
     let a = vec![s("ab"), Datum::Null];
     let b = vec![s("c"), s("d")];

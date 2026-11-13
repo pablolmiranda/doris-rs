@@ -1130,8 +1130,8 @@ fn hash_values(values: &[Datum]) -> u64 {
                 eat(&(b.len() as u64).to_le_bytes());
                 eat(b);
             }
-            Datum::Array(a) => {
-                let k = crate::set_op::row_key(a);
+            Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => {
+                let k = crate::set_op::row_key(std::slice::from_ref(v));
                 eat(&[5]);
                 eat(&(k.len() as u64).to_le_bytes());
                 eat(&k);
@@ -1262,6 +1262,8 @@ fn default_of(t: &crate::value::ColType) -> Datum {
         T::DOUBLE => Datum::Double(0.0),
         T::CHAR | T::VARCHAR | T::STRING => Datum::Bytes(vec![]),
         T::ARRAY => Datum::Array(vec![]),
+        T::MAP => Datum::Map(vec![]),
+        T::STRUCT => Datum::Struct(t.fields().unwrap_or_default().iter().map(|(_, f)| default_of(f)).collect()),
         _ => Datum::Int(0),
     }
 }
@@ -1274,7 +1276,7 @@ fn truth(d: &Datum) -> Option<bool> {
         Datum::Float(f) => Some(*f != 0.0),
         Datum::Double(f) => Some(*f != 0.0),
         Datum::Bytes(_) => Some(true),
-        Datum::Array(_) => None,
+        Datum::Array(_) | Datum::Map(_) | Datum::Struct(_) => None,
     }
 }
 

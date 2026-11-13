@@ -14,6 +14,7 @@ fn ty(ptype: T, precision: i32, scale: i32) -> ColType {
         precision,
         scale,
         nullable: true,
+        ..ColType::default()
     }
 }
 

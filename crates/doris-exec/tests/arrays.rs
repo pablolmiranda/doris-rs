@@ -84,8 +84,9 @@ fn an_array_compared_is_refused() {
     let a = || call("split_by_string", array_of(ty(T::VARCHAR)), vec![string("a,b"), string(",")]);
     let err = check_read(&binary("eq", a(), a())).unwrap_err().to_string();
     assert!(err.contains("an ARRAY value"), "{err}");
-    // an array of a type the printer does not know is refused
-    assert!(ColType::from_type_desc("", &array_of(ty(T::DATEV2)), true).is_some_and(|t| !t.supported_array()));
+    // an array of a type the printer does not know is refused; dates print quoted (batch 7)
+    assert!(ColType::from_type_desc("", &array_of(ty(T::JSONB)), true).is_some_and(|t| !t.supported_nested()));
+    assert!(ColType::from_type_desc("", &array_of(ty(T::DATEV2)), true).is_some_and(|t| t.supported_nested()));
 }
 
 #[test]
@@ -120,7 +121,7 @@ fn an_array_sort_key_is_refused() {
     let r = replays::load("nereids_p0.sql_functions.string_functions.test_split_by_string.test_split_by_string");
     for q in r.queries() {
         let Ok(mut p) = plan_query(&q) else { continue };
-        let Some(id) = p.desc.slots.iter().find(|(_, s)| s.ty.supported_array()).map(|(id, _)| *id) else {
+        let Some(id) = p.desc.slots.iter().find(|(_, s)| s.ty.supported_nested()).map(|(id, _)| *id) else {
             continue;
         };
         if !p.fragments.iter_mut().any(|f| sort_of(&mut f.root).is_some()) {

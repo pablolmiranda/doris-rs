@@ -18,6 +18,7 @@ fn dt(scale: i32) -> ColType {
         precision: 0,
         scale,
         nullable: true,
+        ..ColType::default()
     }
 }
 
@@ -87,6 +88,7 @@ fn date_target_checks_but_keeps_date() {
         precision: 0,
         scale: 0,
         nullable: true,
+        ..ColType::default()
     };
     let v = cast_in("+02:00", "2010-01-05 23:15:30+08:00", &date).expect("a date");
     assert_eq!(v, Value::Date("2010-01-05".into()));

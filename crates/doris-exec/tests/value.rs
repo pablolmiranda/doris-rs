@@ -5,7 +5,7 @@ use doris_thrift::gen::types::TPrimitiveType;
 #[test]
 fn an_integer_too_wide_for_its_decimal_is_a_row_error() {
     // 10^20 at scale 30 needs 10^50: past i128, so the row is filtered, not wrapped or panicking
-    let col = ColType { name: "d".into(), ptype: TPrimitiveType::DECIMAL128I, len: 16, precision: 38, scale: 30, nullable: true };
+    let col = ColType { name: "d".into(), ptype: TPrimitiveType::DECIMAL128I, len: 16, precision: 38, scale: 30, nullable: true, ..ColType::default() };
     assert!(to_datum(&Value::Int(10i128.pow(20)), &col, false).is_err());
 }
 
@@ -30,7 +30,7 @@ fn datetime_text_rounds_to_the_scale() {
 }
 
 fn v1(ptype: doris_thrift::gen::types::TPrimitiveType) -> doris_exec::value::ColType {
-    doris_exec::value::ColType { name: "d".into(), ptype, len: -1, precision: 0, scale: 0, nullable: true }
+    doris_exec::value::ColType { name: "d".into(), ptype, len: -1, precision: 0, scale: 0, nullable: true, ..Default::default() }
 }
 
 /// v1 DATE and DATETIME are written (v2-packed in memory, v1 on disk) but not read.
@@ -60,7 +60,7 @@ fn v1_date_values_convert_as_v2_packed() {
 }
 
 fn typed(ptype: TPrimitiveType, precision: i32, scale: i32) -> ColType {
-    ColType { name: "c".into(), ptype, len: -1, precision, scale, nullable: true }
+    ColType { name: "c".into(), ptype, len: -1, precision, scale, nullable: true, ..ColType::default() }
 }
 
 /// `StringParser::string_to_int_internal` without strict casting: digits, then nothing or a

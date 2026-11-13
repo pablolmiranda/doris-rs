@@ -15,6 +15,7 @@ fn chunk(values: &[i128]) -> Chunk {
         precision: 0,
         scale: 0,
         nullable: false,
+        ..ColType::default()
     };
     Chunk {
         block: Block {

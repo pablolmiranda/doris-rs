@@ -92,6 +92,7 @@ fn slot(name: &str, ptype: T) -> SchemaSlot {
             precision: 0,
             scale: 0,
             nullable: true,
+            ..ColType::default()
         },
     }
 }
