@@ -283,6 +283,7 @@ pub fn check_nodes(e: &TExpr, aggregates: bool) -> Result<(), ExecError> {
                 Some(f) if crate::strfn::is_string_function(f) => strfn_call(n),
                 Some(f) if crate::codec::is_codec_function(f) => codec_call(n),
                 Some(f) if crate::crypto::is_crypto_function(f) => crypto_call(n),
+                Some(f) if crate::arrays::is_array_function(f) => signature(n).is_some_and(|(a, to)| crate::arrays::supported(f, &a, &to)),
                 _ => false,
             },
             // `x ± INTERVAL n UNIT` (TimestampArithmeticExpr): C++ builds the VectorizedFnCall
@@ -401,7 +402,7 @@ fn parent(nodes: &[TExprNode], i: usize) -> Option<usize> {
 pub const TABLE_FUNCTIONS: &[&str] = &["explode", "explode_numbers"];
 
 /// The functions whose arguments may be ARRAYs, MAPs or STRUCTs (besides the table functions).
-pub const NESTED_ARG_FUNCTIONS: &[&str] = &["element_at"];
+pub const NESTED_ARG_FUNCTIONS: &[&str] = &["element_at", "array_with_constant", "array_join", "array_pushback", "array_pushfront", "array_popback", "array_popfront"];
 
 /// Whether an ARRAY, MAP or STRUCT at node `i` is carried, not operated on: the whole
 /// expression, an element of an ARRAY_LITERAL, the operand of a cast to a nested type, or an
@@ -758,6 +759,13 @@ fn eval_at(
             let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
             (node_type(n)?, crate::strfn::eval(&function_name(n).unwrap_or_default(), &types, &args, rows)?)
+        }
+        N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::arrays::is_array_function(&f)) => {
+            let to = node_type(n)?;
+            let types: Vec<ColType> = kids.iter().map(|(t, _)| t.clone()).collect();
+            let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
+            let out = crate::arrays::eval(&function_name(n).unwrap_or_default(), &types, &to, &args, rows)?;
+            (to, out)
         }
         N::FUNCTION_CALL if function_name(n).is_some_and(|f| crate::crypto::is_crypto_function(&f)) => {
             let args: Vec<&[Datum]> = kids.iter().map(|(_, v)| v.as_slice()).collect();
