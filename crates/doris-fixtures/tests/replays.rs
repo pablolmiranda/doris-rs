@@ -551,3 +551,25 @@ fn batch6_replays_hold_their_features() {
     }
     assert!(seen.len() >= 12, "batch 6 replays hold only {seen:?}");
 }
+
+const BATCH7: [&str; 4] = [
+    "datatype_p0.nested_types.query.map_functions.test_map_with_agg.test_map_with_agg",
+    "query_p0.aggregate.map_agg_v1.map_agg_v1",
+    "query_p0.sql_functions.array_functions.test_array_range_null_argument.test_array_range_null_argument",
+    "query_p0.sql_functions.struct_functions.test_struct_functions_by_literal.test_struct_functions_by_literal",
+];
+
+#[test]
+fn batch7_replays_hold_their_features() {
+    let wanted = ["array_range", "array_range_second_unit", "map", "map_agg_v1", "named_struct", "struct"];
+    let mut seen = BTreeSet::new();
+    for s in BATCH7 {
+        let mut mine = BTreeSet::new();
+        for q in replays::load(s).queries() {
+            mine.extend(replays::functions(&q).into_iter().filter(|f| wanted.contains(&f.as_str())));
+        }
+        assert!(!mine.is_empty(), "{s} holds no batch 7 feature");
+        seen.extend(mine);
+    }
+    assert_eq!(seen.len(), wanted.len(), "batch 7 replays hold only {seen:?}");
+}

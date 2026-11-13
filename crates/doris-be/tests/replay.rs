@@ -1076,3 +1076,22 @@ fn batch6_matches_the_reference() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+const BATCH7: [&str; 4] = [
+    "datatype_p0.nested_types.query.map_functions.test_map_with_agg.test_map_with_agg",
+    "query_p0.aggregate.map_agg_v1.map_agg_v1",
+    "query_p0.sql_functions.array_functions.test_array_range_null_argument.test_array_range_null_argument",
+    "query_p0.sql_functions.struct_functions.test_struct_functions_by_literal.test_struct_functions_by_literal",
+];
+
+#[test]
+fn batch7_matches_the_reference() {
+    let mut bad = Vec::new();
+    for s in BATCH7 {
+        let m = replay(&replays::load(s));
+        if !m.is_empty() {
+            bad.push(format!("{s}: {} mismatches, first: #{} {}", m.len(), m[0].query, m[0].what));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
